@@ -10,7 +10,7 @@ import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, nee
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExternalLink, Volume2, ClipboardList, CheckCircle, Lock } from 'lucide-react'
+import { ExternalLink, Volume2, ClipboardList, ClipboardCheck, CheckCircle, Lock } from 'lucide-react'
 
 export default function DtsenQueuePage() {
   const navigate = useNavigate()
@@ -110,14 +110,27 @@ export default function DtsenQueuePage() {
                   nomor_antrian={visit.nomor_antrian}
                 />
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleStart(visit.id_kunjungan, visit.status)}
-              >
-                <ClipboardList className="w-3.5 h-3.5 mr-1" />
-                Form DTSEN
-              </Button>
+              {/* Sudah ada data DTSEN tersimpan → "Lihat / Edit", belum → "Form
+                  DTSEN". Tetap lewat handleStart (transisi antri → diproses). */}
+              {Number(visit.has_konsultasi) > 0 ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleStart(visit.id_kunjungan, visit.status)}
+                >
+                  <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
+                  Lihat / Edit
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleStart(visit.id_kunjungan, visit.status)}
+                >
+                  <ClipboardList className="w-3.5 h-3.5 mr-1" />
+                  Form DTSEN
+                </Button>
+              )}
               {visit.status !== 'selesai' && visit.status !== 'menunggu_evaluasi' && (
                 canFinalizeLayanan(role, parseLayananForRole(visit.jenis_layanan)) ? (
                   <Button

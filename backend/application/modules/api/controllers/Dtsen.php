@@ -22,6 +22,11 @@ class Dtsen extends Api_base {
         // Hanya visit hari ini dengan layanan Konsultasi DTSEN.
         $visits = $this->db
             ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
+            // has_konsultasi: ada-tidaknya baris dtsen_konsultasi (parity dgn SKD).
+            // Tabel ini hanya berisi 0/1 baris per visit & 'catatan' wajib saat
+            // simpan, jadi COUNT(*)>0 = sudah disimpan. FE -> tombol "Lihat/Edit".
+            // Arg kedua FALSE => CI3 tidak backtick-escape subquery.
+            ->select("(SELECT COUNT(*) FROM dtsen_konsultasi dk WHERE dk.id_kunjungan = k.id_kunjungan) AS has_konsultasi", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where("DATE(k.date_visit)", $today)

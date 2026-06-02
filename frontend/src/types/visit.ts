@@ -16,6 +16,11 @@ export interface Visit {
   selesai_timestamp: string | null
   rating_pengunjung: number | null
   created_by: string | null
+  // Diisi oleh list endpoint (Consultations/Dtsen ::index()) via subquery:
+  // jumlah baris kebutuhan/konsultasi nyata milik visit. Dipakai antrian untuk
+  // membedakan "Mulai" (belum ada data) vs "Lihat/Edit" (sudah disimpan).
+  // Opsional — fallback ke "Mulai" kalau backend belum redeploy.
+  has_konsultasi?: number
 }
 
 /** Parse jenis_layanan — could be JSON array or plain string */
@@ -74,6 +79,10 @@ export interface ConsultationDataRow {
   tahun_publikasi: number | null
   digunakan_nasional: number | null
   kualitas: number | null
+  // Ringkasan/hasil konsultasi. Disimpan denormalized di SETIAP baris
+  // konsultasi_pengunjung oleh backend; GET /data mengembalikannya. Opsional
+  // karena baris yang dibuat di FE (emptyRow/seed) belum memuatnya.
+  hasil_konsultasi?: string | null
 }
 
 export interface DtsenDataRow {

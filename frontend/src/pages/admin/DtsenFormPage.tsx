@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { dtsenApi } from '@/api/dtsen'
 import { visitsApi } from '@/api/visits'
@@ -14,6 +14,7 @@ import { ArrowLeft, Save } from 'lucide-react'
 export default function DtsenFormPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const visitId = Number(id)
 
   const [form, setForm] = useState<Partial<DtsenDataRow>>({
@@ -70,6 +71,9 @@ export default function DtsenFormPage() {
       })
     },
     onSuccess: () => {
+      // Parity dengan SKD: simpan men-transisi DTSEN langsung ke 'selesai', jadi
+      // invalidate cache antrian supaya status & label langsung ter-refresh.
+      queryClient.invalidateQueries({ queryKey: ['dtsen-queue'] })
       toast.success('Data DTSEN tersimpan, kunjungan diselesaikan.')
       navigate('/admin/dtsen')
     },

@@ -111,20 +111,34 @@ export default function ConsultationQueuePage() {
                   nomor_antrian={visit.nomor_antrian}
                 />
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleStart(visit.id_kunjungan, visit.status)}
-              >
-                <ClipboardList className="w-3.5 h-3.5 mr-1" />
-                Mulai
-              </Button>
+              {/* Sudah ada data konsultasi tersimpan → "Lihat / Edit", belum →
+                  "Mulai". Tetap lewat handleStart supaya transisi antri/dipanggil
+                  → diproses tidak hilang (hanya label/ikon yang berubah). */}
+              {Number(visit.has_konsultasi) > 0 ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleStart(visit.id_kunjungan, visit.status)}
+                >
+                  <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
+                  Lihat / Edit
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleStart(visit.id_kunjungan, visit.status)}
+                >
+                  <ClipboardList className="w-3.5 h-3.5 mr-1" />
+                  Mulai
+                </Button>
+              )}
               {visit.status === 'menunggu_evaluasi' && (
                 <a
                   href="/kiosk/evaluasi"
                   target="_blank"
                   rel="noopener noreferrer"
-                  title="Buka halaman evaluasi tablet di tab baru — pengunjung lanjut mengisi evaluasi di sana"
+                  title="Membuka Terminal Evaluasi (tab baru). Terminal melayani pengunjung sesuai URUTAN ANTRIAN — bukan khusus visit ini. Pengunjung mengonfirmasi identitasnya sendiri di layar sebelum mengisi."
                 >
                   <Button
                     size="sm"
@@ -132,7 +146,7 @@ export default function ConsultationQueuePage() {
                     className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 border-amber-300"
                   >
                     <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
-                    Buka Evaluasi
+                    Terminal Evaluasi
                   </Button>
                 </a>
               )}

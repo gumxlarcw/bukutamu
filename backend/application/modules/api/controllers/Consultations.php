@@ -23,6 +23,12 @@ class Consultations extends Api_base {
         // dengan layanan SKD pasti hanya berisi item-item SKD.
         $consultations = $this->db
             ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
+            // has_konsultasi: jumlah baris kebutuhan_data NYATA (rincian terisi).
+            // FE pakai ini untuk bedakan tombol "Mulai" vs "Lihat/Edit". Filter
+            // rincian_data non-NULL/non-kosong supaya "ghost row" ringkasan
+            // (rincian NULL via Visits::summary) tidak ke-hitung sebagai data SKD.
+            // Arg kedua FALSE => CI3 tidak backtick-escape subquery-nya.
+            ->select("(SELECT COUNT(*) FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan AND kp.rincian_data IS NOT NULL AND TRIM(kp.rincian_data) <> '') AS has_konsultasi", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where("DATE(k.date_visit)", $today)
@@ -183,6 +189,16 @@ class Consultations extends Api_base {
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            // Authz: samakan dengan POST — petugas hanya boleh baca data konsultasi
+            // visit yang sesuai grup layanannya (admin/superadmin/operator bypass via
+            // helper). Tanpa ini GET hanya require_auth() → IDOR: user mana pun bisa
+            // enumerasi id & baca rincian/hasil_konsultasi lintas-scope.
+            $visit_check = $this->db->select('jenis_layanan')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            if (!$visit_check) {
+                $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+            $this->require_layanan_role($visit_check->jenis_layanan);
+
             $rows = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
             $this->json_response(['success' => true, 'data' => $rows, 'message' => 'OK']);
 
@@ -227,6 +243,12 @@ class Consultations extends Api_base {
                 ], 400);
             }
 
+            // Atomik: delete + reinsert + transisi status dibungkus satu transaksi.
+            // Tanpa ini, kalau sebuah insert gagal di tengah loop, baris lama sudah
+            // ke-DELETE (autocommit) → data konsultasi hilang permanen sementara
+            // endpoint tetap balas 200 success. Transaksi memastikan all-or-nothing.
+            $this->db->trans_start();
+
             // Delete existing rows for this visit
             $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');
 
@@ -253,13 +275,14 @@ class Consultations extends Api_base {
                 $this->db->insert('konsultasi_pengunjung', $row);
             }
 
-            $saved = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
-
             // Auto-transition: setelah operator simpan data, lanjutkan visit.
             // Tujuan tergantung jenis layanan: PST → menunggu_evaluasi, resepsionis → langsung selesai.
             // Skip kalau visit sudah dilanjut ke menunggu_evaluasi/selesai (idempoten).
+            // Update status ikut DI DALAM transaksi supaya konsisten dengan datanya.
             $visit = $this->db->select('status, jenis_layanan, date_visit')
                               ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            $status_from = null;
+            $status_to   = null;
             if ($visit && $visit->status !== 'selesai' && $visit->status !== 'menunggu_evaluasi') {
                 $next_status = $this->next_status_after_completion($visit->jenis_layanan);
                 $update = ['status' => $next_status];
@@ -271,7 +294,32 @@ class Consultations extends Api_base {
                     }
                 }
                 $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
-                $this->audit('save_consultation', 'visit', $id, ['status_from' => $visit->status, 'status_to' => $next_status]);
+                $status_from = $visit->status;
+                $status_to   = $next_status;
+            }
+
+            $this->db->trans_complete();
+
+            if ($this->db->trans_status() === FALSE) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan data konsultasi (transaksi dibatalkan). Silakan coba lagi.',
+                ], 500);
+            }
+
+            // Audit hanya setelah commit sukses — jangan log save yang ter-rollback.
+            if ($status_to !== null) {
+                $this->audit('save_consultation', 'visit', $id, ['status_from' => $status_from, 'status_to' => $status_to]);
+            }
+
+            $saved = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
+            if (empty($saved)) {
+                // Jaring kedua: commit "sukses" tapi 0 baris tersimpan → jangan
+                // balas success (FE akan toast sukses + navigate, menyesatkan).
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan data konsultasi (tidak ada baris tersimpan). Silakan coba lagi.',
+                ], 500);
             }
 
             $this->json_response(['success' => true, 'data' => $saved, 'message' => 'Data konsultasi berhasil disimpan']);
