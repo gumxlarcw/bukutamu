@@ -20,9 +20,19 @@ class Wa extends Api_base {
         $phone_norm = $this->normalize_phone($phone_raw);
         $reply_to   = $wa_id !== '' ? $wa_id : $phone_raw; // never reconstruct — reply to what WA gave us
 
-        // Open (awaiting_form) session already? → continuation, no new link.
-        $open = $this->db->where('phone_norm', $phone_norm)->where('state', 'awaiting_form')
-                         ->order_by('id', 'DESC')->limit(1)->get('wa_sessions')->row();
+        // Active session for this phone? → continuation (bot stays silent; petugas handles
+        // the chat manually). "Active" = link sent but form not submitted (awaiting_form),
+        // OR submitted with a visit that is not yet 'selesai'. Once the visit is 'selesai'
+        // (or the session is expired / its visit deleted), the next message is a NEW request.
+        $open = $this->db->query(
+            "SELECT s.id, s.state FROM wa_sessions s
+             LEFT JOIN tamdes_kunjungan k ON k.id_kunjungan = s.id_kunjungan
+             WHERE s.phone_norm = ?
+               AND ( s.state = 'awaiting_form'
+                     OR (s.state = 'submitted' AND k.status IS NOT NULL AND k.status <> 'selesai') )
+             ORDER BY s.id DESC LIMIT 1",
+            [$phone_norm]
+        )->row();
         if ($open) {
             $this->db->where('id', $open->id)->update('wa_sessions', ['last_inbound_at' => date('Y-m-d H:i:s'), 'wa_chat_id' => $reply_to]);
             $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
