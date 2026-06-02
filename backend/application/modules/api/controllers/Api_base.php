@@ -562,4 +562,17 @@ class Api_base extends CI_Controller {
             $this->json_response(['success' => false, 'message' => 'Forbidden'], 403);
         }
     }
+
+    /**
+     * Canonicalize an Indonesian phone number to local 0xxx form.
+     * Handles +62xxx / 62xxx / 0062xxx / 08xxx / 8xxx / WA "62xxx@c.us".
+     * Lookup-only — NOT enforced as a DB constraint (notel has known dupes).
+     */
+    protected function normalize_phone($raw) {
+        $d = preg_replace('/\D/', '', (string) $raw); // strip @c.us, +, spaces, dashes
+        $d = ltrim($d, '0');                          // drop leading 0 / 00
+        if (strpos($d, '62') === 0) $d = substr($d, 2); // drop country code
+        if ($d === '') return '';
+        return '0' . $d;
+    }
 }
