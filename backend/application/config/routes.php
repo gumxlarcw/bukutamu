@@ -81,3 +81,11 @@ $route['api/kiosk/visit']                    = 'api/kiosk/visit';
 $route['api/kiosk/ticket/(:num)']            = 'api/kiosk/ticket/$1';
 $route['api/kiosk/profile-gaps/(:num)']      = 'api/kiosk/profile_gaps/$1';
 $route['api/kiosk/profile-update/(:num)']    = 'api/kiosk/profile_update/$1';
+
+// WhatsApp online data-request channel (api/wa/*)
+$route['api/wa/ingest']          = 'api/wa/ingest';        // POST internal-secret
+$route['api/wa/poll']            = 'api/wa/poll';          // POST internal-secret (dispatch scan + pending)
+$route['api/wa/ack']             = 'api/wa/ack';           // POST internal-secret
+$route['api/wa/inbox']           = 'api/wa/inbox';         // GET  admin (Layanan Online list)
+$route['api/wa/session/(:num)']  = 'api/wa/session/$1';    // GET prefill / POST submit (kiosk-token wa-intake)
+$route['api/wa/eval/(:num)']     = 'api/wa/eval_access/$1';// GET  exchange wa-eval-access -> eval-submit
