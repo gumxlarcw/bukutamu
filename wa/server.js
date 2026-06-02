@@ -36,6 +36,16 @@ function jidFromLocal(phone) {
   return d + '@c.us';
 }
 
+// Normalisasi nomor untuk perbandingan allowlist: buang non-digit + 0 depan + kode negara 62.
+function normNum(s) {
+  let d = String(s).replace(/\D/g, '').replace(/^0+/, '');
+  if (d.startsWith('62')) d = d.slice(2);
+  return d; // contoh: 085159170808 / 6285159170808 → "85159170808"
+}
+// For-now allowlist nomor pengirim (kosong = balas semua DM).
+const ALLOW_FROM = (cfg.allowFrom || []).map(normNum).filter(Boolean);
+if (ALLOW_FROM.length) log('allowFrom aktif — hanya balas DM dari:', ALLOW_FROM.join(', '));
+
 // Best-effort: push the current QR (as a data-URL) / link state to the backend so the
 // authenticated admin "Layanan Online" page can display it (no exposed port).
 async function pushQrState(obj) {
@@ -88,6 +98,10 @@ client.on('message', async (msg) => {
     const waId = from;                     // exact reply target (@c.us or @lid) — reply here, never reconstruct
     let phone = waId.replace(/@.*$/, '');   // fallback digits for guest matching
     try { const c = await msg.getContact(); if (c && c.number) phone = String(c.number); } catch (_) { /* keep fallback */ }
+    if (ALLOW_FROM.length && !ALLOW_FROM.includes(normNum(phone))) {
+      log('diabaikan — pengirim ' + phone + ' tidak ada di allowFrom');
+      return;
+    }
     const res = await fetch(INGEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
