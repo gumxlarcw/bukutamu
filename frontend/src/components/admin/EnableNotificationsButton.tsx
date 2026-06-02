@@ -27,14 +27,24 @@ export function EnableNotificationsButton() {
   if (perm === null || perm === 'granted') return null
 
   if (perm === 'denied') {
+    // Izin sudah diblokir → JS tidak bisa prompt ulang. Klik = tampilkan panduan
+    // reset manual di setelan browser (bukan diam saja).
+    const showHelp = () =>
+      toast('Notifikasi diblokir browser', {
+        description:
+          'Reset lewat browser: klik ikon gembok/⚙ di KIRI address bar → "Notifications/Notifikasi" → ubah ke Allow/Izinkan → refresh halaman. ' +
+          'Alternatif: Settings → Privacy & security → Site Settings → Notifications → cari situs ini → Allow.',
+        duration: 15000,
+      })
     return (
-      <span
-        className="admin-nav-item !gap-1.5 text-[--admin-text-muted] cursor-help"
-        title="Notifikasi diblokir untuk situs ini. Klik ikon gembok/tune di address bar → Notifications → Allow, lalu refresh halaman."
+      <button
+        onClick={showHelp}
+        className="admin-nav-item !gap-1.5 text-[--admin-text-muted] hover:bg-muted"
+        title="Notifikasi diblokir — klik untuk panduan mengaktifkan kembali"
       >
         <BellOff className="w-4 h-4" />
         <span className="hidden lg:inline text-xs">Notif diblokir</span>
-      </span>
+      </button>
     )
   }
 
