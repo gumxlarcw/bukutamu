@@ -48,3 +48,10 @@ export interface WaInboxRow {
   has_konsultasi: number
   permintaan: string | null
 }
+
+export interface WaQrState {
+  ready: boolean
+  qr: string | null          // data-URL PNG while unlinked
+  number: string | null
+  updated_at: string | null
+}

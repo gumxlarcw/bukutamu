@@ -1,6 +1,6 @@
 import apiClient from './client'
 import type { ApiResponse } from '@/types/api'
-import type { WaSessionPrefill, WaIntakePayload, WaInboxRow } from '@/types/wa'
+import type { WaSessionPrefill, WaIntakePayload, WaInboxRow, WaQrState } from '@/types/wa'
 
 export const waApi = {
   getSession: (sessionId: number, token: string) =>
@@ -16,4 +16,5 @@ export const waApi = {
       `/api/wa/eval/${id}`, { headers: { 'X-Kiosk-Token': token } },
     ),
   inbox: () => apiClient.get<ApiResponse<WaInboxRow[]>>('/api/wa/inbox'),
+  getQrState: () => apiClient.get<ApiResponse<WaQrState>>('/api/wa/qr-state'),
 }

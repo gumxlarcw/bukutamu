@@ -218,6 +218,42 @@ class Wa extends Api_base {
         $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id, 'kiosk_token' => $eval_token], 'message' => 'OK']);
     }
 
+    // /api/wa/qr-state — POST (internal-secret): connector pushes {qr?, ready, number?}.
+    //                     GET  (auth + PST role): admin "Layanan Online" page reads it.
+    // Lets the QR live behind the authenticated admin page instead of an exposed port.
+    public function qr_state() {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $this->require_internal_secret();
+            $in  = $this->get_json_input();
+            $upd = [
+                'ready'      => !empty($in['ready']) ? 1 : 0,
+                'number'     => isset($in['number']) ? $in['number'] : null,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+            if (array_key_exists('qr', $in)) $upd['qr'] = $in['qr']; // data-URL, or null to clear
+            $this->db->where('id', 1)->update('wa_qr_state', $upd);
+            $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $this->require_auth();
+            $role = $this->current_user->role ?? '';
+            if (!in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin', 'pimpinan'], true)) {
+                $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+            }
+            $row   = $this->db->get_where('wa_qr_state', ['id' => 1])->row();
+            $ready = $row ? ((int) $row->ready === 1) : false;
+            $this->json_response(['success' => true, 'data' => [
+                'ready'      => $ready,
+                'qr'         => ($row && !$ready) ? $row->qr : null, // only expose QR while unlinked
+                'number'     => $row ? $row->number : null,
+                'updated_at' => $row ? $row->updated_at : null,
+            ], 'message' => 'OK']);
+        }
+
+        $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+    }
+
     /* ───────────────────────── private helpers ───────────────────────── */
 
     private function wa_dispatch_scan() {
