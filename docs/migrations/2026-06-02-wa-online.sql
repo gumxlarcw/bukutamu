@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS wa_sessions (
   PRIMARY KEY (id),
   KEY idx_phone_state (phone_norm, state),
   KEY idx_kunjungan (id_kunjungan)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS wa_outbox (
   id            BIGINT NOT NULL AUTO_INCREMENT,
@@ -30,4 +30,4 @@ CREATE TABLE IF NOT EXISTS wa_outbox (
   PRIMARY KEY (id),
   KEY idx_status (status, created_at),
   KEY idx_kunjungan_type (id_kunjungan, msg_type)        -- dedup ledger: <=1 eval_link/thankyou per visit
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
