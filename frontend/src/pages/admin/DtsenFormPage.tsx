@@ -41,6 +41,9 @@ export default function DtsenFormPage() {
     queryKey: ['dtsen-data', visitId],
     queryFn: () => dtsenApi.getData(visitId).then(r => r.data.data),
     enabled: !!visitId,
+    // Selalu fresh saat form dibuka (lihat ConsultationFormPage): cegah reopen
+    // setelah simpan menampilkan cache lama (kosong) yang butuh hard reload.
+    staleTime: 0,
   })
 
   useEffect(() => {
@@ -74,6 +77,9 @@ export default function DtsenFormPage() {
       // Parity dengan SKD: simpan men-transisi DTSEN langsung ke 'selesai', jadi
       // invalidate cache antrian supaya status & label langsung ter-refresh.
       queryClient.invalidateQueries({ queryKey: ['dtsen-queue'] })
+      // Buang cache data form supaya reopen via "Lihat/Edit" ter-refetch fresh.
+      queryClient.removeQueries({ queryKey: ['dtsen-data', visitId] })
+      queryClient.removeQueries({ queryKey: ['visit', visitId] })
       toast.success('Data DTSEN tersimpan, kunjungan diselesaikan.')
       navigate('/admin/dtsen')
     },

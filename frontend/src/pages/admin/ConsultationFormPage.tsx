@@ -61,11 +61,16 @@ export default function ConsultationFormPage() {
     enabled: !!visitId,
   })
 
-  // Fetch existing consultation data
+  // Fetch existing consultation data. staleTime 0 → selalu refetch saat form
+  // dibuka, supaya "Lihat/Edit" sesudah simpan tidak menampilkan cache lama
+  // (default global staleTime 30s bikin reopen dalam 30s tampil kosong). Aman
+  // dari clobber edit karena hidrasi dijaga one-shot hydratedRef + tidak ada
+  // refetch interval/focus pada query ini.
   const { data: existingData, isLoading: dataLoading } = useQuery({
     queryKey: ['consultation-data', visitId],
     queryFn: () => consultationsApi.getData(visitId).then(r => r.data.data),
     enabled: !!visitId,
+    staleTime: 0,
   })
 
   // Reset hydration guard ketika pindah visit (route param berubah).
@@ -118,9 +123,12 @@ export default function ConsultationFormPage() {
       // Refresh antrian: simpan men-transisi status (mis. → menunggu_evaluasi),
       // jadi cache list harus di-invalidate supaya tombol "Buka Evaluasi" &
       // label "Lihat/Edit" langsung muncul tanpa nunggu refetchInterval 30s.
-      // Hanya key antrian — JANGAN ['consultation-data'/'visit'] (di-share dengan
-      // VisitLogPage; invalidate-nya cuma nambah coupling tanpa manfaat di sini).
       queryClient.invalidateQueries({ queryKey: ['consultations-queue'] })
+      // Buang cache data form visit ini supaya saat dibuka lagi via "Lihat/Edit"
+      // ter-refetch fresh (bukan cache kosong pra-simpan → form tampak kosong &
+      // butuh hard reload). Form sedang unmount (navigate), jadi tidak meng-clobber.
+      queryClient.removeQueries({ queryKey: ['consultation-data', visitId] })
+      queryClient.removeQueries({ queryKey: ['visit', visitId] })
       toast.success('Data konsultasi berhasil disimpan')
       navigate('/admin/consultations')
     },
