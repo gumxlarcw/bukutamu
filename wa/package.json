@@ -1,0 +1,12 @@
+{
+  "name": "bukutamu-wa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WhatsApp online data-request connector for bukutamu (whatsapp-web.js). Isolated; mirrors bukutamu-notifier.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "whatsapp-web.js": "^1.26.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

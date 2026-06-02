@@ -17,5 +17,15 @@ module.exports = {
       autorestart: true,
       max_restarts: 20,
     },
+    {
+      // WhatsApp online data-request connector (whatsapp-web.js). Reads the
+      // git-ignored wa/config.json (internalSecret = push_internal_secret).
+      // ToS-risky surface, isolated here; if the number is jailed, bukutamu core is untouched.
+      name: 'bukutamu-wa',
+      script: 'server.js',
+      cwd: '/var/www/html/bukutamu/wa',
+      autorestart: true,
+      max_restarts: 20,
+    },
   ],
 }
