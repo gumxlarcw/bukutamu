@@ -87,7 +87,7 @@ export default function LayananOnlinePage() {
 
       <section>
         <h2 className="font-semibold mb-2">A. Identitas</h2>
-        <VisitorForm value={effGuest} onChange={setGuest} />
+        <VisitorForm value={effGuest} onChange={setGuest} restoreFromStorage={false} />
       </section>
 
       <section>

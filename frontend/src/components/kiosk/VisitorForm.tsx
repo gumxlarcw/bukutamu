@@ -15,6 +15,10 @@ const STORAGE_KEY = 'kiosk_visitor_form'
 interface VisitorFormProps {
   value: GuestFormData
   onChange: (data: GuestFormData) => void
+  // Kiosk persists/restores a draft via localStorage (shared touchscreen). The
+  // public WA intake page passes false so it never reads/writes that key —
+  // avoids clobbering the server prefill and leaking PII between requesters.
+  restoreFromStorage?: boolean
 }
 
 function getNowIso(): string {
@@ -23,23 +27,25 @@ function getNowIso(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
 }
 
-export function VisitorForm({ value, onChange }: VisitorFormProps) {
+export function VisitorForm({ value, onChange, restoreFromStorage = true }: VisitorFormProps) {
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as GuestFormData
-        onChange({ ...parsed, tgldatang: getNowIso() })
-        return
-      } catch { /* ignore */ }
+    if (restoreFromStorage) {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as GuestFormData
+          onChange({ ...parsed, tgldatang: getNowIso() })
+          return
+        } catch { /* ignore */ }
+      }
     }
     onChange({ ...value, tgldatang: getNowIso() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-  }, [value])
+    if (restoreFromStorage) localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+  }, [value, restoreFromStorage])
 
   const update = <K extends keyof GuestFormData>(key: K, val: GuestFormData[K]) => {
     onChange({ ...value, [key]: val })
