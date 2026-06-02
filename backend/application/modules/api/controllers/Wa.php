@@ -14,14 +14,17 @@ class Wa extends Api_base {
 
         $input     = $this->get_json_input();
         $phone_raw = trim((string) ($input['phone'] ?? ''));
-        if ($phone_raw === '') $this->json_response(['success' => false, 'message' => 'phone diperlukan'], 400);
+        $wa_id     = trim((string) ($input['wa_id'] ?? '')); // exact WA address to reply to (@c.us or @lid)
+        if ($phone_raw === '' && $wa_id === '') $this->json_response(['success' => false, 'message' => 'phone diperlukan'], 400);
+        if ($phone_raw === '') $phone_raw = $wa_id;
         $phone_norm = $this->normalize_phone($phone_raw);
+        $reply_to   = $wa_id !== '' ? $wa_id : $phone_raw; // never reconstruct — reply to what WA gave us
 
         // Open (awaiting_form) session already? → continuation, no new link.
         $open = $this->db->where('phone_norm', $phone_norm)->where('state', 'awaiting_form')
                          ->order_by('id', 'DESC')->limit(1)->get('wa_sessions')->row();
         if ($open) {
-            $this->db->where('id', $open->id)->update('wa_sessions', ['last_inbound_at' => date('Y-m-d H:i:s')]);
+            $this->db->where('id', $open->id)->update('wa_sessions', ['last_inbound_at' => date('Y-m-d H:i:s'), 'wa_chat_id' => $reply_to]);
             $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
         }
 
@@ -29,6 +32,7 @@ class Wa extends Api_base {
         $this->db->insert('wa_sessions', [
             'phone_norm'      => $phone_norm,
             'phone_raw'       => $phone_raw,
+            'wa_chat_id'      => $reply_to,
             'state'           => 'awaiting_form',
             'last_inbound_at' => date('Y-m-d H:i:s'),
         ]);
@@ -39,7 +43,7 @@ class Wa extends Api_base {
 
         $body = "Halo #SahabatData, terima kasih telah menghubungi BPS Provinsi Maluku Utara.\n"
               . "Silakan lengkapi permintaan data Anda melalui tautan berikut (berlaku 48 jam):\n" . $link;
-        $this->db->insert('wa_outbox', ['phone_raw' => $phone_raw, 'msg_type' => 'intake_link', 'body' => $body, 'status' => 'pending']);
+        $this->db->insert('wa_outbox', ['phone_raw' => $phone_raw, 'wa_chat_id' => $reply_to, 'msg_type' => 'intake_link', 'body' => $body, 'status' => 'pending']);
 
         $this->json_response(['success' => true, 'data' => ['session_id' => $sid, 'new' => true], 'message' => 'OK']);
     }
@@ -53,7 +57,7 @@ class Wa extends Api_base {
 
         $pending = $this->db->where('status', 'pending')->order_by('id', 'ASC')->limit(50)->get('wa_outbox')->result();
         $messages = array_map(function ($m) {
-            return ['id' => (int) $m->id, 'phone' => $m->phone_raw, 'body' => $m->body];
+            return ['id' => (int) $m->id, 'phone' => $m->phone_raw, 'wa_chat_id' => $m->wa_chat_id, 'body' => $m->body];
         }, $pending);
         $this->json_response(['success' => true, 'data' => ['messages' => $messages], 'message' => 'OK']);
     }
@@ -196,7 +200,7 @@ class Wa extends Api_base {
 
             $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n"
                   . "Akan kami proses pada jam operasional layanan (Senin–Jumat 08.00–15.30 WIT).";
-            $this->db->insert('wa_outbox', ['phone_raw' => $sess->phone_raw, 'msg_type' => 'confirmation', 'body' => $body, 'id_kunjungan' => $id_kunjungan, 'status' => 'pending']);
+            $this->db->insert('wa_outbox', ['phone_raw' => $sess->phone_raw, 'wa_chat_id' => $sess->wa_chat_id, 'msg_type' => 'confirmation', 'body' => $body, 'id_kunjungan' => $id_kunjungan, 'status' => 'pending']);
 
             $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan], 'message' => 'Permintaan terkirim']);
         }
@@ -266,7 +270,9 @@ class Wa extends Api_base {
 
         // 2. Enqueue eval_link for WA SKD visits newly menunggu_evaluasi (ledger-dedup).
         $need_eval = $this->db->query(
-            "SELECT k.id_kunjungan, b.notel FROM tamdes_kunjungan k
+            "SELECT k.id_kunjungan, b.notel,
+                    (SELECT s.wa_chat_id FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS wa_chat_id
+             FROM tamdes_kunjungan k
              JOIN tamdes_buku b ON b.id_user = k.id_user
              WHERE k.created_by = 'whatsapp' AND k.status = 'menunggu_evaluasi'
                AND NOT EXISTS (SELECT 1 FROM wa_outbox o WHERE o.id_kunjungan = k.id_kunjungan AND o.msg_type = 'eval_link')"
@@ -276,12 +282,14 @@ class Wa extends Api_base {
             $tok = $this->mint_kiosk_token('wa-eval-access', $idk, 7 * 24 * 3600);
             $link = $this->wa_public_base() . '/evaluasi/' . $idk . '?t=' . rawurlencode($tok);
             $body = "Terima kasih telah menggunakan layanan kami. Mohon kesediaan Anda mengisi evaluasi singkat (berlaku 7 hari):\n" . $link;
-            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'msg_type' => 'eval_link', 'body' => $body, 'id_kunjungan' => $idk, 'status' => 'pending']);
+            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'wa_chat_id' => ($v->wa_chat_id ?: $v->notel), 'msg_type' => 'eval_link', 'body' => $body, 'id_kunjungan' => $idk, 'status' => 'pending']);
         }
 
         // 3. Enqueue thankyou for WA visits selesai with no eval_link and no thankyou (non-SKD path).
         $need_ty = $this->db->query(
-            "SELECT k.id_kunjungan, b.notel FROM tamdes_kunjungan k
+            "SELECT k.id_kunjungan, b.notel,
+                    (SELECT s.wa_chat_id FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS wa_chat_id
+             FROM tamdes_kunjungan k
              JOIN tamdes_buku b ON b.id_user = k.id_user
              WHERE k.created_by = 'whatsapp' AND k.status = 'selesai'
                AND NOT EXISTS (SELECT 1 FROM wa_outbox o WHERE o.id_kunjungan = k.id_kunjungan AND o.msg_type = 'eval_link')
@@ -289,7 +297,7 @@ class Wa extends Api_base {
         )->result();
         foreach ($need_ty as $v) {
             $body = "Terima kasih telah menghubungi BPS Provinsi Maluku Utara. Permintaan Anda telah selesai kami proses.";
-            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'msg_type' => 'thankyou', 'body' => $body, 'id_kunjungan' => (int) $v->id_kunjungan, 'status' => 'pending']);
+            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'wa_chat_id' => ($v->wa_chat_id ?: $v->notel), 'msg_type' => 'thankyou', 'body' => $body, 'id_kunjungan' => (int) $v->id_kunjungan, 'status' => 'pending']);
         }
 
         // 4. Auto-close eval timeouts (>7d since the eval_link was ENQUEUED, no eval rows).

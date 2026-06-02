@@ -28,8 +28,11 @@ function log(...a) { console.log(new Date().toISOString(), ...a); }
 if (typeof fetch !== 'function') { log('FATAL: need Node >= 18 (global fetch)'); process.exit(1); }
 
 function jidFromLocal(phone) {
-  // Accept stored 0xxx or raw 62xxx; emit 62xxx@c.us.
-  const d = String(phone).replace(/\D/g, '').replace(/^0/, '62');
+  // If it's already a WhatsApp address (@c.us / @lid / @g.us), use it verbatim —
+  // never reconstruct (WhatsApp may deliver a privacy @lid that can't be rebuilt).
+  const s = String(phone);
+  if (/@(c\.us|lid|g\.us)$/.test(s)) return s;
+  const d = s.replace(/\D/g, '').replace(/^0/, '62');
   return d + '@c.us';
 }
 
@@ -74,11 +77,13 @@ client.on('message', async (msg) => {
   try {
     if (typeof msg.from !== 'string' || msg.from.endsWith('@g.us')) return; // ignore groups
     if (msg.isStatus) return;
-    const phone = msg.from.replace(/@c\.us$/, '');
+    const waId = msg.from;                 // exact reply target (@c.us or @lid) — reply here, never reconstruct
+    let phone = waId.replace(/@.*$/, '');   // fallback digits for guest matching
+    try { const c = await msg.getContact(); if (c && c.number) phone = String(c.number); } catch (_) { /* keep fallback */ }
     const res = await fetch(INGEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
-      body: JSON.stringify({ phone, text: msg.body || '' }),
+      body: JSON.stringify({ phone, wa_id: waId, text: msg.body || '' }),
     });
     if (!res.ok) log('ingest http', res.status);
   } catch (e) { log('ingest error', e.message); }
@@ -101,7 +106,7 @@ async function tick() {
     for (const m of messages) {
       if ((failCount.get(m.id) || 0) >= MAX_SEND_ATTEMPTS) continue; // gave up on this one
       try {
-        await client.sendMessage(jidFromLocal(m.phone), m.body);
+        await client.sendMessage(m.wa_chat_id || jidFromLocal(m.phone), m.body);
         sent.push(m.id);
         failCount.delete(m.id);
       } catch (e) {
