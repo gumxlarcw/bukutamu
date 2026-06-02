@@ -36,6 +36,7 @@ const TicketPage = lazyRetry(() => import('@/pages/kiosk/TicketPage'))
 const EvaluationStandbyPage = lazyRetry(() => import('@/pages/kiosk/EvaluationStandbyPage'))
 const EvaluationPage = lazyRetry(() => import('@/pages/kiosk/EvaluationPage'))
 const LayananOnlinePage = lazyRetry(() => import('@/pages/wa/LayananOnlinePage'))
+const EvaluasiOnlinePage = lazyRetry(() => import('@/pages/wa/EvaluasiOnlinePage'))
 const LoginPage = lazyRetry(() => import('@/pages/admin/LoginPage'))
 const DashboardPage = lazyRetry(() => import('@/pages/admin/DashboardPage'))
 const GuestListPage = lazyRetry(() => import('@/pages/admin/GuestListPage'))
@@ -77,6 +78,7 @@ function App() {
                 <Route path="/kiosk/evaluasi" element={<EvaluationStandbyPage />} />
                 <Route path="/kiosk/evaluasi/:id" element={<EvaluationPage />} />
                 <Route path="/layanan-online/:sessionId" element={<LayananOnlinePage />} />
+                <Route path="/evaluasi/:id" element={<EvaluasiOnlinePage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route element={<AdminLayout />}>
                   <Route path="/admin" element={<DashboardPage />} />
