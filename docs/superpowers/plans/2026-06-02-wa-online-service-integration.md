@@ -19,7 +19,7 @@
 - **Commit messages:** conventional style, **no `Co-Authored-By` trailer** (project rule).
 - **Backend reload:** after editing PHP, `sudo apachectl -k graceful`. **Frontend:** `cd frontend && npm run lint && npm run build`.
 - **MySQL:** `/root/.my.cnf` is configured — run `mysql db_tamdes -e "..."` directly.
-- **Internal secret** (for connector↔backend curl tests): `fe599aa94adc2f92085a6563bfb5913454ca460f77ca735a97abbca9d097f999` (from `backend/application/config/push.php` → `push_internal_secret`; reused verbatim, R16).
+- **Internal secret** (for connector↔backend curl tests): `PUSH_INTERNAL_SECRET_HERE` (from `backend/application/config/push.php` → `push_internal_secret`; reused verbatim, R16).
 - The backend listens on `http://127.0.0.1:60` (loopback).
 
 ---
@@ -695,7 +695,7 @@ Expected: `ingest=403`, `poll=403`, `session=401`.
 
 - [ ] **Step 2: Ingest a new session** (creates session + intake_link):
 ```bash
-SECRET=fe599aa94adc2f92085a6563bfb5913454ca460f77ca735a97abbca9d097f999
+SECRET=PUSH_INTERNAL_SECRET_HERE
 curl -s -X POST http://127.0.0.1:60/api/wa/ingest -H "X-Internal-Secret: $SECRET" \
   -H 'Content-Type: application/json' -d '{"phone":"6281299990000","text":"halo"}'
 ```
@@ -1322,7 +1322,7 @@ config.json
 ```json
 {
   "apiBase": "http://127.0.0.1:60",
-  "internalSecret": "fe599aa94adc2f92085a6563bfb5913454ca460f77ca735a97abbca9d097f999",
+  "internalSecret": "PUSH_INTERNAL_SECRET_HERE",
   "pollIntervalMs": 30000
 }
 ```
