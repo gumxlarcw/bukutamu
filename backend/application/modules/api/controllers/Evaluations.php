@@ -30,7 +30,7 @@ class Evaluations extends Api_base {
         // Resepsionis (Lainnya, Keperluan Pimpinan) skip evaluasi — defense in depth
         // jika ada visit yang lolos ke menunggu_evaluasi tapi bukan PST.
         $candidates = $this->db
-            ->where('created_by <>', 'whatsapp')   // WA evals are remote-only, never on the kiosk tablet
+            ->where("(created_by IS NULL OR created_by <> 'whatsapp')", NULL, FALSE)   // WA evals are remote-only, never on the kiosk tablet
             ->order_by('id_kunjungan', 'ASC')
             ->get_where('tamdes_kunjungan', ['status' => 'menunggu_evaluasi'])
             ->result();
@@ -83,7 +83,7 @@ class Evaluations extends Api_base {
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('k.status', 'menunggu_evaluasi')
-            ->where('k.created_by <>', 'whatsapp')   // WA evals are remote-only
+            ->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE)   // WA evals are remote-only
             ->order_by('k.id_kunjungan', 'ASC')
             ->get()->result();
 

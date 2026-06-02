@@ -38,7 +38,7 @@ class Consultations extends Api_base {
                 ->or_like('k.jenis_layanan', 'Rekomendasi Kegiatan Statistik')
                 ->or_like('k.jenis_layanan', 'Penjualan Produk Statistik')
             ->group_end()
-            ->where('k.created_by <>', 'whatsapp')   // WA visits live in Layanan Online inbox, not the PST queue
+            ->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE)   // WA visits live in Layanan Online inbox, not the PST queue
             ->order_by('k.date_visit', 'DESC')
             ->get()->result();
 

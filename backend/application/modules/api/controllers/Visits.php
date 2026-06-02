@@ -134,7 +134,7 @@ class Visits extends Api_base {
             ]);
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
-            // Hapus kunjungan + cascade ke 3 child table (konsultasi_pengunjung,
+            // Hapus kunjungan + cascade ke 5 related tables (konsultasi_pengunjung,
             // dtsen_konsultasi, tamdes_evaluasi_detail). Hard delete by design —
             // audit log capture state SEBELUM delete supaya tetap ada history.
             $this->require_role('admin');
@@ -153,7 +153,7 @@ class Visits extends Api_base {
                 'id_user'       => $visit->id_user,
             ]);
 
-            // Cascade: 3 child table yang FK ke id_kunjungan (owned-by-visit).
+            // Cascade: 5 related tables yang FK ke id_kunjungan (owned-by-visit).
             $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');
             $this->db->where('id_kunjungan', $id)->delete('dtsen_konsultasi');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
