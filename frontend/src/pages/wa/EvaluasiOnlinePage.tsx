@@ -15,6 +15,7 @@ export default function EvaluasiOnlinePage() {
   const [evalToken, setEvalToken] = useState<string | undefined>()
   const [done, setDone] = useState(false)
   const [closed, setClosed] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   // Exchange the durable access token for a short eval-submit token.
   useEffect(() => {
@@ -22,11 +23,11 @@ export default function EvaluasiOnlinePage() {
     let cancelled = false
     waApi.getEvalToken(Number(id), accessToken)
       .then(r => { if (!cancelled) setEvalToken(r.data.data?.kiosk_token) })
-      .catch((e) => { if (!cancelled) { if (e?.response?.status === 409) setClosed(true); } })
+      .catch((e) => { if (!cancelled) { if (e?.response?.status === 409) setClosed(true); else setFailed(true) } })
     return () => { cancelled = true }
   }, [id, accessToken])
 
-  const { data: formData, isLoading } = useQuery({
+  const { data: formData, isLoading, isError } = useQuery({
     queryKey: ['wa-eval-form', id, evalToken],
     queryFn: () => evaluationsApi.getForm(Number(id), evalToken!).then(r => r.data.data),
     enabled: !!id && !!evalToken,
@@ -41,6 +42,7 @@ export default function EvaluasiOnlinePage() {
   if (!accessToken) return <p className="p-8 text-center">Tautan tidak valid.</p>
   if (closed) return <p className="p-8 text-center">Evaluasi untuk permintaan ini sudah ditutup. Terima kasih.</p>
   if (done) return <p className="p-8 text-center text-lg font-semibold">Terima kasih atas penilaian Anda! 🙏</p>
+  if (failed || isError) return <p className="p-8 text-center">Tautan evaluasi tidak valid atau sudah kadaluarsa. Silakan hubungi petugas layanan.</p>
   if (isLoading || !formData) return <LoadingSpinner className="min-h-screen" />
 
   return (
