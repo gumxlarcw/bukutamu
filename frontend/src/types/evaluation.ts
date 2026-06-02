@@ -16,6 +16,17 @@ export interface EvaluationVisitor {
   nama_instansi: string | null
   nomor_antrian: string | null
   jenis_layanan: string | null
+  date_visit: string | null
+}
+
+/** Satu entri antrian evaluasi (kartu pemilihan di terminal standby). */
+export interface EvaluationPendingItem {
+  id_kunjungan: number
+  nama: string | null
+  nama_instansi: string | null
+  nomor_antrian: string | null
+  jenis_layanan: string | null
+  date_visit: string | null
 }
 
 export interface EvaluationFormData {

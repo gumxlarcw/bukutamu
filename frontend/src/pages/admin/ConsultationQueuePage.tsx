@@ -135,10 +135,10 @@ export default function ConsultationQueuePage() {
               )}
               {visit.status === 'menunggu_evaluasi' && (
                 <a
-                  href="/kiosk/evaluasi"
+                  href={`/kiosk/evaluasi/${visit.id_kunjungan}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title="Membuka Terminal Evaluasi (tab baru). Terminal melayani pengunjung sesuai URUTAN ANTRIAN — bukan khusus visit ini. Pengunjung mengonfirmasi identitasnya sendiri di layar sebelum mengisi."
+                  title="Buka form evaluasi untuk pengunjung INI di tab baru. Pengunjung mengonfirmasi identitasnya di layar sebelum mengisi."
                 >
                   <Button
                     size="sm"
@@ -146,7 +146,7 @@ export default function ConsultationQueuePage() {
                     className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 border-amber-300"
                   >
                     <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
-                    Terminal Evaluasi
+                    Buka Evaluasi
                   </Button>
                 </a>
               )}

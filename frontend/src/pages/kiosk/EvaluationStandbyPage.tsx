@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { evaluationsApi } from '@/api/evaluations'
-import { ClipboardList } from 'lucide-react'
+import { parseLayanan } from '@/types/visit'
+import { ClipboardList, UserCircle2, Hash, CalendarClock } from 'lucide-react'
 
 // Dots dekoratif background. Di-generate sekali di module-scope supaya
 // stabil lintas render (hindari react-hooks/purity warning untuk Math.random
@@ -16,35 +17,140 @@ const DOTS = Array.from({ length: 12 }, (_, i) => ({
   duration: 3 + i * 0.5,
 }))
 
+// date_visit MySQL ("2026-06-02 08:18:17") → "02 Jun 2026, 08.18" (lokal WIT).
+function fmtKunjungan(s: string | null): string {
+  if (!s) return '-'
+  const d = new Date(s.replace(' ', 'T'))
+  if (isNaN(d.getTime())) return s
+  return d.toLocaleString('id-ID', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+
 export default function EvaluationStandbyPage() {
   const navigate = useNavigate()
+  const [opening, setOpening] = useState(false)
+  // Cegah mint token konkuren (auto-open + klik beruntun). Di-reset kalau gagal.
+  const busyRef = useRef(false)
 
-  const { data } = useQuery({
-    queryKey: ['evaluation-pending'],
-    queryFn: () => evaluationsApi.getPending().then(r => r.data),
+  // Poll daftar SEMUA yang menunggu evaluasi (SKD). staleTime/gcTime 0 supaya
+  // setelah submit, daftar lama tidak langsung memicu navigate balik ke visit
+  // yang baru saja selesai.
+  const { data: list = [] } = useQuery({
+    queryKey: ['evaluation-pending-list'],
+    queryFn: () => evaluationsApi.getPendingList().then(r => r.data.data ?? []),
     refetchInterval: 5000,
-    // Treat data as stale immediately. Tanpa ini, kalau user balik ke standby
-    // setelah submit, cache lama bisa langsung memicu useEffect navigate ke
-    // visit yang baru saja selesai (visit sudah 'selesai', submit kedua aneh).
     staleTime: 0,
     gcTime: 0,
   })
 
-  useEffect(() => {
-    if (data?.data?.id_kunjungan) {
-      // /pending mints a 10-min kiosk_token bound to this id_kunjungan.
-      // Pass it via route state — EvaluationPage uses it for both getForm
-      // (GET /api/evaluations/{id}) and submit (POST /api/evaluations/{id}).
-      navigate(`/kiosk/evaluasi/${data.data.id_kunjungan}`, {
-        state: { kiosk_token: data.data.kiosk_token },
+  // Buka form evaluasi untuk SATU visit: mint token spesifik lalu navigate dengan
+  // token di route state (EvaluationPage memakainya untuk getForm + submit).
+  const openEval = (id: number) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setOpening(true)
+    evaluationsApi
+      .getPending(id)
+      .then((r) => {
+        const tok = r.data.data?.kiosk_token
+        if (tok) {
+          navigate(`/kiosk/evaluasi/${id}`, { state: { kiosk_token: tok } })
+          return // biarkan busy=true sampai unmount; cegah double-open
+        }
+        // Visit tidak lagi eligible (sudah selesai) — biarkan poll berikutnya refresh.
+        busyRef.current = false
+        setOpening(false)
       })
-    }
-  }, [data, navigate])
+      .catch(() => {
+        busyRef.current = false
+        setOpening(false)
+      })
+  }
 
-  const dots = DOTS
+  // Keputusan produk: kalau HANYA 1 yang menunggu → auto-buka langsung.
+  // ≥2 → tampilkan kartu pemilihan (lihat render di bawah). 0 → layar standby.
+  useEffect(() => {
+    if (list.length === 1) openEval(list[0].id_kunjungan)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list])
 
+  const containerStyle: React.CSSProperties = {
+    width: 'calc(100vw / 1.75)',
+    height: 'calc(100vh / 1.75)',
+    zoom: 1.75,
+    fontFamily: "'Outfit', system-ui, sans-serif",
+  }
+
+  // ── Mode kartu: ≥2 pengunjung menunggu, petugas/pengunjung pilih yang sesuai ──
+  if (list.length >= 2) {
+    return (
+      <div
+        className="overflow-hidden flex flex-col bg-gradient-to-br from-orange-50 to-amber-100 text-gray-800 px-6 py-5"
+        style={containerStyle}
+      >
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');`}</style>
+        <div className="shrink-0 text-center mb-4">
+          <h1 className="text-2xl md:text-3xl font-bold">Pilih Nama Anda</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Ada {list.length} pengunjung menunggu evaluasi — ketuk kartu sesuai nama &amp; waktu kunjungan Anda
+          </p>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl mx-auto pb-2">
+            {list.map((item) => (
+              <button
+                key={item.id_kunjungan}
+                type="button"
+                disabled={opening}
+                onClick={() => openEval(item.id_kunjungan)}
+                className="text-left rounded-2xl bg-white/90 border-2 border-orange-200 hover:border-orange-400 hover:bg-white shadow-sm px-5 py-4 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                    <UserCircle2 className="w-8 h-8 text-orange-600" strokeWidth={1.5} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-bold text-gray-900 leading-tight truncate">
+                      {item.nama || '(nama tidak tersedia)'}
+                    </p>
+                    <p className="text-xs text-gray-500 leading-tight truncate">
+                      {item.nama_instansi || '(instansi tidak diisi)'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                  {item.nomor_antrian && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
+                      <Hash className="w-3 h-3" />
+                      {item.nomor_antrian}
+                    </span>
+                  )}
+                  {parseLayanan(item.jenis_layanan).map((l, i) => (
+                    <span key={i} className="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px] font-medium">
+                      {l}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5 mt-2 text-[11px] text-gray-500">
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  <span>Kunjungan: {fmtKunjungan(item.date_visit)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Mode standby: 0 menunggu (atau 1 sedang auto-dibuka) ──
   return (
-    <div className="overflow-hidden flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-100 text-gray-800 px-8" style={{ width: 'calc(100vw / 1.75)', height: 'calc(100vh / 1.75)', zoom: 1.75, fontFamily: "'Outfit', system-ui, sans-serif" }}>
+    <div
+      className="overflow-hidden flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-100 text-gray-800 px-8"
+      style={containerStyle}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
         .kiosk-enter { opacity:0; transform:translateY(20px); animation:kioskFadeUp 0.6s cubic-bezier(0.16,1,0.3,1) forwards; }
@@ -52,7 +158,7 @@ export default function EvaluationStandbyPage() {
       `}</style>
       {/* Animated background dots */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {dots.map((dot, i) => (
+        {DOTS.map((dot, i) => (
           <div
             key={i}
             className="absolute rounded-full bg-orange-300/10 animate-pulse"
@@ -81,7 +187,7 @@ export default function EvaluationStandbyPage() {
           Terminal Evaluasi
         </h1>
         <p className="kiosk-enter text-lg text-gray-500 mb-3" style={{ animationDelay: '0.1s' }}>
-          Menunggu pengunjung untuk mengisi evaluasi...
+          {opening ? 'Membuka formulir evaluasi...' : 'Menunggu pengunjung untuk mengisi evaluasi...'}
         </p>
 
         {/* Animated dots */}

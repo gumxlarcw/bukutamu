@@ -47,6 +47,7 @@ $route['api/dtsen/(:num)/data']        = 'api/dtsen/data/$1';
 $route['api/dtsen/(:num)']             = 'api/dtsen/detail/$1';
 
 $route['api/evaluations/pending']        = 'api/evaluations/pending';
+$route['api/evaluations/pending-list']   = 'api/evaluations/pending_list';
 $route['api/evaluations/summary']        = 'api/evaluations/summary';
 $route['api/evaluations/(:num)/results'] = 'api/evaluations/results/$1';
 $route['api/evaluations/(:num)']         = 'api/evaluations/detail/$1';

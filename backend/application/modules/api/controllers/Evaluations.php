@@ -10,6 +10,22 @@ class Evaluations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
+        // Mode terarah: ?id=N → mint token untuk visit SPESIFIK itu (dipakai tombol
+        // "Buka Evaluasi" admin + kartu pemilihan di standby saat >1 antri). Hanya
+        // kalau visit masih `menunggu_evaluasi` & layanan SKD — sama ketat dengan
+        // FIFO, jadi token tetap cuma terbit untuk visit yang memang berhak.
+        $requested_id = $this->input->get('id');
+        if ($requested_id !== null && $requested_id !== '') {
+            $rid   = (int) $requested_id;
+            $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $rid])->row();
+            if ($visit && $visit->status === 'menunggu_evaluasi' && $this->layanan_requires_skd_form($visit->jenis_layanan)) {
+                $visit->kiosk_token = $this->mint_kiosk_token('eval-submit', $rid, 600);
+                $this->json_response(['success' => true, 'data' => $visit, 'message' => 'OK']);
+            }
+            // Tidak eligible (sudah selesai / bukan SKD / tidak ada) → null; FE balik ke standby.
+            $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
+        }
+
         // Hanya 4 layanan PST yang perlu evaluasi tablet.
         // Resepsionis (Lainnya, Keperluan Pimpinan) skip evaluasi — defense in depth
         // jika ada visit yang lolos ke menunggu_evaluasi tapi bukan PST.
@@ -51,6 +67,33 @@ class Evaluations extends Api_base {
         $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
     }
 
+    // Daftar SEMUA visit yang sedang menunggu evaluasi (SKD saja) + info tampil
+    // untuk kartu pemilihan di terminal standby. Tanpa token: token baru di-mint
+    // saat kartu dipilih (lewat pending?id=). Public (tablet kiosk tanpa login),
+    // sama seperti pending(). Eval menempel ke id_kunjungan, jadi kunjungan ulang
+    // pengunjung yang sama muncul sebagai entri terpisah.
+    public function pending_list() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $candidates = $this->db
+            ->select('k.id_kunjungan, k.jenis_layanan, k.nomor_antrian, k.date_visit, b.nama, b.nama_instansi')
+            ->from('tamdes_kunjungan k')
+            ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+            ->where('k.status', 'menunggu_evaluasi')
+            ->order_by('k.id_kunjungan', 'ASC')
+            ->get()->result();
+
+        // Filter ke SKD saja (DTSEN/resepsionis tidak pernah menunggu_evaluasi,
+        // tapi tetap defense-in-depth seperti pending()).
+        $list = array_values(array_filter($candidates, function ($c) {
+            return $this->layanan_requires_skd_form($c->jenis_layanan);
+        }));
+
+        $this->json_response(['success' => true, 'data' => $list, 'message' => 'OK']);
+    }
+
     public function detail($id) {
         // Both GET (fetch form) and POST (submit eval) require the kiosk-token
         // minted by /api/evaluations/pending. Endpoint stays unauthenticated by
@@ -75,7 +118,7 @@ class Evaluations extends Api_base {
             // tamu lain yang masih dalam antrian evaluasi. Kalau nama yang muncul beda,
             // tamu langsung sadar dan tidak salah submit.
             $visitor = $this->db
-                ->select('b.nama, b.nama_instansi, k.nomor_antrian, k.jenis_layanan')
+                ->select('b.nama, b.nama_instansi, k.nomor_antrian, k.jenis_layanan, k.date_visit')
                 ->from('tamdes_kunjungan k')
                 ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
                 ->where('k.id_kunjungan', $id)

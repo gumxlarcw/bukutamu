@@ -6,6 +6,7 @@ import type {
   EvaluationResult,
   EvaluationFormData,
   EvaluationVisitor,
+  EvaluationPendingItem,
   KonsultasiKualitas,
 } from '@/types/evaluation'
 
@@ -20,8 +21,16 @@ export const evaluationsApi = {
   // /pending now returns a kiosk_token (10 min) bound to id_kunjungan.
   // Tablet stores it and passes via X-Kiosk-Token header on both getForm
   // and submit — the form fetch + the submission share the same token.
-  getPending: () =>
-    apiClient.get<ApiResponse<{ id_kunjungan: number; kiosk_token: string } | null>>('/api/evaluations/pending'),
+  // Tanpa id → FIFO (visit terlama). Dengan id → mint token untuk visit spesifik
+  // itu kalau masih eligible (dipakai deep-link admin + pilih kartu di standby).
+  getPending: (id?: number) =>
+    apiClient.get<ApiResponse<{ id_kunjungan: number; kiosk_token: string } | null>>(
+      '/api/evaluations/pending',
+      id != null ? { params: { id } } : undefined,
+    ),
+  // Daftar semua visit yang menunggu evaluasi (SKD) untuk kartu pemilihan.
+  getPendingList: () =>
+    apiClient.get<ApiResponse<EvaluationPendingItem[]>>('/api/evaluations/pending-list'),
   getForm: async (id: number, kiosk_token: string) => {
     const r = await apiClient.get<ApiResponse<EvaluationFormBackendShape>>(`/api/evaluations/${id}`, {
       headers: { 'X-Kiosk-Token': kiosk_token },

@@ -1,38 +1,71 @@
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { evaluationsApi } from '@/api/evaluations'
 import { EvaluationForm } from '@/components/kiosk/EvaluationForm'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { CheckCircle, UserCircle2, Hash } from 'lucide-react'
+import { CheckCircle, UserCircle2, Hash, CalendarClock } from 'lucide-react'
 import { parseLayanan } from '@/types/visit'
 import type { EvaluationSubmission } from '@/types/evaluation'
+
+// date_visit MySQL ("2026-06-02 08:18:17") → "02 Jun 2026, 08.18" (lokal WIT).
+function fmtKunjungan(s: string | null): string {
+  if (!s) return '-'
+  const d = new Date(s.replace(' ', 'T'))
+  if (isNaN(d.getTime())) return s
+  return d.toLocaleString('id-ID', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
 
 export default function EvaluationPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
   const { id } = useParams<{ id: string }>()
-  // Kiosk token was minted by /api/evaluations/pending and passed here via
-  // route state by EvaluationStandbyPage. Same token covers both getForm and
-  // submit (10-min TTL). If someone navigates here directly without a token
-  // (deep-link, refresh), we bounce back to standby to re-poll.
-  const kioskToken = (location.state as { kiosk_token?: string } | null)?.kiosk_token
+  // Kiosk token covers both getForm and submit (10-min TTL). Dua sumber:
+  // (1) route state dari EvaluationStandbyPage (auto-open / pilih kartu), atau
+  // (2) deep-link langsung (tombol "Buka Evaluasi" admin) tanpa state → kita mint
+  //     token untuk :id ini via /pending?id=. Kalau visit tidak lagi eligible
+  //     (sudah selesai / bukan SKD), backend balas null → kita lempar ke standby.
+  const stateToken = (location.state as { kiosk_token?: string } | null)?.kiosk_token
+  const [resolvedToken, setResolvedToken] = useState<string | undefined>(stateToken)
 
   useEffect(() => {
-    if (!kioskToken) navigate('/kiosk/evaluasi', { replace: true })
-  }, [kioskToken, navigate])
+    // Token dari route state sudah jadi nilai awal resolvedToken (useState di atas),
+    // jadi cukup berhenti — tidak perlu setState lagi di sini.
+    if (stateToken) return
+    if (!id) {
+      navigate('/kiosk/evaluasi', { replace: true })
+      return
+    }
+    let cancelled = false
+    evaluationsApi
+      .getPending(Number(id))
+      .then((r) => {
+        if (cancelled) return
+        const tok = r.data.data?.kiosk_token
+        if (tok) setResolvedToken(tok)
+        else navigate('/kiosk/evaluasi', { replace: true })
+      })
+      .catch(() => {
+        if (!cancelled) navigate('/kiosk/evaluasi', { replace: true })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [stateToken, id, navigate])
 
   const { data: formData, isLoading, isError } = useQuery({
-    queryKey: ['evaluation-form', id, kioskToken],
-    queryFn: () => evaluationsApi.getForm(Number(id), kioskToken!).then(r => r.data.data),
-    enabled: !!id && !!kioskToken,
+    queryKey: ['evaluation-form', id, resolvedToken],
+    queryFn: () => evaluationsApi.getForm(Number(id), resolvedToken!).then(r => r.data.data),
+    enabled: !!id && !!resolvedToken,
   })
 
   const submitMutation = useMutation({
     mutationFn: (data: EvaluationSubmission) => {
-      if (!kioskToken) throw new Error('Sesi evaluasi kadaluarsa — kembali ke layar standby.')
-      return evaluationsApi.submit(Number(id), data, kioskToken)
+      if (!resolvedToken) throw new Error('Sesi evaluasi kadaluarsa — kembali ke layar standby.')
+      return evaluationsApi.submit(Number(id), data, resolvedToken)
     },
   })
 
@@ -43,7 +76,9 @@ export default function EvaluationPage() {
   useEffect(() => {
     if (!submitMutation.isSuccess) return
     const t = setTimeout(() => {
-      queryClient.removeQueries({ queryKey: ['evaluation-pending'] })
+      // Buang cache daftar pending supaya StandbyPage tidak langsung auto-navigate
+      // balik ke visit ini (sudah 'selesai') dari data basi.
+      queryClient.removeQueries({ queryKey: ['evaluation-pending-list'] })
       navigate('/kiosk/evaluasi')
     }, 4000)
     return () => clearTimeout(t)
@@ -125,6 +160,10 @@ export default function EvaluationPage() {
                       {l}
                     </span>
                   ))}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  <span>Waktu kunjungan: {fmtKunjungan(formData.visitor.date_visit)}</span>
                 </div>
               </div>
             </div>
