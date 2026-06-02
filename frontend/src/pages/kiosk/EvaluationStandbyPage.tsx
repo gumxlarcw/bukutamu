@@ -86,7 +86,9 @@ export default function EvaluationStandbyPage() {
   if (list.length >= 2) {
     return (
       <div
-        className="overflow-hidden flex flex-col bg-gradient-to-br from-orange-50 to-amber-100 text-gray-800 px-6 py-5"
+        // Scroll di kontainer luar (lihat EvaluationPage) — inner-flex-scroll
+        // tidak reliabel di bawah CSS zoom saat kartu banyak.
+        className="overflow-y-auto overflow-x-hidden flex flex-col bg-gradient-to-br from-orange-50 to-amber-100 text-gray-800 px-6 py-5"
         style={containerStyle}
       >
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');`}</style>
@@ -97,7 +99,7 @@ export default function EvaluationStandbyPage() {
           </p>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-3xl mx-auto pb-2">
             {list.map((item) => (
               <button

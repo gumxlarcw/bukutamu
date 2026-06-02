@@ -86,7 +86,11 @@ export default function EvaluationPage() {
 
   return (
     <div
-      className="flex flex-col overflow-hidden"
+      // Scroll di kontainer LUAR (bukan flex-1 child) — pola inner-flex-scroll
+      // tidak reliabel di bawah CSS zoom (form panjang jadi tidak bisa di-scroll).
+      // kiosk-scroll = overflow-y:auto + sembunyikan scrollbar. overflow-x-hidden
+      // mencegah scroll horizontal dari lebar zoom.
+      className="flex flex-col overflow-x-hidden kiosk-scroll"
       style={{
         width: 'calc(100vw / 1.75)',
         height: 'calc(100vh / 1.75)',
@@ -174,7 +178,7 @@ export default function EvaluationPage() {
         </section>
       )}
 
-      <main className="flex-1 min-h-0 px-4 pb-4 max-w-2xl mx-auto w-full kiosk-scroll">
+      <main className="px-4 pb-4 max-w-2xl mx-auto w-full">
         {isLoading && (
           <div className="flex flex-col items-center gap-4 py-16">
             <LoadingSpinner />
