@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to config.json (git-ignored) and fill in. Generate VAPID with: node -e \"console.log(require('web-push').generateVAPIDKeys())\". The SAME vapidPublic must also go into backend/application/config/push.php (push_vapid_public), and internalSecret must match push_internal_secret there.",
+  "vapidPublic": "REPLACE_WITH_VAPID_PUBLIC",
+  "vapidPrivate": "REPLACE_WITH_VAPID_PRIVATE",
+  "vapidSubject": "mailto:you@example.com",
+  "internalSecret": "REPLACE_WITH_RANDOM_HEX_64",
+  "apiBase": "http://127.0.0.1:60",
+  "pollIntervalMs": 30000
+}

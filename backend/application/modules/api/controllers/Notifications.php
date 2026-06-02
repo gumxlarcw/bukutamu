@@ -36,6 +36,44 @@ class Notifications extends Api_base {
     }
 
     /**
+     * Internal feed for the Node notifier service (Web Push sender). NOT for the
+     * browser — guarded by X-Internal-Secret + loopback only (see
+     * Api_base::require_internal_secret). Returns every push subscription plus the
+     * computed notifications for each distinct subscribed role, so the notifier
+     * can diff "new" notifications and push them to the right subscriptions.
+     */
+    public function dispatch() {
+        $this->require_internal_secret();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $subs = $this->db
+            ->select('endpoint, endpoint_hash, p256dh, auth, role')
+            ->get('push_subscriptions')->result();
+
+        $roles = [];
+        foreach ($subs as $s) {
+            $roles[$s->role] = true;
+        }
+
+        $by_role = [];
+        foreach (array_keys($roles) as $role) {
+            $by_role[$role] = $this->rules_for_role($role);
+        }
+
+        $this->json_response([
+            'success' => true,
+            'data'    => [
+                'subscriptions'         => $subs,
+                'notifications_by_role' => $by_role,
+            ],
+            'message' => 'OK',
+        ]);
+    }
+
+    /**
      * Notification rule registry per role.
      *
      * Setiap rule = method privat yang return array notification (boleh kosong).

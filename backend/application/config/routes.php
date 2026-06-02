@@ -61,6 +61,13 @@ $route['api/users/(:num)']             = 'api/users/detail/$1';
 $route['api/audit']                    = 'api/audit/index';
 $route['api/queue-stats']              = 'api/queue_stats/index';
 $route['api/notifications']            = 'api/notifications/index';
+$route['api/notifications/dispatch']   = 'api/notifications/dispatch';
+
+// Web Push (Tier-2 desktop notifications)
+$route['api/push/vapid']               = 'api/push/vapid';
+$route['api/push/subscribe']           = 'api/push/subscribe';
+$route['api/push/unsubscribe']         = 'api/push/unsubscribe';
+$route['api/push/prune']               = 'api/push/prune';
 
 $route['api/dashboard/stats']          = 'api/dashboard/stats';
 $route['api/dashboard/events']         = 'api/dashboard/events';

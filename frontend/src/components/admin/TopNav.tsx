@@ -3,6 +3,7 @@ import { useAuth } from '@/providers/AuthProvider'
 import { cn } from '@/lib/utils'
 import { InstallPWAButton } from '@/components/admin/InstallPWAButton'
 import { NotificationBell } from '@/components/admin/NotificationBell'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 import type { UserRole } from '@/api/auth'
 import {
   LayoutDashboard,
@@ -74,6 +75,10 @@ export function TopNav() {
   const { user, logout } = useAuth()
   const userRole = (user?.role ?? 'operator') as UserRole
   const userLevel = ROLE_LEVEL[userRole] ?? 1
+
+  // Daftarkan browser ini ke Web Push (notifikasi desktop) saat ada user login.
+  // Admin-wide karena TopNav dirender di semua halaman admin.
+  usePushNotifications(!!user)
 
   const visibleItems = NAV_ITEMS.filter(item => {
     if (item.allowedRoles && !item.allowedRoles.includes(userRole)) return false

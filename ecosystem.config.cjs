@@ -7,5 +7,15 @@ module.exports = {
       cwd: '/var/www/html/bukutamu/frontend',
       interpreter: 'none',
     },
+    {
+      // Web Push sender for admin desktop notifications (Tier-2). Reads the
+      // git-ignored notifier/config.json (VAPID + internal secret). Polls
+      // /api/notifications/dispatch and pushes new notifications per role.
+      name: 'bukutamu-notifier',
+      script: 'server.js',
+      cwd: '/var/www/html/bukutamu/notifier',
+      autorestart: true,
+      max_restarts: 20,
+    },
   ],
 }

@@ -13,6 +13,9 @@ package-lock.json
 .env
 .env.local
 
+# Web Push secrets (VAPID public + internal secret) — do NOT commit
+application/config/push.php
+
 # Local backup artifacts (CLAUDE.md per-file backup rule — never commit)
 *.backup
 *.backup2

@@ -1,0 +1,9 @@
+{
+  "name": "bukutamu-notifier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web Push sender for bukutamu admin notifications (reads /api/internal, pushes via VAPID).",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test-push": "node test-push.js" },
+  "dependencies": { "web-push": "^3.6.7", "dotenv": "^16.4.5" }
+}

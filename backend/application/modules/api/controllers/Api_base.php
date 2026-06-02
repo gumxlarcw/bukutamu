@@ -531,4 +531,35 @@ class Api_base extends CI_Controller {
 
         return $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
     }
+
+    /**
+     * Read a value from the git-ignored config/push.php (VAPID public key,
+     * internal secret). Returns null if the file/key is absent (push not set up),
+     * so callers can degrade gracefully instead of fataling.
+     */
+    protected function push_config($key) {
+        $this->config->load('push', FALSE, TRUE); // 3rd arg = fail gracefully
+        $val = $this->config->item($key);
+        return ($val === FALSE) ? null : $val;
+    }
+
+    /**
+     * Guard internal-only endpoints (push dispatch/prune) consumed by the notifier
+     * service. Validates the X-Internal-Secret header against config/push.php and
+     * restricts to loopback callers. 403/503 + exit on failure.
+     */
+    protected function require_internal_secret() {
+        $secret = $this->push_config('push_internal_secret');
+        if (!$secret) {
+            $this->json_response(['success' => false, 'message' => 'Push not configured'], 503);
+        }
+        $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+        if (!in_array($remote, ['127.0.0.1', '::1', 'localhost'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+        $given = isset($_SERVER['HTTP_X_INTERNAL_SECRET']) ? trim($_SERVER['HTTP_X_INTERNAL_SECRET']) : '';
+        if ($given === '' || !hash_equals((string) $secret, $given)) {
+            $this->json_response(['success' => false, 'message' => 'Forbidden'], 403);
+        }
+    }
 }

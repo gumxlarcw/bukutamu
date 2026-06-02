@@ -8,7 +8,7 @@
 // terbaru pada full-reload berikutnya. Lupa bump = user lihat versi lama meski
 // origin sudah update (bug 2026-06-02: form konsultasi tampak kosong saat dibuka
 // ulang karena SW menyajikan ConsultationFormPage chunk lama).
-const CACHE_NAME = 'admin-bukutamu-8200-v5';
+const CACHE_NAME = 'admin-bukutamu-8200-v6';
 const SHELL_PATHS = ['/admin', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -58,5 +58,42 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
     )
+  );
+});
+
+// ── Web Push (Tier-2 desktop notifications) ──────────────────────────────
+// Payload dikirim oleh service `notifier/` (VAPID). Bentuk:
+//   { id, type, title, message, action_url }
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch (e) { payload = {}; }
+
+  const title = payload.title || 'Buku Tamu BPS Malut';
+  const options = {
+    body: payload.message || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: payload.id || undefined,      // id sama → notifikasi diganti, tidak menumpuk
+    renotify: !!payload.id,
+    data: { action_url: payload.action_url || '/admin' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Klik notifikasi → fokus tab admin yang sudah ada (arahkan ke action_url),
+// atau buka jendela baru kalau belum ada.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.action_url) || '/admin';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) {
+          if ('navigate' in client) { try { client.navigate(url); } catch (e) { /* ignore */ } }
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
   );
 });
