@@ -16,6 +16,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
 const QRCode = require('qrcode');
+const crypto = require('crypto');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 const POLL = cfg.pollIntervalMs || 30000;
@@ -25,6 +26,10 @@ const INGEST_URL = BASE + '/api/wa/ingest';
 const POLL_URL = BASE + '/api/wa/poll';
 const ACK_URL = BASE + '/api/wa/ack';
 const QR_PORT = cfg.qrPort || 5310;
+// QR page is reachable on the LAN (operator opens it in a browser), so it MUST be
+// token-guarded — the QR is a WhatsApp pairing credential. Token from config (stable)
+// or random per start. Without ?t=<token> → 403.
+const QR_TOKEN = cfg.qrToken || crypto.randomBytes(16).toString('hex');
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 if (typeof fetch !== 'function') { log('FATAL: need Node >= 18 (global fetch)'); process.exit(1); }
@@ -107,8 +112,18 @@ async function tick() {
 }
 
 // ── Halaman QR web (gambar QR yg gampang di-scan), meniru email-wa-bot /qr ──
+function qrTokenOk(req) {
+  const m = /[?&]t=([^&]+)/.exec(req.url || '');
+  const given = m ? decodeURIComponent(m[1]) : '';
+  const a = Buffer.from(given), b = Buffer.from(QR_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'");
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (!qrTokenOk(req)) { res.writeHead(403); res.end('Forbidden — token QR salah atau tidak ada.'); return; }
   if (ready) {
     res.end('<meta http-equiv="refresh" content="10"><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>&#9989; WhatsApp terhubung</h2><p>Nomor tertaut: <b>' + (linkedNumber || '?') + '</b></p><p>Connector bukutamu-wa siap menerima permintaan.</p></body>');
     return;
@@ -123,7 +138,7 @@ http.createServer(async (req, res) => {
   } catch (e) {
     res.end('<body>QR error: ' + e.message + '</body>');
   }
-}).listen(QR_PORT, '0.0.0.0', () => log('QR web page on :' + QR_PORT + ' (buka http://<server-ip>:' + QR_PORT + ')'));
+}).listen(QR_PORT, '0.0.0.0', () => log('QR web page: http://<server-ip>:' + QR_PORT + '/?t=' + QR_TOKEN));
 
 log('bukutamu-wa start; poll', POLL, 'ms;', POLL_URL);
 client.initialize();
