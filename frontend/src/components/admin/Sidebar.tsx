@@ -11,6 +11,7 @@ import {
   FileText,
   PlusCircle,
   Info,
+  MessageSquare,
   LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/consultations', label: 'Antrian PST', icon: ClipboardList, allowedRoles: PST_DTSEN_ROLES },
   { to: '/admin/dtsen', label: 'Antrian DTSEN', icon: Database, allowedRoles: PST_DTSEN_ROLES },
   { to: '/admin/visits', label: 'Daftar Kunjungan', icon: FileText },
+  { to: '/admin/layanan-online', label: 'Layanan Online', icon: MessageSquare, allowedRoles: PST_DTSEN_ROLES },
   { to: '/admin/manual-entry', label: 'Tambah Kunjungan', icon: PlusCircle, allowedRoles: MUTATION_ENTRY_ROLES },
   { to: '/admin/tentang', label: 'Tentang', icon: Info },
 ]

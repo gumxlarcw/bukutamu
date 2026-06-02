@@ -43,6 +43,7 @@ const GuestListPage = lazyRetry(() => import('@/pages/admin/GuestListPage'))
 const GuestAddPage = lazyRetry(() => import('@/pages/admin/GuestAddPage'))
 const ConsultationQueuePage = lazyRetry(() => import('@/pages/admin/ConsultationQueuePage'))
 const ConsultationFormPage = lazyRetry(() => import('@/pages/admin/ConsultationFormPage'))
+const LayananOnlineInboxPage = lazyRetry(() => import('@/pages/admin/LayananOnlineInboxPage'))
 const DtsenQueuePage = lazyRetry(() => import('@/pages/admin/DtsenQueuePage'))
 const DtsenFormPage = lazyRetry(() => import('@/pages/admin/DtsenFormPage'))
 const VisitLogPage = lazyRetry(() => import('@/pages/admin/VisitLogPage'))
@@ -87,6 +88,7 @@ function App() {
                   <Route path="/admin/guests/import" element={<GuestImportPage />} />
                   <Route path="/admin/consultations" element={<ConsultationQueuePage />} />
                   <Route path="/admin/consultations/:id/form" element={<ConsultationFormPage />} />
+                  <Route path="/admin/layanan-online" element={<LayananOnlineInboxPage />} />
                   <Route path="/admin/dtsen" element={<DtsenQueuePage />} />
                   <Route path="/admin/dtsen/:id/form" element={<DtsenFormPage />} />
                   <Route path="/admin/visits" element={<VisitLogPage />} />
