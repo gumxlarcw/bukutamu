@@ -137,18 +137,18 @@ export default function EvaluationPage() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-orange-600 text-center mb-2">
               Konfirmasi Identitas — pastikan ini benar Anda
             </p>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col items-center text-center gap-2">
               <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
                 <UserCircle2 className="w-9 h-9 text-orange-600" strokeWidth={1.5} />
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-lg font-bold text-gray-900 leading-tight truncate">
+              <div className="min-w-0">
+                <p className="text-lg font-bold text-gray-900 leading-tight">
                   {formData.visitor.nama || '(nama tidak tersedia)'}
                 </p>
-                <p className="text-sm text-gray-600 leading-tight truncate">
+                <p className="text-sm text-gray-600 leading-tight">
                   {formData.visitor.nama_instansi || '(instansi tidak diisi)'}
                 </p>
-                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                <div className="flex items-center justify-center gap-3 mt-1.5 flex-wrap">
                   {formData.visitor.nomor_antrian && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
                       <Hash className="w-3 h-3" />
@@ -161,7 +161,7 @@ export default function EvaluationPage() {
                     </span>
                   ))}
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
+                <div className="flex items-center justify-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
                   <CalendarClock className="w-3.5 h-3.5" />
                   <span>Waktu kunjungan: {fmtKunjungan(formData.visitor.date_visit)}</span>
                 </div>
