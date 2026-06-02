@@ -98,8 +98,11 @@ client.on('message', async (msg) => {
     const waId = from;                     // exact reply target (@c.us or @lid) — reply here, never reconstruct
     let phone = waId.replace(/@.*$/, '');   // fallback digits for guest matching
     try { const c = await msg.getContact(); if (c && c.number) phone = String(c.number); } catch (_) { /* keep fallback */ }
-    if (ALLOW_FROM.length && !ALLOW_FROM.includes(normNum(phone))) {
-      log('diabaikan — pengirim ' + phone + ' tidak ada di allowFrom');
+    // Cocokkan allowFrom ke nomor TERESOLUSI maupun alamat mentah (@lid/@c.us) —
+    // WhatsApp kerap menyembunyikan nomor asli di balik @lid yang stabil per kontak.
+    const senderKeys = [normNum(phone), normNum(from)];
+    if (ALLOW_FROM.length && !ALLOW_FROM.some(a => senderKeys.includes(a))) {
+      log('diabaikan — pengirim ' + phone + ' / ' + from + ' tidak ada di allowFrom');
       return;
     }
     const res = await fetch(INGEST_URL, {
