@@ -241,12 +241,15 @@ class Wa extends Api_base {
             $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'msg_type' => 'thankyou', 'body' => $body, 'id_kunjungan' => (int) $v->id_kunjungan, 'status' => 'pending']);
         }
 
-        // 4. Auto-close eval timeouts (>7d since eval_link sent, no eval rows). Idempotent: only menunggu_evaluasi rows match.
+        // 4. Auto-close eval timeouts (>7d since the eval_link was ENQUEUED, no eval rows).
+        //    Keyed off o.created_at (enqueue time ≈ "menunggu_evaluasi since"), NOT o.sent_at,
+        //    so a visit can never get stuck open if the connector permanently fails to deliver
+        //    the link (sent_at would stay NULL forever). Idempotent: only menunggu_evaluasi rows match.
         $stale = $this->db->query(
             "SELECT k.id_kunjungan FROM tamdes_kunjungan k
              JOIN wa_outbox o ON o.id_kunjungan = k.id_kunjungan AND o.msg_type = 'eval_link'
              WHERE k.created_by = 'whatsapp' AND k.status = 'menunggu_evaluasi'
-               AND o.sent_at IS NOT NULL AND o.sent_at < ?
+               AND o.created_at < ?
                AND NOT EXISTS (SELECT 1 FROM tamdes_evaluasi_detail e WHERE e.id_kunjungan = k.id_kunjungan)",
             [date('Y-m-d H:i:s', time() - 7 * 24 * 3600)]
         )->result();
