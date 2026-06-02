@@ -2,7 +2,13 @@
 // Bukan offline-app sungguhan: API selalu network, navigasi & static asset
 // pakai cache-then-network agar shell loading lebih cepat saat re-open.
 
-const CACHE_NAME = 'admin-bukutamu-8200-v2';
+// Bump versi ini SETIAP rilis frontend yang mengubah bundle. Ganti nama cache
+// memicu `activate` menghapus cache lama + skipWaiting, supaya SW lama berhenti
+// menyajikan chunk JS basi (static asset = cache-first) dan klien dapat kode
+// terbaru pada full-reload berikutnya. Lupa bump = user lihat versi lama meski
+// origin sudah update (bug 2026-06-02: form konsultasi tampak kosong saat dibuka
+// ulang karena SW menyajikan ConsultationFormPage chunk lama).
+const CACHE_NAME = 'admin-bukutamu-8200-v3';
 const SHELL_PATHS = ['/admin', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
