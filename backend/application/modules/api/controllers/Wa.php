@@ -76,6 +76,14 @@ class Wa extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
 
+        // Same role gate as the FE sidebar (PST_DTSEN_ROLES): WA requests are SKD-type,
+        // handled by petugas PST. resepsionis (front-office) must NOT see the WA guest
+        // dataset — require_auth() alone would let any logged-in role read it.
+        $role = $this->current_user->role ?? '';
+        if (!in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin', 'pimpinan'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        }
+
         $rows = $this->db
             ->select('k.id_kunjungan, k.status, k.date_visit, k.selesai_timestamp, b.nama, b.nama_instansi, b.notel')
             ->select("(SELECT COUNT(*) FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan AND kp.rincian_data IS NOT NULL AND TRIM(kp.rincian_data) <> '') AS has_konsultasi", FALSE)
@@ -101,10 +109,17 @@ class Wa extends Api_base {
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $matches = $this->db->where('notel', $sess->phone_norm)->order_by('id_user', 'DESC')->get('tamdes_buku')->result();
-            $guest = null; $multi = false;
-            if (count($matches) === 1)      { $guest = $matches[0]; }
-            elseif (count($matches) > 1)    { $guest = $matches[0]; $multi = true; } // R5: most-recent + flag
+            // Prefill is gated only by phone possession (the token is bound to a session
+            // created from an inbound message). So NEVER echo high-sensitivity or biometric
+            // PII — select ONLY low-sensitivity demographic convenience fields (no email,
+            // no notel, no foto, no face_descriptor). And on a multi-match (shared or
+            // reassigned number, incl. known duplicate notel), return NO guest — a blank
+            // form — so one person's profile is never shown to another.
+            $cols = 'id_user, nama, jeniskelamin, umur, pendidikan, pekerjaan, kategori_instansi, nama_instansi, pemanfaatan';
+            $matches = $this->db->select($cols)->where('notel', $sess->phone_norm)
+                                ->order_by('id_user', 'DESC')->get('tamdes_buku')->result();
+            $guest = (count($matches) === 1) ? $matches[0] : null;
+            $multi = count($matches) > 1;
             $this->json_response(['success' => true, 'data' => [
                 'session_id'  => $id,
                 'phone'       => $sess->phone_norm,

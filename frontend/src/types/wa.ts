@@ -12,8 +12,10 @@ export interface WaPermintaanRow {
 export interface WaGuestMatch {
   id_user: number
   nama: string
-  email: string
-  notel: string
+  // email + notel are intentionally NOT returned by the prefill endpoint (PII):
+  // the backend echoes only low-sensitivity demographic fields based on phone match.
+  email?: string
+  notel?: string
   jeniskelamin: string
   umur: number | null
   pendidikan: number | null
