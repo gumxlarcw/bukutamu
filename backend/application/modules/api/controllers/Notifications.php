@@ -182,6 +182,7 @@ class Notifications extends Api_base {
         $cnt = (int) $this->db
             ->where('DATE(date_visit)', date('Y-m-d'))
             ->where_in('status', ['antri', 'dipanggil', 'proses'])
+            ->where('created_by <>', 'whatsapp')   // WA visits are not in the physical antrian
             ->group_start()
                 ->like('jenis_layanan', 'Perpustakaan')
                 ->or_like('jenis_layanan', 'Konsultasi Statistik')

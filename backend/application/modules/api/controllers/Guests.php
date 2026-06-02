@@ -22,6 +22,7 @@ class Guests extends Api_base {
                          ->like('nama', $search)
                          ->or_like('email', $search)
                          ->or_like('nama_instansi', $search)
+                         ->or_like('notel', $search)
                          ->group_end();
             }
             $total = $this->db->count_all_results('tamdes_buku');
@@ -32,6 +33,7 @@ class Guests extends Api_base {
                          ->like('nama', $search)
                          ->or_like('email', $search)
                          ->or_like('nama_instansi', $search)
+                         ->or_like('notel', $search)
                          ->group_end();
             }
             $guests = $this->db->order_by('id_user', 'DESC')

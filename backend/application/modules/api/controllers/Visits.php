@@ -157,6 +157,8 @@ class Visits extends Api_base {
             $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');
             $this->db->where('id_kunjungan', $id)->delete('dtsen_konsultasi');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
+            $this->db->where('id_kunjungan', $id)->delete('wa_sessions');
+            $this->db->where('id_kunjungan', $id)->delete('wa_outbox');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_kunjungan');
 
             $this->json_response(['success' => true, 'data' => null, 'message' => 'Kunjungan berhasil dihapus']);

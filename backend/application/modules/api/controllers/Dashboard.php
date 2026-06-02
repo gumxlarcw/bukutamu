@@ -48,7 +48,7 @@ class Dashboard extends Api_base {
         // Completed & queued
         $this->db->where($where)->where('status', 'selesai');
         $selesai = $this->db->count_all_results('tamdes_kunjungan');
-        $this->db->where($where)->where('status', 'antri');
+        $this->db->where($where)->where('status', 'antri')->where('created_by <>', 'whatsapp');
         $antri = $this->db->count_all_results('tamdes_kunjungan');
 
         $tingkat_selesai = $total_kunjungan > 0 ? round(($selesai / $total_kunjungan) * 100, 1) : 0;

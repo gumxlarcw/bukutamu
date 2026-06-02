@@ -18,7 +18,7 @@ class Evaluations extends Api_base {
         if ($requested_id !== null && $requested_id !== '') {
             $rid   = (int) $requested_id;
             $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $rid])->row();
-            if ($visit && $visit->status === 'menunggu_evaluasi' && $this->layanan_requires_skd_form($visit->jenis_layanan)) {
+            if ($visit && $visit->created_by !== 'whatsapp' && $visit->status === 'menunggu_evaluasi' && $this->layanan_requires_skd_form($visit->jenis_layanan)) {
                 $visit->kiosk_token = $this->mint_kiosk_token('eval-submit', $rid, 600);
                 $this->json_response(['success' => true, 'data' => $visit, 'message' => 'OK']);
             }
@@ -30,6 +30,7 @@ class Evaluations extends Api_base {
         // Resepsionis (Lainnya, Keperluan Pimpinan) skip evaluasi — defense in depth
         // jika ada visit yang lolos ke menunggu_evaluasi tapi bukan PST.
         $candidates = $this->db
+            ->where('created_by <>', 'whatsapp')   // WA evals are remote-only, never on the kiosk tablet
             ->order_by('id_kunjungan', 'ASC')
             ->get_where('tamdes_kunjungan', ['status' => 'menunggu_evaluasi'])
             ->result();
@@ -82,6 +83,7 @@ class Evaluations extends Api_base {
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('k.status', 'menunggu_evaluasi')
+            ->where('k.created_by <>', 'whatsapp')   // WA evals are remote-only
             ->order_by('k.id_kunjungan', 'ASC')
             ->get()->result();
 

@@ -90,10 +90,11 @@ class Queue_stats extends Api_base {
                                 ->where('YEAR(date_visit)', $tahun)
                                 ->group_by('created_by')
                                 ->get('tamdes_kunjungan')->result();
-        $sources_map = ['Kiosk' => 0, 'Manual (Admin)' => 0, 'Lainnya' => 0];
+        $sources_map = ['Kiosk' => 0, 'Manual (Admin)' => 0, 'WhatsApp' => 0, 'Lainnya' => 0];
         foreach ($source_rows as $r) {
             $cb = (string) $r->created_by;
             if ($cb === 'kiosk')                 $sources_map['Kiosk']           += (int) $r->jumlah;
+            elseif ($cb === 'whatsapp')          $sources_map['WhatsApp']        += (int) $r->jumlah;
             elseif (strpos($cb, 'admin:') === 0) $sources_map['Manual (Admin)'] += (int) $r->jumlah;
             else                                  $sources_map['Lainnya']        += (int) $r->jumlah;
         }
