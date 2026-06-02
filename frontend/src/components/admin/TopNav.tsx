@@ -19,6 +19,7 @@ import {
   BarChart3,
   UserCog,
   Info,
+  MessageSquare,
   LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -62,6 +63,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/guests', label: 'Daftar Tamu', icon: Users, minRole: 'operator' },
   { to: '/admin/consultations', label: 'PST', icon: ClipboardList, minRole: 'operator', allowedRoles: PST_DTSEN_ROLES },
   { to: '/admin/dtsen', label: 'DTSEN', icon: Database, minRole: 'operator', allowedRoles: PST_DTSEN_ROLES },
+  { to: '/admin/layanan-online', label: 'Layanan Online', icon: MessageSquare, minRole: 'operator', allowedRoles: PST_DTSEN_ROLES },
   { to: '/admin/visits', label: 'Kunjungan', icon: FileText, minRole: 'operator' },
   { to: '/admin/manual-entry', label: 'Tambah Manual', icon: PlusCircle, minRole: 'operator', allowedRoles: MUTATION_ENTRY_ROLES },
   { to: '/admin/evaluations', label: 'Evaluasi', icon: Star, minRole: 'admin' },
