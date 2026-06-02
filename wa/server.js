@@ -14,6 +14,8 @@ const fs = require('fs');
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const http = require('http');
+const QRCode = require('qrcode');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 const POLL = cfg.pollIntervalMs || 30000;
@@ -22,6 +24,7 @@ const BASE = String(cfg.apiBase || 'http://127.0.0.1:60').replace(/\/$/, '');
 const INGEST_URL = BASE + '/api/wa/ingest';
 const POLL_URL = BASE + '/api/wa/poll';
 const ACK_URL = BASE + '/api/wa/ack';
+const QR_PORT = cfg.qrPort || 5310;
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 if (typeof fetch !== 'function') { log('FATAL: need Node >= 18 (global fetch)'); process.exit(1); }
@@ -38,10 +41,16 @@ const client = new Client({
 });
 
 let ready = false;
-client.on('qr', (qr) => { log('Scan this QR with the BPS WhatsApp (0851...) to link as a device:'); qrcode.generate(qr, { small: true }); });
-client.on('ready', () => { ready = true; log('WA client ready'); });
+let latestQr = null;       // raw QR string, also served by the web page below
+let linkedNumber = null;   // set once linked
+client.on('qr', (qr) => {
+  latestQr = qr;
+  log('Scan QR — buka http://<server-ip>:' + QR_PORT + ' (atau lihat ASCII di bawah):');
+  qrcode.generate(qr, { small: true });
+});
+client.on('ready', () => { ready = true; latestQr = null; linkedNumber = client.info?.wid?.user || null; log('WA client ready; nomor=' + linkedNumber); });
 client.on('auth_failure', (m) => log('auth_failure', m));
-client.on('disconnected', (r) => { ready = false; log('disconnected', r); });
+client.on('disconnected', (r) => { ready = false; linkedNumber = null; log('disconnected', r); });
 
 client.on('message', async (msg) => {
   try {
@@ -96,6 +105,25 @@ async function tick() {
   } catch (e) { log('tick error', e.message); }
   finally { busy = false; }
 }
+
+// ── Halaman QR web (gambar QR yg gampang di-scan), meniru email-wa-bot /qr ──
+http.createServer(async (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  if (ready) {
+    res.end('<meta http-equiv="refresh" content="10"><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>&#9989; WhatsApp terhubung</h2><p>Nomor tertaut: <b>' + (linkedNumber || '?') + '</b></p><p>Connector bukutamu-wa siap menerima permintaan.</p></body>');
+    return;
+  }
+  if (!latestQr) {
+    res.end('<meta http-equiv="refresh" content="3"><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>Menyiapkan QR&#8230;</h2><p>Tunggu sebentar, halaman ini refresh otomatis.</p></body>');
+    return;
+  }
+  try {
+    const dataUrl = await QRCode.toDataURL(latestQr, { margin: 2, width: 320 });
+    res.end('<meta http-equiv="refresh" content="15"><body style="font-family:sans-serif;text-align:center;padding:24px"><h2>Scan untuk menautkan WhatsApp</h2><p>Di HP: WhatsApp &rarr; <b>Perangkat Tertaut</b> &rarr; <b>Tautkan Perangkat</b> &rarr; scan:</p><img src="' + dataUrl + '" alt="QR" style="width:320px;height:320px"><p style="color:#888">Scan dengan nomor WhatsApp yang ingin Anda tautkan. Halaman auto-refresh tiap 15 dtk sampai QR baru / terhubung.</p></body>');
+  } catch (e) {
+    res.end('<body>QR error: ' + e.message + '</body>');
+  }
+}).listen(QR_PORT, '0.0.0.0', () => log('QR web page on :' + QR_PORT + ' (buka http://<server-ip>:' + QR_PORT + ')'));
 
 log('bukutamu-wa start; poll', POLL, 'ms;', POLL_URL);
 client.initialize();
