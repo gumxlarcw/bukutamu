@@ -1,12 +1,13 @@
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { waApi } from '@/api/wa'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StatsCard } from '@/components/admin/StatsCard'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { MessageSquare, ExternalLink, CheckCircle2, Inbox, Clock, Hourglass, CircleCheck } from 'lucide-react'
+import { MessageSquare, ExternalLink, CheckCircle2, Inbox, Clock, Hourglass, CircleCheck, Unplug } from 'lucide-react'
 import type { WaInboxRow } from '@/types/wa'
 
 function formatWhen(iso: string): string {
@@ -18,27 +19,49 @@ function formatWhen(iso: string): string {
 
 /* ── Panel koneksi WhatsApp: QR untuk discan, atau status terhubung ───────── */
 function WaConnectPanel() {
+  const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['wa-qr-state'],
     queryFn: () => waApi.getQrState().then(r => r.data.data),
     refetchInterval: 6000,
   })
+  const disconnect = useMutation({
+    mutationFn: () => waApi.disconnect(),
+    onSuccess: () => {
+      toast.success('Memutuskan koneksi… QR baru akan muncul (±10–15 detik).')
+      qc.invalidateQueries({ queryKey: ['wa-qr-state'] })
+    },
+    onError: () => toast.error('Gagal memutuskan koneksi'),
+  })
 
   if (!data) return null
 
-  // Terhubung → strip hijau ramping.
+  // Terhubung → strip hijau ramping + tombol ganti nomor.
   if (data.ready) {
     return (
       <div className="admin-card p-3.5 flex items-center gap-3">
         <span className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center shrink-0">
           <CheckCircle2 className="w-5 h-5 text-emerald-600" />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold" style={{ color: 'var(--admin-text)' }}>WhatsApp terhubung</p>
           <p className="text-xs truncate" style={{ color: 'var(--admin-text-muted)' }}>
             Nomor {data.number ?? '—'} · connector siap menerima permintaan
           </p>
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+          disabled={disconnect.isPending}
+          onClick={() => {
+            if (window.confirm('Putuskan WhatsApp dan ganti nomor? Connector akan menampilkan QR baru untuk discan.')) {
+              disconnect.mutate()
+            }
+          }}
+        >
+          <Unplug className="w-3.5 h-3.5 mr-1" /> {disconnect.isPending ? 'Memutuskan…' : 'Putuskan & Ganti Nomor'}
+        </Button>
       </div>
     )
   }

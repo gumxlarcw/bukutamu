@@ -90,3 +90,4 @@ $route['api/wa/inbox']           = 'api/wa/inbox';         // GET  admin (Layana
 $route['api/wa/session/(:num)']  = 'api/wa/session/$1';    // GET prefill / POST submit (kiosk-token wa-intake)
 $route['api/wa/eval/(:num)']     = 'api/wa/eval_access/$1';// GET  exchange wa-eval-access -> eval-submit
 $route['api/wa/qr-state']      = 'api/wa/qr_state';
+$route['api/wa/disconnect']     = 'api/wa/disconnect';

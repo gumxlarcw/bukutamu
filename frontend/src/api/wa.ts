@@ -17,4 +17,5 @@ export const waApi = {
     ),
   inbox: () => apiClient.get<ApiResponse<WaInboxRow[]>>('/api/wa/inbox'),
   getQrState: () => apiClient.get<ApiResponse<WaQrState>>('/api/wa/qr-state'),
+  disconnect: () => apiClient.post<ApiResponse<null>>('/api/wa/disconnect'),
 }

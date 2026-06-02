@@ -59,7 +59,25 @@ class Wa extends Api_base {
         $messages = array_map(function ($m) {
             return ['id' => (int) $m->id, 'phone' => $m->phone_raw, 'wa_chat_id' => $m->wa_chat_id, 'body' => $m->body];
         }, $pending);
-        $this->json_response(['success' => true, 'data' => ['messages' => $messages], 'message' => 'OK']);
+
+        // Pending admin command (read-once), e.g. 'logout' to unlink & re-scan a new number.
+        $st = $this->db->get_where('wa_qr_state', ['id' => 1])->row();
+        $command = $st ? $st->command : null;
+        if ($command) $this->db->where('id', 1)->update('wa_qr_state', ['command' => null]);
+
+        $this->json_response(['success' => true, 'data' => ['messages' => $messages, 'command' => $command], 'message' => 'OK']);
+    }
+
+    // POST /api/wa/disconnect (auth + PST role) — admin minta connector putus tautan & tampilkan QR baru (ganti nomor).
+    public function disconnect() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        $role = $this->current_user->role ?? '';
+        if (!in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin', 'pimpinan'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        }
+        $this->db->where('id', 1)->update('wa_qr_state', ['command' => 'logout', 'ready' => 0, 'qr' => null, 'number' => null]);
+        $this->json_response(['success' => true, 'data' => null, 'message' => 'Memutuskan koneksi… QR baru akan muncul sebentar lagi.']);
     }
 
     // POST /api/wa/ack  { ids:[...] }

@@ -72,9 +72,11 @@ client.on('ready', () => {
 });
 client.on('auth_failure', (m) => log('auth_failure', m));
 client.on('disconnected', (r) => { ready = false; linkedNumber = null; log('disconnected', r); pushQrState({ qr: null, ready: false }); });
+client.on('message_create', (m) => { try { if (m && !m.fromMe) log('DIAG event=message_create(incoming) from=' + m.from); } catch (_) {} });
 
 client.on('message', async (msg) => {
   try {
+    log('DIAG event=message from=' + msg.from + ' isStatus=' + msg.isStatus + ' body=' + String(msg.body || '').slice(0, 24));
     if (typeof msg.from !== 'string' || msg.from.endsWith('@g.us')) return; // ignore groups
     if (msg.isStatus) return;
     const waId = msg.from;                 // exact reply target (@c.us or @lid) — reply here, never reconstruct
@@ -101,6 +103,13 @@ async function tick() {
     const res = await fetch(POLL_URL, { method: 'POST', headers: { 'X-Internal-Secret': cfg.internalSecret } });
     if (!res.ok) { log('poll http', res.status); return; }
     const body = await res.json();
+    if (body.data && body.data.command === 'logout') {
+      log('command: logout — memutuskan tautan & restart untuk QR baru');
+      try { await client.logout(); } catch (e) { log('logout err', e.message); }
+      try { fs.rmSync(path.join(__dirname, '.wwebjs_auth'), { recursive: true, force: true }); } catch (e) { log('rm auth err', e.message); }
+      setTimeout(() => process.exit(0), 1200); // PM2 autorestart → init bersih → QR baru
+      return;
+    }
     const messages = (body.data && body.data.messages) || [];
     const sent = [];
     for (const m of messages) {
