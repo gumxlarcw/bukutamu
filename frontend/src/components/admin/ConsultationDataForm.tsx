@@ -1,6 +1,8 @@
 import {
   STATUS_DATA_OPTIONS,
   JENIS_PUBLIKASI_OPTIONS,
+  LEVEL_DATA_OPTIONS,
+  PERIODE_DATA_OPTIONS,
   isPemerintahKategori,
   type ConsultationDataRow,
 } from '@/types/visit'
@@ -132,6 +134,24 @@ export function ConsultationDataForm({
               placeholder="Contoh: Indeks Pembangunan Manusia Halmahera 2020-2024"
             />
           </div>
+
+          {(row.wilayah_data || row.level_data != null || row.periode_data != null || row.tahun_awal != null || row.tahun_akhir != null) && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-3 space-y-0.5 text-sm">
+              <p className="font-semibold text-orange-700 text-xs uppercase tracking-wide">Detail permintaan dari pengunjung</p>
+              {row.level_data != null && (
+                <p><span className="text-muted-foreground">Cakupan: </span>{LEVEL_DATA_OPTIONS.find(o => o.value === row.level_data)?.label ?? row.level_data}</p>
+              )}
+              {row.wilayah_data && (
+                <p><span className="text-muted-foreground">Wilayah: </span>{row.wilayah_data}</p>
+              )}
+              {row.periode_data != null && (
+                <p><span className="text-muted-foreground">Periode: </span>{PERIODE_DATA_OPTIONS.find(o => o.value === row.periode_data)?.label ?? row.periode_data}</p>
+              )}
+              {(row.tahun_awal != null || row.tahun_akhir != null) && (
+                <p><span className="text-muted-foreground">Tahun: </span>{row.tahun_awal ?? '?'}{row.tahun_akhir != null && row.tahun_akhir !== row.tahun_awal ? `–${row.tahun_akhir}` : ''}</p>
+              )}
+            </div>
+          )}
 
           {/* 3. Apakah data sudah diperoleh? */}
           <div className="space-y-1.5">
