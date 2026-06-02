@@ -72,14 +72,20 @@ client.on('ready', () => {
 });
 client.on('auth_failure', (m) => log('auth_failure', m));
 client.on('disconnected', (r) => { ready = false; linkedNumber = null; log('disconnected', r); pushQrState({ qr: null, ready: false }); });
-client.on('message_create', (m) => { try { if (m && !m.fromMe) log('DIAG event=message_create(incoming) from=' + m.from); } catch (_) {} });
+
+// Tipe pesan sistem / non-percakapan yang harus diabaikan.
+const IGNORED_TYPES = new Set(['e2e_notification', 'notification_template', 'gp2', 'call_log', 'ciphertext', 'revoked', 'protocol']);
 
 client.on('message', async (msg) => {
   try {
-    log('DIAG event=message from=' + msg.from + ' isStatus=' + msg.isStatus + ' body=' + String(msg.body || '').slice(0, 24));
-    if (typeof msg.from !== 'string' || msg.from.endsWith('@g.us')) return; // ignore groups
-    if (msg.isStatus) return;
-    const waId = msg.from;                 // exact reply target (@c.us or @lid) — reply here, never reconstruct
+    const from = typeof msg.from === 'string' ? msg.from : '';
+    // HANYA balas DM (chat pribadi 1-1): alamat @c.us atau @lid.
+    // Abaikan grup (@g.us), broadcast, status, channel/newsletter, pesan sendiri, & notifikasi sistem.
+    const isDm = from.endsWith('@c.us') || from.endsWith('@lid');
+    log('event message from=' + from + ' type=' + msg.type + ' fromMe=' + !!msg.fromMe + ' dm=' + isDm);
+    if (!isDm || msg.fromMe || msg.isStatus || msg.broadcast) return;
+    if (msg.type && IGNORED_TYPES.has(msg.type)) return;
+    const waId = from;                     // exact reply target (@c.us or @lid) — reply here, never reconstruct
     let phone = waId.replace(/@.*$/, '');   // fallback digits for guest matching
     try { const c = await msg.getContact(); if (c && c.number) phone = String(c.number); } catch (_) { /* keep fallback */ }
     const res = await fetch(INGEST_URL, {
