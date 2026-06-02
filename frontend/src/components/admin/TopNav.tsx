@@ -3,6 +3,7 @@ import { useAuth } from '@/providers/AuthProvider'
 import { cn } from '@/lib/utils'
 import { InstallPWAButton } from '@/components/admin/InstallPWAButton'
 import { NotificationBell } from '@/components/admin/NotificationBell'
+import { EnableNotificationsButton } from '@/components/admin/EnableNotificationsButton'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import type { UserRole } from '@/api/auth'
 import {
@@ -128,6 +129,7 @@ export function TopNav() {
         {/* Actions */}
         <div className="flex items-center gap-3 shrink-0">
           <NotificationBell />
+          <EnableNotificationsButton />
           <InstallPWAButton />
           {user && (
             <span className="hidden lg:inline text-xs text-[--admin-text-muted]">

@@ -2,15 +2,12 @@ import { useEffect, useRef } from 'react'
 import { pushApi } from '@/api/push'
 
 /**
- * Daftarkan browser ini ke Web Push (notifikasi desktop Windows) untuk admin.
+ * Web Push (notifikasi desktop Windows) untuk admin.
  *
- * Alur (Tier-2): minta izin → ambil VAPID public key dari backend → subscribe
- * via service worker pushManager → kirim subscription ke /api/push/subscribe
- * (di-bind ke role user yang login). Service `notifier/` yang mengirim push-nya.
- *
- * Aman & non-blocking: no-op kalau SW/PushManager/Notification tidak tersedia
- * (mis. dev tanpa SW, browser lama) atau izin sudah 'denied'. Hanya jalan sekali
- * per mount. Pasang di TopNav supaya berlaku admin-wide.
+ * Penting: prompt izin (`Notification.requestPermission`) HANYA dipanggil dari
+ * gesture user (tombol "Aktifkan Notifikasi" → enablePush). Browser memblokir
+ * permintaan izin tanpa interaksi, jadi memanggilnya saat mount tidak memunculkan
+ * prompt. Hook ini saat mount hanya subscribe DIAM-DIAM kalau izin sudah granted.
  */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -21,19 +18,14 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out
 }
 
-async function enablePush(): Promise<void> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return
-  if (Notification.permission === 'denied') return
+export function pushSupported(): boolean {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+}
 
-  let permission: NotificationPermission = Notification.permission
-  if (permission === 'default') {
-    permission = await Notification.requestPermission()
-  }
-  if (permission !== 'granted') return
-
+// Subscribe ke pushManager + kirim ke backend. Asumsi izin sudah 'granted'.
+async function doSubscribe(): Promise<void> {
   const reg = await navigator.serviceWorker.ready
   let sub = await reg.pushManager.getSubscription()
-
   if (!sub) {
     const res = await pushApi.getVapid()
     const key = res.data.data?.public_key
@@ -45,18 +37,36 @@ async function enablePush(): Promise<void> {
       applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
     })
   }
-
   // Idempoten di backend (upsert by endpoint) — refresh role/last_seen.
   await pushApi.subscribe(sub.toJSON())
 }
 
+/**
+ * Dipanggil dari gesture user (tombol). Minta izin lalu subscribe.
+ * Return permission akhir supaya pemanggil bisa update UI.
+ */
+export async function enablePush(): Promise<NotificationPermission> {
+  if (!pushSupported()) return 'denied'
+  let permission: NotificationPermission = Notification.permission
+  if (permission === 'default') {
+    permission = await Notification.requestPermission()
+  }
+  if (permission === 'granted') {
+    await doSubscribe()
+  }
+  return permission
+}
+
+/**
+ * Pasang di TopNav. Saat mount, kalau izin SUDAH granted → subscribe diam-diam
+ * (mis. user yang sudah pernah mengaktifkan). TIDAK memprompt di sini.
+ */
 export function usePushNotifications(enabled: boolean = true): void {
   const triedRef = useRef(false)
   useEffect(() => {
     if (!enabled || triedRef.current) return
     triedRef.current = true
-    enablePush().catch((err) => console.warn('[push] gagal mengaktifkan notifikasi:', err))
+    if (!pushSupported() || Notification.permission !== 'granted') return
+    doSubscribe().catch((err) => console.warn('[push] subscribe gagal:', err))
   }, [enabled])
 }
-
-export { enablePush }

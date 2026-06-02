@@ -8,7 +8,7 @@
 // terbaru pada full-reload berikutnya. Lupa bump = user lihat versi lama meski
 // origin sudah update (bug 2026-06-02: form konsultasi tampak kosong saat dibuka
 // ulang karena SW menyajikan ConsultationFormPage chunk lama).
-const CACHE_NAME = 'admin-bukutamu-8200-v8';
+const CACHE_NAME = 'admin-bukutamu-8200-v9';
 const SHELL_PATHS = ['/admin', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
