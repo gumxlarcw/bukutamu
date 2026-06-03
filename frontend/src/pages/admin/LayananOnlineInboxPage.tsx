@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StatsCard } from '@/components/admin/StatsCard'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { MessageSquare, ExternalLink, CheckCircle2, Inbox, Clock, Hourglass, CircleCheck, Unplug } from 'lucide-react'
+import { MessageSquare, ExternalLink, CheckCircle2, Inbox, Clock, Hourglass, CircleCheck, Unplug, Send } from 'lucide-react'
 import type { WaInboxRow } from '@/types/wa'
 
 function formatWhen(iso: string): string {
@@ -17,7 +17,7 @@ function formatWhen(iso: string): string {
   return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-/* ── Panel koneksi WhatsApp: QR untuk discan, atau status terhubung ───────── */
+/* ── Panel koneksi WhatsApp: QR untuk discan, atau status terhubung + ganti nomor ── */
 function WaConnectPanel() {
   const qc = useQueryClient()
   const { data } = useQuery({
@@ -36,7 +36,6 @@ function WaConnectPanel() {
 
   if (!data) return null
 
-  // Terhubung → strip hijau ramping + tombol ganti nomor.
   if (data.ready) {
     return (
       <div className="admin-card p-3.5 flex items-center gap-3">
@@ -66,7 +65,6 @@ function WaConnectPanel() {
     )
   }
 
-  // Belum terhubung → kartu QR yang jelas.
   return (
     <div className="admin-card p-6">
       <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -108,11 +106,13 @@ export default function LayananOnlineInboxPage() {
   })
 
   const rows: WaInboxRow[] = data ?? []
+  const isVisit = (r: WaInboxRow) => r.kind === 'visit'
   const counts = {
-    baru: rows.filter(r => r.status === 'antri' || r.status === 'dipanggil').length,
-    diproses: rows.filter(r => r.status === 'proses' || r.status === 'diproses').length,
-    evaluasi: rows.filter(r => r.status === 'menunggu_evaluasi').length,
-    selesai: rows.filter(r => r.status === 'selesai').length,
+    form: rows.filter(r => r.kind === 'pending').length,
+    baru: rows.filter(r => isVisit(r) && (r.status === 'antri' || r.status === 'dipanggil')).length,
+    diproses: rows.filter(r => isVisit(r) && (r.status === 'proses' || r.status === 'diproses')).length,
+    evaluasi: rows.filter(r => isVisit(r) && r.status === 'menunggu_evaluasi').length,
+    selesai: rows.filter(r => isVisit(r) && r.status === 'selesai').length,
   }
 
   return (
@@ -129,14 +129,15 @@ export default function LayananOnlineInboxPage() {
       <WaConnectPanel />
 
       {/* Ringkasan status */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatsCard label="Baru" value={counts.baru} icon={<Inbox className="w-5 h-5" />} accent="primary" />
-        <StatsCard label="Diproses" value={counts.diproses} icon={<Clock className="w-5 h-5" />} accent="secondary" />
-        <StatsCard label="Menunggu Evaluasi" value={counts.evaluasi} icon={<Hourglass className="w-5 h-5" />} accent="primary" />
-        <StatsCard label="Selesai" value={counts.selesai} icon={<CircleCheck className="w-5 h-5" />} accent="secondary" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <StatsCard label="Menunggu Form" value={counts.form} icon={<Send className="w-5 h-5" />} accent="primary" />
+        <StatsCard label="Baru" value={counts.baru} icon={<Inbox className="w-5 h-5" />} accent="secondary" />
+        <StatsCard label="Diproses" value={counts.diproses} icon={<Clock className="w-5 h-5" />} accent="primary" />
+        <StatsCard label="Menunggu Evaluasi" value={counts.evaluasi} icon={<Hourglass className="w-5 h-5" />} accent="secondary" />
+        <StatsCard label="Selesai" value={counts.selesai} icon={<CircleCheck className="w-5 h-5" />} accent="primary" />
       </div>
 
-      {/* Daftar permintaan */}
+      {/* Daftar permintaan (termasuk yang belum isi form) */}
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
@@ -145,39 +146,52 @@ export default function LayananOnlineInboxPage() {
         <EmptyState icon="💬" message="Belum ada permintaan online" action="Permintaan dari WhatsApp akan muncul di sini." />
       ) : (
         <div className="space-y-3">
-          {rows.map((r) => (
-            <div key={r.id_kunjungan} className="admin-card flex items-center gap-4 p-4">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-emerald-50">
-                <MessageSquare className="w-5 h-5 text-emerald-600" />
-              </div>
+          {rows.map((r) => {
+            const pending = r.kind === 'pending'
+            return (
+              <div key={r.kind + '-' + (r.id_kunjungan ?? r.session_id)} className="admin-card flex items-center gap-4 p-4">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${pending ? 'bg-amber-50' : 'bg-emerald-50'}`}>
+                  {pending ? <Send className="w-5 h-5 text-amber-600" /> : <MessageSquare className="w-5 h-5 text-emerald-600" />}
+                </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2 min-w-0">
-                  <p className="font-semibold text-sm truncate" style={{ color: 'var(--admin-text)' }}>
-                    {r.nama || '(tanpa nama)'}
-                  </p>
-                  {r.nama_instansi && (
-                    <span className="text-xs truncate" style={{ color: 'var(--admin-text-muted)' }}>· {r.nama_instansi}</span>
+                <div className="flex-1 min-w-0">
+                  {pending ? (
+                    <>
+                      <p className="font-semibold text-sm" style={{ color: 'var(--admin-text)' }}>Menunggu pengunjung mengisi form</p>
+                      <p className="text-xs truncate mt-0.5" style={{ color: 'var(--admin-text-secondary)' }}>Link sudah dikirim · belum ada data masuk</p>
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--admin-text-muted)' }}>{r.notel || '—'} · {formatWhen(r.date)}</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <p className="font-semibold text-sm truncate" style={{ color: 'var(--admin-text)' }}>{r.nama || '(tanpa nama)'}</p>
+                        {r.nama_instansi && <span className="text-xs truncate" style={{ color: 'var(--admin-text-muted)' }}>· {r.nama_instansi}</span>}
+                      </div>
+                      <p className="text-xs truncate mt-0.5" style={{ color: 'var(--admin-text-secondary)' }}>{r.permintaan || 'Permintaan belum dilengkapi'}</p>
+                      <p className="text-[11px] mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--admin-text-muted)' }}>
+                        <span className="font-mono font-medium px-1.5 py-0.5 rounded bg-[var(--admin-primary-light)] text-[var(--admin-primary)]">WA-{r.id_kunjungan}</span>
+                        <span>{r.notel || '—'}</span>
+                        <span>·</span>
+                        <span>{formatWhen(r.date)}</span>
+                      </p>
+                    </>
                   )}
                 </div>
-                <p className="text-xs truncate mt-0.5" style={{ color: 'var(--admin-text-secondary)' }}>
-                  {r.permintaan || 'Permintaan belum dilengkapi'}
-                </p>
-                <p className="text-[11px] mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--admin-text-muted)' }}>
-                  <span className="font-mono font-medium px-1.5 py-0.5 rounded bg-[var(--admin-primary-light)] text-[var(--admin-primary)]">WA-{r.id_kunjungan}</span>
-                  <span>{r.notel || '—'}</span>
-                  <span>·</span>
-                  <span>{formatWhen(r.date_visit)}</span>
-                </p>
+
+                {pending ? (
+                  <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Menunggu Form</span>
+                ) : (
+                  <StatusBadge status={r.status} />
+                )}
+
+                {!pending && (
+                  <Button size="sm" variant="outline" className="shrink-0" onClick={() => navigate(`/admin/consultations/${r.id_kunjungan}/form`)}>
+                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> Proses
+                  </Button>
+                )}
               </div>
-
-              <StatusBadge status={r.status} />
-
-              <Button size="sm" variant="outline" className="shrink-0" onClick={() => navigate(`/admin/consultations/${r.id_kunjungan}/form`)}>
-                <ExternalLink className="w-3.5 h-3.5 mr-1" /> Proses
-              </Button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

@@ -116,9 +116,9 @@ class Wa extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
         }
 
-        $rows = $this->db
-            ->select('k.id_kunjungan, k.status, k.date_visit, k.selesai_timestamp, b.nama, b.nama_instansi, b.notel')
-            ->select("(SELECT COUNT(*) FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan AND kp.rincian_data IS NOT NULL AND TRIM(kp.rincian_data) <> '') AS has_konsultasi", FALSE)
+        // 1) Visit yang sudah submit form (punya kunjungan).
+        $visits = $this->db
+            ->select('k.id_kunjungan, k.status, k.date_visit AS dt, b.nama, b.nama_instansi, b.notel')
             ->select("(SELECT GROUP_CONCAT(kp.rincian_data SEPARATOR ' · ') FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan) AS permintaan", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
@@ -127,7 +127,43 @@ class Wa extends Api_base {
             ->limit(200)
             ->get()->result();
 
-        $this->json_response(['success' => true, 'data' => $rows, 'message' => 'OK']);
+        $items = [];
+        foreach ($visits as $v) {
+            $items[] = [
+                'kind'          => 'visit',
+                'id_kunjungan'  => (int) $v->id_kunjungan,
+                'session_id'    => null,
+                'status'        => $v->status,
+                'date'          => $v->dt,
+                'nama'          => $v->nama,
+                'nama_instansi' => $v->nama_instansi,
+                'notel'         => $v->notel,
+                'permintaan'    => $v->permintaan,
+            ];
+        }
+
+        // 2) Sesi yang sudah dikirimi link tapi BELUM mengisi form (awaiting_form).
+        $pend = $this->db->select('id, phone_norm, last_inbound_at, link_sent_at, created_at')
+                         ->where('state', 'awaiting_form')
+                         ->order_by('id', 'DESC')->limit(100)->get('wa_sessions')->result();
+        foreach ($pend as $s) {
+            $items[] = [
+                'kind'          => 'pending',
+                'id_kunjungan'  => null,
+                'session_id'    => (int) $s->id,
+                'status'        => 'menunggu_form',
+                'date'          => $s->last_inbound_at ?: ($s->link_sent_at ?: $s->created_at),
+                'nama'          => null,
+                'nama_instansi' => null,
+                'notel'         => $s->phone_norm,
+                'permintaan'    => null,
+            ];
+        }
+
+        // Urutkan gabungan berdasarkan aktivitas terbaru.
+        usort($items, function ($a, $b) { return strcmp((string) $b['date'], (string) $a['date']); });
+
+        $this->json_response(['success' => true, 'data' => $items, 'message' => 'OK']);
     }
 
     /* ───────────────────────── public, kiosk-token guarded (requester browser) ───────────────────────── */
