@@ -39,7 +39,10 @@ export function VisitorForm({ value, onChange, restoreFromStorage = true }: Visi
         } catch { /* ignore */ }
       }
     }
-    onChange({ ...value, tgldatang: getNowIso() })
+    // Pertahankan tgldatang bila sudah terisi (mis. kembali ke langkah ini di wizard WA) —
+    // jangan timpa dengan waktu remount; set hanya saat masih kosong (mount pertama).
+    const ts = value.tgldatang && value.tgldatang.trim() ? value.tgldatang : getNowIso()
+    onChange({ ...value, tgldatang: ts })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -35,6 +35,7 @@ export interface WaSessionPrefill {
 
 export interface WaIntakePayload extends Partial<GuestFormData> {
   permintaan: WaPermintaanRow[]
+  update_profile?: boolean   // true = "Perbarui Profil" (timpa); false = pakai data DB apa adanya
 }
 
 export interface WaInboxRow {

@@ -43,14 +43,19 @@ export default function LayananOnlinePage() {
     }
   }, [prefill])
 
+  // Identitas hanya boleh dari DB (match nomor HP). known = nomor cocok unik di DB.
+  const known = !!prefill?.guest && !prefill?.multi_match
+
   const [guest, setGuest] = useState<GuestFormData | null>(null)
   const [rows, setRows] = useState<WaPermintaanRow[]>([emptyPermintaanRow()])
   const [ticket, setTicket] = useState<string | null>(null)
+  const [step, setStep] = useState<1 | 2>(1)         // 1 = Data Diri, 2 = Data yang Dibutuhkan
+  const [editProfile, setEditProfile] = useState(false) // true → user memilih "Perbarui Profil"
   const effGuest = guest ?? initialGuest
 
   const submit = useMutation({
     mutationFn: () =>
-      waApi.submitSession(Number(sessionId), token, { ...effGuest, permintaan: rows }).then(r => r.data.data),
+      waApi.submitSession(Number(sessionId), token, { ...effGuest, permintaan: rows, update_profile: editProfile }).then(r => r.data.data),
     onSuccess: (d) => setTicket(d?.ticket ?? null),
     onError: (e: unknown) => {
       const msg = e && typeof e === 'object' && 'response' in e
@@ -73,31 +78,71 @@ export default function LayananOnlinePage() {
     )
   }
 
-  const canSubmit = effGuest.nama.trim() !== '' && rows.some(r => r.rincian_data.trim() !== '')
+  const namaOk = effGuest.nama.trim() !== ''
+  const permintaanOk = rows.some(r => r.rincian_data.trim() !== '')
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6">
-      <header className="text-center">
+      <header className="text-center space-y-2">
         <h1 className="text-lg font-bold">Layanan Data BPS Maluku Utara</h1>
-        <p className="text-sm text-muted-foreground">Lengkapi data berikut untuk kami proses.</p>
-        {prefill.multi_match && (
-          <p className="text-xs text-amber-600 mt-1">Beberapa profil terkait nomor ini — petugas akan memverifikasi.</p>
-        )}
+        <p className="text-sm text-muted-foreground">
+          Langkah {step} dari 2 — {step === 1 ? 'Data Diri' : 'Data yang Dibutuhkan'}
+        </p>
+        <div className="flex gap-1.5 justify-center">
+          <span className={`h-1.5 w-12 rounded-full transition-colors ${step >= 1 ? 'bg-primary' : 'bg-muted'}`} />
+          <span className={`h-1.5 w-12 rounded-full transition-colors ${step >= 2 ? 'bg-primary' : 'bg-muted'}`} />
+        </div>
       </header>
 
-      <section>
-        <h2 className="font-semibold mb-2">A. Identitas</h2>
-        <VisitorForm value={effGuest} onChange={setGuest} restoreFromStorage={false} />
-      </section>
+      {/* ── Langkah 1 — Data Diri ── */}
+      {step === 1 && (
+        <section className="space-y-4">
+          <h2 className="font-semibold">A. Data Diri</h2>
 
-      <section>
-        <h2 className="font-semibold mb-2">B. Permintaan Data</h2>
-        <PermintaanDataForm rows={rows} onChange={setRows} />
-      </section>
+          {known && !editProfile ? (
+            <>
+              <div className="rounded-lg border p-4 space-y-1 bg-muted/30">
+                <p className="font-medium text-base">{effGuest.nama || '—'}</p>
+                {effGuest.nama_instansi && <p className="text-sm text-muted-foreground">{effGuest.nama_instansi}</p>}
+                <p className="text-xs text-muted-foreground pt-1">
+                  Data Anda sudah kami miliki dari kunjungan sebelumnya. Anda bisa langsung lanjut, atau perbarui bila ada perubahan.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setEditProfile(true)}>Perbarui Profil</Button>
+                <Button className="flex-1" disabled={!namaOk} onClick={() => setStep(2)}>Gunakan data ini →</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {prefill.multi_match && (
+                <p className="text-xs text-amber-600">Beberapa profil terkait nomor ini — silakan lengkapi data Anda; petugas akan memverifikasi.</p>
+              )}
+              <VisitorForm value={effGuest} onChange={setGuest} restoreFromStorage={false} />
+              <div className="flex gap-2">
+                {known && (
+                  <Button variant="outline" className="flex-1" onClick={() => { setEditProfile(false); setGuest(null) }}>Batal</Button>
+                )}
+                <Button className="flex-1" disabled={!namaOk} onClick={() => setStep(2)}>Lanjut →</Button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
-      <Button className="w-full" disabled={!canSubmit || submit.isPending} onClick={() => submit.mutate()}>
-        {submit.isPending ? 'Mengirim…' : 'Kirim Permintaan'}
-      </Button>
+      {/* ── Langkah 2 — Data yang Dibutuhkan ── */}
+      {step === 2 && (
+        <section className="space-y-4">
+          <h2 className="font-semibold">B. Data yang Dibutuhkan</h2>
+          <PermintaanDataForm rows={rows} onChange={setRows} />
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>← Kembali</Button>
+            <Button className="flex-1" disabled={!permintaanOk || !namaOk || submit.isPending} onClick={() => submit.mutate()}>
+              {submit.isPending ? 'Mengirim…' : 'Kirim Permintaan'}
+            </Button>
+          </div>
+        </section>
+      )}
     </div>
   )
 }

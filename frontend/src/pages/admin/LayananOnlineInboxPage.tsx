@@ -157,8 +157,8 @@ export default function LayananOnlineInboxPage() {
                 <div className="flex-1 min-w-0">
                   {pending ? (
                     <>
-                      <p className="font-semibold text-sm" style={{ color: 'var(--admin-text)' }}>Menunggu pengunjung mengisi form</p>
-                      <p className="text-xs truncate mt-0.5" style={{ color: 'var(--admin-text-secondary)' }}>Link sudah dikirim · belum ada data masuk</p>
+                      <p className="font-semibold text-sm truncate" style={{ color: 'var(--admin-text)' }}>{r.nama || 'Belum terdaftar'}</p>
+                      <p className="text-xs truncate mt-0.5" style={{ color: 'var(--admin-text-secondary)' }}>Menunggu pengunjung mengisi form · link sudah dikirim</p>
                       <p className="text-[11px] mt-1" style={{ color: 'var(--admin-text-muted)' }}>{r.notel || '—'} · {formatWhen(r.date)}</p>
                     </>
                   ) : (

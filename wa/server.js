@@ -96,8 +96,20 @@ client.on('message', async (msg) => {
     if (!isDm || msg.fromMe || msg.isStatus || msg.broadcast) return;
     if (msg.type && IGNORED_TYPES.has(msg.type)) return;
     const waId = from;                     // exact reply target (@c.us or @lid) — reply here, never reconstruct
-    let phone = waId.replace(/@.*$/, '');   // fallback digits for guest matching
-    try { const c = await msg.getContact(); if (c && c.number) phone = String(c.number); } catch (_) { /* keep fallback */ }
+    let phone = waId.replace(/@.*$/, '');   // @c.us → sudah nomor; @lid → di-resolve di bawah
+    // WhatsApp privacy: DM bisa datang sebagai @lid (Linked Identity) — digit di
+    // JID BUKAN nomor HP. Resolusikan ke nomor asli lewat peta LID↔phone milik
+    // WhatsApp: getContactLidAndPhone([lid]) → [{ lid, pn }], pn = "62xxx@c.us".
+    // (wwebjs >= 1.34; balas tetap ke @lid via waId — jangan rekonstruksi.)
+    // Catatan: nama profil WhatsApp (pushname) SENGAJA tidak diambil — identitas
+    // hanya boleh bersumber dari DB (match nomor HP / hasil isi form).
+    if (from.endsWith('@lid') && typeof client.getContactLidAndPhone === 'function') {
+      try {
+        const [map] = await client.getContactLidAndPhone([from]);
+        if (map && map.pn) phone = String(map.pn).replace(/@.*$/, '');
+        log('lid-resolve from=' + from + ' pn=' + (map && map.pn));
+      } catch (e) { log('lid-resolve err', e.message); }
+    }
     // Cocokkan allowFrom ke nomor TERESOLUSI maupun alamat mentah (@lid/@c.us) —
     // WhatsApp kerap menyembunyikan nomor asli di balik @lid yang stabil per kontak.
     const senderKeys = [normNum(phone), normNum(from)];

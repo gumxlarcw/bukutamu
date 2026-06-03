@@ -21,14 +21,16 @@ class Wa extends Api_base {
         $reply_to   = $wa_id !== '' ? $wa_id : $phone_raw; // never reconstruct — reply to what WA gave us
 
         // Active session for this phone? → continuation (bot stays silent; petugas handles
-        // the chat manually). "Active" = link sent but form not submitted (awaiting_form),
-        // OR submitted with a visit that is not yet 'selesai'. Once the visit is 'selesai'
-        // (or the session is expired / its visit deleted), the next message is a NEW request.
+        // the chat manually). "Active" = link sent but form not submitted AND still within the
+        // 48h link TTL (awaiting_form), OR submitted with a visit that is not yet 'selesai'.
+        // Once the visit is 'selesai', the session is expired, its link is past 48h, or its
+        // visit is deleted, the next message is a NEW request → mint a fresh link. The 48h
+        // bound is what lets an expired link recover: re-messaging gets a new link, not a stale one.
         $open = $this->db->query(
             "SELECT s.id, s.state FROM wa_sessions s
              LEFT JOIN tamdes_kunjungan k ON k.id_kunjungan = s.id_kunjungan
              WHERE s.phone_norm = ?
-               AND ( s.state = 'awaiting_form'
+               AND ( (s.state = 'awaiting_form' AND s.created_at > (NOW() - INTERVAL 48 HOUR))
                      OR (s.state = 'submitted' AND k.status IS NOT NULL AND k.status <> 'selesai') )
              ORDER BY s.id DESC LIMIT 1",
             [$phone_norm]
@@ -153,7 +155,7 @@ class Wa extends Api_base {
                 'session_id'    => (int) $s->id,
                 'status'        => 'menunggu_form',
                 'date'          => $s->last_inbound_at ?: ($s->link_sent_at ?: $s->created_at),
-                'nama'          => null,
+                'nama'          => $this->wa_known_name($s->phone_norm),
                 'nama_instansi' => null,
                 'notel'         => $s->phone_norm,
                 'permintaan'    => null,
@@ -207,19 +209,36 @@ class Wa extends Api_base {
 
             $input = $this->get_json_input();
 
+            // Validasi wajib server-side — FE meng-disable tombol, tapi API bisa dipanggil
+            // langsung. Tamu baru tanpa nama = data sampah; tolak di boundary.
+            if (trim((string) ($input['nama'] ?? '')) === '') {
+                $this->json_response(['success' => false, 'message' => 'Nama wajib diisi'], 422);
+            }
+
             // SERVER-AUTHORITATIVE — never trust client for these (R8, D2/D3/D5).
             $jenis_layanan = ['Konsultasi Statistik'];
             $sarana        = [2];
             $this->validate_no_cross_layanan($jenis_layanan);
             $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
 
-            // Guest upsert by phone (LOCK pattern from Kiosk::register).
-            $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE');
+            // Guest upsert by phone (LOCK pattern from Kiosk::register). wa_sessions ikut
+            // dikunci & dicek-ulang DI DALAM lock: double-submit (TOCTOU) tidak boleh membuat
+            // kunjungan ganda — hanya request pertama lolos, sisanya kembalikan tiket lama.
+            $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE, wa_sessions WRITE');
+            $fresh = $this->db->get_where('wa_sessions', ['id' => $id])->row();
+            if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan) {
+                $this->db->query('UNLOCK TABLES');
+                $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $fresh->id_kunjungan, 'ticket' => 'WA-' . $fresh->id_kunjungan], 'message' => 'Sudah dikirim']);
+            }
             $existing = $this->db->where('notel', $sess->phone_norm)->order_by('id_user', 'DESC')->limit(1)->get('tamdes_buku')->row();
             if ($existing) {
                 $id_user = (int) $existing->id_user;
-                $patch   = $this->wa_profile_patch($existing, $input); // progressive profiling: fill empties only
-                if ($patch) $this->db->where('id_user', $id_user)->update('tamdes_buku', $patch);
+                $force   = !empty($input['update_profile']);           // "Perbarui Profil" → timpa; selain itu isi yang kosong saja
+                $patch   = $this->wa_profile_patch($existing, $input, $force);
+                if ($patch) {
+                    $ok = $this->db->where('id_user', $id_user)->update('tamdes_buku', $patch);
+                    if ($ok === false) { $this->db->query('UNLOCK TABLES'); $this->json_response(['success' => false, 'message' => 'Gagal memperbarui profil'], 500); }
+                }
             } else {
                 $max     = $this->db->select_max('id_user')->get('tamdes_buku')->row()->id_user;
                 $id_user = $max ? $max + 1 : 8200001;
@@ -238,6 +257,10 @@ class Wa extends Api_base {
             ]);
             $id_kunjungan = (int) $this->db->insert_id();
             if (!$id_kunjungan) { $this->db->query('UNLOCK TABLES'); $this->json_response(['success' => false, 'message' => 'Gagal membuat kunjungan'], 500); }
+
+            // Tandai sesi submitted DI DALAM lock (sebelum UNLOCK) agar request kedua yang
+            // menunggu lock melihat state terbaru dan tidak membuat kunjungan kedua.
+            $this->db->where('id', $id)->update('wa_sessions', ['state' => 'submitted', 'id_kunjungan' => $id_kunjungan, 'submitted_at' => date('Y-m-d H:i:s')]);
             $this->db->query('UNLOCK TABLES');
 
             // Permintaan Data rows (Block B) → konsultasi_pengunjung (D4).
@@ -259,7 +282,6 @@ class Wa extends Api_base {
                 $inserted++;
             }
 
-            $this->db->where('id', $id)->update('wa_sessions', ['state' => 'submitted', 'id_kunjungan' => $id_kunjungan, 'submitted_at' => date('Y-m-d H:i:s')]);
             $this->audit_system('create_wa', 'visit', $id_kunjungan, ['id_user' => $id_user, 'konsultasi_rows' => $inserted]);
 
             $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n"
@@ -426,17 +448,29 @@ class Wa extends Api_base {
         ];
     }
 
-    // Progressive profiling for returning guests: only fill columns that are currently empty.
-    private function wa_profile_patch($existing, $input) {
+    // Returning guests. $force=false → progressive profiling (only fill columns that are
+    // currently empty). $force=true → "Perbarui Profil": overwrite with any non-empty
+    // provided value (the requester explicitly chose to edit their profile).
+    private function wa_profile_patch($existing, $input, $force = false) {
         $patch = [];
         $fields = ['nama','email','jeniskelamin','umur','pendidikan','pekerjaan','kategori_instansi','nama_instansi','pemanfaatan'];
         foreach ($fields as $f) {
-            $cur = $existing->$f ?? null;
-            $new = $input[$f] ?? null;
-            if (($cur === null || $cur === '' || $cur === 0 || $cur === '0') && $new !== null && $new !== '') {
+            $cur     = $existing->$f ?? null;
+            $new     = $input[$f] ?? null;
+            $isEmpty = ($cur === null || $cur === '' || $cur === 0 || $cur === '0');
+            if ($new !== null && $new !== '' && ($force || $isEmpty)) {
                 $patch[$f] = in_array($f, ['umur'], true) ? (int) $new : $new;
             }
         }
         return $patch;
+    }
+
+    // Inbox display name for a pending phone — DB only, single-match (privacy invariant,
+    // mirrors session() GET). Returns tamdes_buku.nama ONLY if exactly one row matches the
+    // number; else null (unknown number, or shared/reassigned number → show no identity).
+    // The self-reported WhatsApp pushname is deliberately NOT used as a name source.
+    private function wa_known_name($phone_norm) {
+        $m = $this->db->select('nama')->where('notel', $phone_norm)->limit(2)->get('tamdes_buku')->result();
+        return (count($m) === 1 && trim((string) $m[0]->nama) !== '') ? $m[0]->nama : null;
     }
 }
