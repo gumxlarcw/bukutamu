@@ -110,6 +110,12 @@ class Notifications extends Api_base {
             if ($row !== null) $out[] = $row;
         }
 
+        // Petugas PST: permintaan data online via WhatsApp yang menunggu diproses.
+        if (in_array($role, ['petugas_pst', 'admin', 'superadmin', 'operator'], true)) {
+            $rows = $this->pst_wa_online();
+            if (!empty($rows)) $out = array_merge($out, $rows);
+        }
+
         // Petugas PST: visit SKD yang sudah diproses tapi form konsultasi belum tersimpan.
         // Visit nyangkut di 'proses' karena petugas belum klik Simpan di form.
         if (in_array($role, ['petugas_pst', 'admin', 'superadmin'], true)) {
@@ -172,6 +178,64 @@ class Notifications extends Api_base {
             ];
         }
         return $out;
+    }
+
+    /**
+     * Permintaan data ONLINE (WhatsApp) yang sudah submit & menunggu diproses
+     * (created_by='whatsapp', status antri/dipanggil/diproses). Satu notifikasi per
+     * permintaan (id unik) → notifier mem-push setiap permintaan baru; bell juga menampilkannya.
+     * Mengarah ke /admin/layanan-online (bukan antrian fisik).
+     */
+    private function pst_wa_online() {
+        $out = [];
+
+        // (1) Sudah submit form → menunggu diproses.
+        $rows = $this->db
+            ->select('k.id_kunjungan, b.nama, k.date_visit')
+            ->from('tamdes_kunjungan k')
+            ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+            ->where('k.created_by', 'whatsapp')
+            ->where_in('k.status', ['antri', 'dipanggil', 'diproses'])
+            ->order_by('k.id_kunjungan', 'DESC')
+            ->limit(20)
+            ->get()->result();
+        foreach ($rows as $r) {
+            $out[] = [
+                'id'         => 'wa-online:' . $r->id_kunjungan,
+                'type'       => 'info',
+                'title'      => 'Permintaan online: ' . ($r->nama ?: 'tamu WhatsApp'),
+                'message'    => 'Permintaan data via WhatsApp menunggu diproses.',
+                'action_url' => '/admin/layanan-online',
+                'ts'         => strtotime($r->date_visit),
+            ];
+        }
+
+        // (2) Sudah dikirimi tautan tapi BELUM isi form (awaiting_form, dalam 48 jam).
+        $pend = $this->db
+            ->select('id, phone_norm, last_inbound_at, created_at')
+            ->where('state', 'awaiting_form')
+            ->where('created_at >', date('Y-m-d H:i:s', time() - 48 * 3600))
+            ->order_by('id', 'DESC')
+            ->limit(20)
+            ->get('wa_sessions')->result();
+        foreach ($pend as $s) {
+            $name = $this->wa_known_name_notif($s->phone_norm);
+            $out[] = [
+                'id'         => 'wa-pending:' . $s->id,
+                'type'       => 'info',
+                'title'      => 'Menunggu isi form: ' . ($name ?: $s->phone_norm),
+                'message'    => 'Kontak WhatsApp sudah dikirimi tautan, belum mengisi form.',
+                'action_url' => '/admin/layanan-online',
+                'ts'         => strtotime($s->last_inbound_at ?: $s->created_at),
+            ];
+        }
+        return $out;
+    }
+
+    // Nama dari DB single-match by nomor (privasi: hanya kalau cocok unik), untuk label notifikasi.
+    private function wa_known_name_notif($phone_norm) {
+        $m = $this->db->select('nama')->where('notel', $phone_norm)->limit(2)->get('tamdes_buku')->result();
+        return (count($m) === 1 && trim((string) $m[0]->nama) !== '') ? $m[0]->nama : null;
     }
 
     /**

@@ -91,3 +91,14 @@ $route['api/wa/session/(:num)']  = 'api/wa/session/$1';    // GET prefill / POST
 $route['api/wa/eval/(:num)']     = 'api/wa/eval_access/$1';// GET  exchange wa-eval-access -> eval-submit
 $route['api/wa/qr-state']      = 'api/wa/qr_state';
 $route['api/wa/disconnect']     = 'api/wa/disconnect';
+$route['api/wa/pair']           = 'api/wa/pair';            // POST auth+PST (link with phone number → pairing code)
+// Live chat (web petugas ↔ WhatsApp) — specific paths BEFORE the generic 'messages'.
+$route['api/wa/chat-ingest']     = 'api/wa/chat_ingest';     // POST internal-secret (inbound store)
+$route['api/wa/messages/upload']   = 'api/wa/messages_upload';   // POST auth+PST (outbound media)
+$route['api/wa/messages/fail']     = 'api/wa/messages_fail';     // POST internal-secret (mark failed)
+$route['api/wa/messages/backfill'] = 'api/wa/messages_backfill'; // POST auth+PST (enqueue history backfill)
+$route['api/wa/backfill-active']   = 'api/wa/backfill_active';   // POST internal-secret (reconnect/outage recovery)
+$route['api/wa/messages']        = 'api/wa/messages';        // GET thread / POST send text (auth+PST)
+$route['api/wa/media/(:num)']    = 'api/wa/media/$1';        // GET media stream (auth+PST)
+$route['api/wa/sessions/(:num)'] = 'api/wa/session_delete/$1'; // DELETE pending session (admin only)
+$route['api/wa/visits/(:num)/proses'] = 'api/wa/visit_proses/$1'; // POST mark visit 'diproses' (auth+PST)

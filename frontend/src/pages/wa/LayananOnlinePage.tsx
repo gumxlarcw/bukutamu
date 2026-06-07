@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { CheckCircle2 } from 'lucide-react'
 import { waApi } from '@/api/wa'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
 import { PermintaanDataForm, emptyPermintaanRow } from '@/components/wa/PermintaanDataForm'
@@ -9,6 +10,65 @@ import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import type { GuestFormData } from '@/types/guest'
 import type { WaPermintaanRow } from '@/types/wa'
+
+/** Efek angka/teks "scramble" seperti tiket antrian kiosk. */
+function CountUp({ text }: { text: string }) {
+  const [display, setDisplay] = useState('')
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    let step = 0
+    const id = setInterval(() => {
+      setDisplay(text.split('').map((c, i) => (i <= step ? c : chars[Math.floor(Math.random() * chars.length)])).join(''))
+      step++
+      if (step >= text.length) clearInterval(id)
+    }, 55)
+    return () => clearInterval(id)
+  }, [text])
+  return <>{display || text}</>
+}
+
+/** Layar sukses bergaya tiket (meniru QueueTicket kiosk offline). */
+function SuccessTicket({ ticket }: { ticket: string }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(160deg,#fff7ed,#ffe7cc)' }}>
+      <style>{`
+        .wa-tk { animation: waTkPop .55s cubic-bezier(.16,1,.3,1); }
+        @keyframes waTkPop { from {opacity:0; transform:scale(.92) translateY(20px);} to {opacity:1; transform:scale(1) translateY(0);} }
+        .wa-tk-glow { animation: waTkGlow 2s ease-in-out infinite alternate; }
+        @keyframes waTkGlow { from {box-shadow:0 0 20px rgba(196,87,10,.14);} to {box-shadow:0 0 42px rgba(196,87,10,.30);} }
+      `}</style>
+      <div className="wa-tk relative bg-white rounded-2xl shadow-2xl px-6 py-7 max-w-sm w-full text-center overflow-hidden">
+        {/* notch tiket kiri/kanan */}
+        <span className="absolute -left-3 top-[46%] w-6 h-6 rounded-full" style={{ background: '#ffe7cc' }} />
+        <span className="absolute -right-3 top-[46%] w-6 h-6 rounded-full" style={{ background: '#ffe7cc' }} />
+
+        <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 grid place-items-center mb-3">
+          <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+        </div>
+        <p className="text-orange-600 font-semibold text-xs uppercase tracking-[0.2em]">Permintaan Diterima</p>
+        <h2 className="text-base font-bold text-gray-900 mb-4">BPS Provinsi Maluku Utara</h2>
+
+        <div className="wa-tk-glow bg-orange-50 border-2 border-orange-200 rounded-xl py-4 px-3 mb-4">
+          <p className="text-orange-600 text-[11px] font-semibold mb-1 uppercase tracking-wide">Nomor Tiket</p>
+          <p className="text-5xl font-black text-orange-600 leading-none tracking-tight font-mono"><CountUp text={ticket} /></p>
+        </div>
+
+        <p className="text-sm text-gray-600 leading-relaxed">
+          Terima kasih, permintaan data Anda telah kami terima dan masuk antrian layanan online.
+        </p>
+        <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+          Akan diproses pada jam operasional layanan<br />Senin–Jumat, 08.00–15.30 WIT.
+        </p>
+        <div className="mt-4 text-[11px] text-gray-400 border-t border-dashed border-gray-300 pt-3">
+          Simpan / screenshot tiket ini sebagai bukti permintaan Anda.
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function blankGuest(phone: string): GuestFormData {
   return {
@@ -69,13 +129,7 @@ export default function LayananOnlinePage() {
   if (isLoading) return <LoadingSpinner className="min-h-screen" />
   if (isError || !prefill) return <p className="p-8 text-center">Tautan kedaluwarsa atau tidak valid. Silakan kirim pesan ulang ke WhatsApp layanan.</p>
   if (prefill.state === 'submitted' || ticket) {
-    return (
-      <div className="max-w-md mx-auto p-8 text-center space-y-2">
-        <h1 className="text-xl font-bold">Permintaan terkirim ✅</h1>
-        <p>Nomor tiket Anda: <b>{ticket ?? `WA-${prefill.session_id}`}</b></p>
-        <p className="text-sm text-muted-foreground">Akan kami proses pada jam operasional layanan (Senin–Jumat 08.00–15.30 WIT).</p>
-      </div>
-    )
+    return <SuccessTicket ticket={ticket ?? `WA-${prefill.session_id}`} />
   }
 
   const namaOk = effGuest.nama.trim() !== ''

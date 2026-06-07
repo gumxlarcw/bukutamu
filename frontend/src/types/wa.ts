@@ -50,9 +50,25 @@ export interface WaInboxRow {
   permintaan: string | null
 }
 
+export interface WaMessage {
+  id: number
+  direction: 'in' | 'out'
+  msg_type: 'text' | 'image' | 'document'
+  body: string | null
+  media_url: string | null    // '/api/wa/media/{id}' bila ada lampiran
+  media_name: string | null
+  media_mime: string | null
+  status: 'pending' | 'sent' | 'failed' | 'received'
+  created_at: string
+}
+
 export interface WaQrState {
   ready: boolean
   qr: string | null          // data-URL PNG while unlinked
   number: string | null
+  pair_phone?: string | null    // nomor yang sedang diminta pairing (link with phone number)
+  pairing_code?: string | null  // kode 8-char untuk dimasukkan di WhatsApp
   updated_at: string | null
+  stale?: boolean               // connector tak berdetak > TTL (backend turunkan ready→false)
+  seconds_since?: number | null // detik sejak detak terakhir (untuk pesan "offline sejak …")
 }

@@ -8,7 +8,7 @@
 // terbaru pada full-reload berikutnya. Lupa bump = user lihat versi lama meski
 // origin sudah update (bug 2026-06-02: form konsultasi tampak kosong saat dibuka
 // ulang karena SW menyajikan ConsultationFormPage chunk lama).
-const CACHE_NAME = 'admin-bukutamu-8200-v18';
+const CACHE_NAME = 'admin-bukutamu-8200-v32';
 const SHELL_PATHS = ['/admin', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -31,6 +31,11 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
+
+  // Hanya tangani http(s) SAME-ORIGIN — abaikan chrome-extension://, data:, blob:, lintas-origin
+  // (kalau tidak, cache.put melempar "Request scheme 'chrome-extension' is unsupported").
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  if (url.origin !== self.location.origin) return;
 
   // API calls: network-only (auth & realtime data jangan di-cache).
   if (url.pathname.startsWith('/api/')) return;

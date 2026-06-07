@@ -1,0 +1,1 @@
+ALTER TABLE wa_backfill ADD COLUMN attempts INT NOT NULL DEFAULT 0 AFTER status;

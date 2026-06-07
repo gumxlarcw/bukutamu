@@ -34,11 +34,15 @@ function normalizeConsultationRow(r: ConsultationDataRow): ConsultationDataRow {
   }
 }
 
-export default function ConsultationFormPage() {
+export default function ConsultationFormPage({ visitIdProp, onClose }: { visitIdProp?: number; onClose?: () => void } = {}) {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const visitId = Number(id)
+  const visitId = visitIdProp ?? Number(id)
+  // Mode modal (dipanggil dari inbox Layanan Online) saat onClose disuplai → tutup popup,
+  // bukan navigate. Mode halaman (route /admin/consultations/:id/form) → navigate seperti biasa.
+  const isModal = onClose != null
+  const goClose = onClose ?? (() => navigate('/admin/consultations'))
 
   const [rows, setRows] = useState<ConsultationDataRow[]>([])
   const [hasilKonsultasi, setHasilKonsultasi] = useState('')
@@ -130,7 +134,7 @@ export default function ConsultationFormPage() {
       queryClient.removeQueries({ queryKey: ['consultation-data', visitId] })
       queryClient.removeQueries({ queryKey: ['visit', visitId] })
       toast.success('Data konsultasi berhasil disimpan')
-      navigate('/admin/consultations')
+      goClose()
     },
     onError: (e: unknown) => {
       const msg = e && typeof e === 'object' && 'response' in e
@@ -156,19 +160,17 @@ export default function ConsultationFormPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate('/admin/consultations')}
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <div>
-          <h1 className="admin-h1">Form Konsultasi</h1>
-          <p className="admin-subtitle">Catat kebutuhan data pengunjung</p>
+      {!isModal && (
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={goClose}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div>
+            <h1 className="admin-h1">Form Konsultasi</h1>
+            <p className="admin-subtitle">Catat kebutuhan data pengunjung</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Visitor info */}
       <div className="admin-card p-6">
