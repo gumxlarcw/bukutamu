@@ -102,3 +102,4 @@ $route['api/wa/messages']        = 'api/wa/messages';        // GET thread / POS
 $route['api/wa/media/(:num)']    = 'api/wa/media/$1';        // GET media stream (auth+PST)
 $route['api/wa/sessions/(:num)'] = 'api/wa/session_delete/$1'; // DELETE pending session (admin only)
 $route['api/wa/visits/(:num)/proses'] = 'api/wa/visit_proses/$1'; // POST mark visit 'diproses' (auth+PST)
+$route['api/wa/visits/(:num)/selesai'] = 'api/wa/visit_selesai/$1'; // POST manual close (evaluasi_selesai → selesai)

@@ -449,6 +449,27 @@ class Wa extends Api_base {
         $this->json_response(['success' => true, 'data' => ['status' => 'diproses'], 'message' => 'OK']);
     }
 
+    // POST /api/wa/visits/(:num)/selesai — operator menutup sesi WA secara manual
+    // (evaluasi_selesai → selesai) + kirim pesan penutup. (auth + PST role)
+    public function visit_selesai($id) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        $id = (int) $id;
+        $v = $this->db->select('status, created_by')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+        if (!$v || $v->created_by !== 'whatsapp') $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+        if ($v->status === 'selesai') {
+            $this->json_response(['success' => true, 'data' => ['status' => 'selesai'], 'message' => 'Sudah selesai']);
+        }
+        if ($v->status !== 'evaluasi_selesai') {
+            $this->json_response(['success' => false, 'message' => 'Belum bisa diselesaikan — evaluasi belum diisi pengunjung.'], 409);
+        }
+        $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', ['status' => 'selesai']);
+        $this->wa_closing_enqueue($id);
+        $this->audit('wa_close', 'visit', $id, ['from' => 'evaluasi_selesai', 'to' => 'selesai']);
+        $this->json_response(['success' => true, 'data' => ['status' => 'selesai'], 'message' => 'Sesi ditutup & pesan penutup dikirim']);
+    }
+
     /* ───────────────────────── admin (Layanan Online inbox) ───────────────────────── */
 
     // GET /api/wa/inbox  — WA visits with guest + request summary
@@ -883,6 +904,28 @@ class Wa extends Api_base {
         $gid = trim((string) $this->push_config('wa_notify_group'));
         if ($gid === '') return;
         $this->db->insert('wa_outbox', ['phone_raw' => $gid, 'wa_chat_id' => $gid, 'msg_type' => 'group_notify', 'body' => $body, 'status' => 'pending']);
+    }
+
+    // Pesan penutup formal saat sesi WA ditutup (manual operator ATAU auto 3 jam).
+    // Ledger-dedup by msg_type='closing' → tak pernah ganda walau dipanggil dua jalur.
+    private function wa_closing_enqueue($id_kunjungan) {
+        $idk = (int) $id_kunjungan;
+        $dup = $this->db->where('id_kunjungan', $idk)->where('msg_type', 'closing')->count_all_results('wa_outbox');
+        if ($dup > 0) return;
+        $info = $this->db->query(
+            "SELECT b.notel,
+                    (SELECT s.wa_chat_id FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS wa_chat_id
+             FROM tamdes_kunjungan k JOIN tamdes_buku b ON b.id_user = k.id_user
+             WHERE k.id_kunjungan = ?", [$idk]
+        )->row();
+        if (!$info) return;
+        $body = "Terima kasih telah menggunakan layanan data BPS Provinsi Maluku Utara. "
+              . "Permintaan Anda telah selesai kami proses. Semoga data yang kami sampaikan bermanfaat. "
+              . "Salam hangat, semoga hari Anda menyenangkan 🙂";
+        $this->db->insert('wa_outbox', [
+            'phone_raw' => $info->notel, 'wa_chat_id' => ($info->wa_chat_id ?: $info->notel),
+            'msg_type'  => 'closing', 'body' => $body, 'id_kunjungan' => $idk, 'status' => 'pending',
+        ]);
     }
 
     /* ── live-chat helpers ── */
