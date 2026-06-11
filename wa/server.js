@@ -176,7 +176,7 @@ client.on('auth_failure', (m) => { failFast('auth_failure: ' + m); });
 client.on('disconnected', (r) => { failFast('disconnected: ' + r); });
 
 // Tipe pesan sistem / non-percakapan yang harus diabaikan.
-const IGNORED_TYPES = new Set(['e2e_notification', 'notification_template', 'gp2', 'call_log', 'ciphertext', 'revoked', 'protocol']);
+const IGNORED_TYPES = new Set(['e2e_notification', 'notification_template', 'gp2', 'call_log', 'ciphertext', 'revoked', 'protocol', 'interactive', 'notification']);
 
 client.on('message', async (msg) => {
   try {
@@ -187,6 +187,10 @@ client.on('message', async (msg) => {
     log('event message from=' + from + ' type=' + msg.type + ' fromMe=' + !!msg.fromMe + ' dm=' + isDm);
     if (!isDm || msg.fromMe || msg.isStatus || msg.broadcast) return;
     if (msg.type && IGNORED_TYPES.has(msg.type)) return;
+    // Alamat sistem/server WhatsApp (mis. 0@c.us mengirim pesan 'interactive'/pengumuman
+    // yang BUKAN kontak nyata) — user-part '0'/kosong. Jangan perlakukan sebagai pelanggan.
+    const userPart = from.replace(/@.*$/, '');
+    if (userPart === '' || userPart === '0') { log('diabaikan — alamat sistem WhatsApp ' + from); return; }
     const waId = from;                     // exact reply target (@c.us or @lid) — reply here, never reconstruct
     let phone = waId.replace(/@.*$/, '');   // @c.us → sudah nomor; @lid → di-resolve di bawah
     // WhatsApp privacy: DM bisa datang sebagai @lid (Linked Identity) — digit di
@@ -209,10 +213,13 @@ client.on('message', async (msg) => {
       log('diabaikan — pengirim ' + phone + ' / ' + from + ' tidak ada di allowFrom');
       return;
     }
+    // wwebjs menaruh base64 jpegThumbnail di msg.body untuk pesan media tanpa directPath
+    // (mis. view-once / interactive). Hanya teruskan body bila benar-benar teks.
+    const bodyText = (msg.hasMedia || msg.type === 'chat') ? (msg.body || '') : '';
     const res = await bfetch(INGEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
-      body: JSON.stringify({ phone, wa_id: waId, text: msg.body || '' }),
+      body: JSON.stringify({ phone, wa_id: waId, text: bodyText }),
     });
     if (!res.ok) log('ingest http', res.status);
 
@@ -221,7 +228,7 @@ client.on('message', async (msg) => {
     let mediaFile = null; // file media yang ditulis — dihapus bila backend tak menyimpan (cegah orphan)
     try {
       const waMsgId = (msg.id && msg.id._serialized) || null;
-      let payload = { phone, wa_chat_id: waId, wa_msg_id: waMsgId, type: 'text', body: msg.body || '' };
+      let payload = { phone, wa_chat_id: waId, wa_msg_id: waMsgId, type: 'text', body: bodyText };
       if (msg.hasMedia) {
         const media = await withTimeout(msg.downloadMedia(), WA_OP_TIMEOUT_MS, 'downloadMedia-in');
         if (media && media.data) {
