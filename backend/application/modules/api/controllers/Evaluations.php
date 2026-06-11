@@ -160,7 +160,7 @@ class Evaluations extends Api_base {
             // koreksi) yang boleh menerima POST. Mencegah attacker post fake eval ke visit
             // yang masih antri/diproses. Endpoint sengaja no-auth (tablet kiosk), jadi gate ini
             // adalah satu-satunya defense.
-            if (!in_array($visit->status, ['menunggu_evaluasi', 'selesai'], true)) {
+            if (!in_array($visit->status, ['menunggu_evaluasi', 'selesai', 'evaluasi_selesai'], true)) {
                 $this->json_response([
                     'success' => false,
                     'message' => 'Evaluasi belum tersedia untuk kunjungan ini (status: ' . $visit->status . ').',
@@ -172,7 +172,7 @@ class Evaluations extends Api_base {
             // (status menunggu_evaluasi) is never throttled; a genuine correction is
             // allowed once the cooldown elapses.
             $cooldown_seconds = 30;
-            if ($visit->status === 'selesai' && $visit->selesai_timestamp) {
+            if (in_array($visit->status, ['selesai', 'evaluasi_selesai'], true) && $visit->selesai_timestamp) {
                 $elapsed = time() - strtotime($visit->selesai_timestamp);
                 if ($elapsed >= 0 && $elapsed < $cooldown_seconds) {
                     $this->json_response([
@@ -208,11 +208,15 @@ class Evaluations extends Api_base {
                 }
             }
 
-            // Update kunjungan: rating, status, selesai_timestamp, durasi_detik
+            // Update kunjungan: rating, status, selesai_timestamp, durasi_detik.
+            // WA channel: park in 'evaluasi_selesai' (operator closes manually; keeps the
+            // session "active" so post-eval chatter never mints a new intake form).
+            // Kiosk/tablet SKD: unchanged — straight to 'selesai'.
+            $is_wa = ($visit->created_by === 'whatsapp');
             $selesai_timestamp = date('Y-m-d H:i:s');
             $update = [
                 'rating_pengunjung'  => $skor_keseluruhan,
-                'status'             => 'selesai',
+                'status'             => $is_wa ? 'evaluasi_selesai' : 'selesai',
                 'selesai_timestamp'  => $selesai_timestamp,
             ];
             if ($visit->date_visit) {
