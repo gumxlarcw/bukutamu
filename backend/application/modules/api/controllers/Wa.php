@@ -470,6 +470,53 @@ class Wa extends Api_base {
         $this->json_response(['success' => true, 'data' => ['status' => 'selesai'], 'message' => 'Sesi ditutup & pesan penutup dikirim']);
     }
 
+    // POST /api/wa/sessions/(:num)/assign — operator "Ambil alih" sebuah sesi (pending atau visit).
+    // Klaim ATOMIK (anti-TOCTOU): hanya yang pertama menang. Terkunci ke operator pertama;
+    // hanya admin/superadmin yang boleh memindahkan (override). (auth + PST role)
+    public function session_assign($id) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        $sid  = (int) $id;
+        $uid  = (int) ($this->current_user->id ?? 0);
+        $role = $this->current_user->role ?? '';
+        if ($uid <= 0) $this->json_response(['success' => false, 'message' => 'Akun ini tidak dapat mengambil alih sesi (gunakan akun operator).'], 403);
+        $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
+        if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+
+        $now = date('Y-m-d H:i:s');
+        // Klaim atomik untuk sesi yang belum dipegang siapa pun.
+        $this->db->where('id', $sid)->where('assigned_to', null)
+                 ->update('wa_sessions', ['assigned_to' => $uid, 'assigned_at' => $now]);
+        $claimed = ($this->db->affected_rows() === 1);
+
+        if (!$claimed) {
+            $cur    = $this->db->select('assigned_to')->get_where('wa_sessions', ['id' => $sid])->row();
+            $holder = (int) ($cur->assigned_to ?? 0);
+            if ($holder === $uid) {
+                $this->json_response(['success' => true, 'data' => ['assigned_to' => $uid, 'operator_nama' => $this->wa_operator_name($uid)], 'message' => 'Sudah Anda tangani']);
+            }
+            if (!in_array($role, ['admin', 'superadmin'], true)) {
+                $this->json_response(['success' => false, 'message' => 'Sudah ditangani oleh ' . $this->wa_operator_name($holder)], 409);
+            }
+            // Admin override → pindahkan ke admin yang meminta.
+            $this->db->where('id', $sid)->update('wa_sessions', ['assigned_to' => $uid, 'assigned_at' => $now]);
+        }
+
+        // Pesan "sedang ditangani" — HANYA dari aksi interaktif ini, tak pernah dari backfill.
+        if ($sess->wa_chat_id) {
+            $nama = $this->wa_operator_name($uid);
+            $body = "Permintaan Anda sedang ditangani oleh *{$nama}*. Mohon menunggu, kami akan segera memproses permintaan Anda.";
+            $this->db->insert('wa_outbox', [
+                'phone_raw' => $sess->phone_raw, 'wa_chat_id' => $sess->wa_chat_id,
+                'msg_type'  => 'ditangani', 'body' => $body,
+                'id_kunjungan' => ($sess->id_kunjungan ?: null), 'status' => 'pending',
+            ]);
+        }
+        $this->audit('wa_assign', 'wa_session', $sid, ['assigned_to' => $uid]);
+        $this->json_response(['success' => true, 'data' => ['assigned_to' => $uid, 'operator_nama' => $this->wa_operator_name($uid)], 'message' => 'Anda mengambil alih sesi ini']);
+    }
+
     /* ───────────────────────── admin (Layanan Online inbox) ───────────────────────── */
 
     // GET /api/wa/inbox  — WA visits with guest + request summary
@@ -489,6 +536,9 @@ class Wa extends Api_base {
         $visits = $this->db
             ->select('k.id_kunjungan, k.status, k.date_visit AS dt, b.nama, b.nama_instansi, b.notel')
             ->select("(SELECT GROUP_CONCAT(kp.rincian_data SEPARATOR ' · ') FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan) AS permintaan", FALSE)
+            ->select("(SELECT s.id FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS session_id", FALSE)
+            ->select("(SELECT s.assigned_to FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS assigned_to", FALSE)
+            ->select("(SELECT au.nama FROM wa_sessions s JOIN admin_users au ON au.id = s.assigned_to WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS operator_nama", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('k.created_by', 'whatsapp')
@@ -501,20 +551,24 @@ class Wa extends Api_base {
             $items[] = [
                 'kind'          => 'visit',
                 'id_kunjungan'  => (int) $v->id_kunjungan,
-                'session_id'    => null,
+                'session_id'    => ($v->session_id !== null ? (int) $v->session_id : null),
                 'status'        => $v->status,
                 'date'          => $v->dt,
                 'nama'          => $v->nama,
                 'nama_instansi' => $v->nama_instansi,
                 'notel'         => $v->notel,
                 'permintaan'    => $v->permintaan,
+                'assigned_to'   => ($v->assigned_to !== null ? (int) $v->assigned_to : null),
+                'operator_nama' => ($v->operator_nama ? $this->wa_strip_role_annot($v->operator_nama) : null),
             ];
         }
 
         // 2) Sesi yang sudah dikirimi link tapi BELUM mengisi form (awaiting_form).
-        $pend = $this->db->select('id, phone_norm, last_inbound_at, link_sent_at, created_at')
-                         ->where('state', 'awaiting_form')
-                         ->order_by('id', 'DESC')->limit(100)->get('wa_sessions')->result();
+        $pend = $this->db->select('s.id, s.phone_norm, s.last_inbound_at, s.link_sent_at, s.created_at, s.assigned_to, au.nama AS operator_nama')
+                         ->from('wa_sessions s')
+                         ->join('admin_users au', 'au.id = s.assigned_to', 'left')
+                         ->where('s.state', 'awaiting_form')
+                         ->order_by('s.id', 'DESC')->limit(100)->get()->result();
         foreach ($pend as $s) {
             $items[] = [
                 'kind'          => 'pending',
@@ -526,6 +580,8 @@ class Wa extends Api_base {
                 'nama_instansi' => null,
                 'notel'         => $s->phone_norm,
                 'permintaan'    => null,
+                'assigned_to'   => ($s->assigned_to !== null ? (int) $s->assigned_to : null),
+                'operator_nama' => ($s->operator_nama ? $this->wa_strip_role_annot($s->operator_nama) : null),
             ];
         }
 
@@ -912,6 +968,18 @@ class Wa extends Api_base {
     private function wa_known_name($phone_norm) {
         $m = $this->db->select('nama')->where('notel', $phone_norm)->limit(2)->get('tamdes_buku')->result();
         return (count($m) === 1 && trim((string) $m[0]->nama) !== '') ? $m[0]->nama : null;
+    }
+
+    // Buang anotasi peran dalam kurung dari nama operator untuk tampilan/pesan ke pengguna:
+    // "Irma (Petugas PST)" → "Irma". Nama tanpa kurung tetap utuh.
+    private function wa_strip_role_annot($nama) {
+        $n = trim(preg_replace('/\s*\(.*\)\s*$/u', '', (string) $nama));
+        return $n !== '' ? $n : 'Petugas';
+    }
+    // Nama operator (admin_users.nama, dibersihkan) untuk uid tertentu.
+    private function wa_operator_name($uid) {
+        $u = $this->db->select('nama')->get_where('admin_users', ['id' => (int) $uid])->row();
+        return $u ? $this->wa_strip_role_annot($u->nama) : 'Petugas';
     }
 
     // Notif ke GRUP WhatsApp petugas. Group id (@g.us) dibaca dari push.php (wa_notify_group);

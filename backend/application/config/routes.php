@@ -100,6 +100,7 @@ $route['api/wa/messages/backfill'] = 'api/wa/messages_backfill'; // POST auth+PS
 $route['api/wa/backfill-active']   = 'api/wa/backfill_active';   // POST internal-secret (reconnect/outage recovery)
 $route['api/wa/messages']        = 'api/wa/messages';        // GET thread / POST send text (auth+PST)
 $route['api/wa/media/(:num)']    = 'api/wa/media/$1';        // GET media stream (auth+PST)
+$route['api/wa/sessions/(:num)/assign'] = 'api/wa/session_assign/$1'; // POST take-over (auth+PST)
 $route['api/wa/sessions/(:num)'] = 'api/wa/session_delete/$1'; // DELETE pending session (admin only)
 $route['api/wa/visits/(:num)/proses'] = 'api/wa/visit_proses/$1'; // POST mark visit 'diproses' (auth+PST)
 $route['api/wa/visits/(:num)/selesai'] = 'api/wa/visit_selesai/$1'; // POST manual close (evaluasi_selesai → selesai)
