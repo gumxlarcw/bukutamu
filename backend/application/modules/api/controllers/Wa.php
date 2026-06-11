@@ -822,6 +822,22 @@ class Wa extends Api_base {
             ]);
             $this->audit_system('auto_close_wa_eval', 'visit', $idk, ['from' => 'menunggu_evaluasi', 'to' => 'selesai']);
         }
+
+        // 5. Auto-close WA visits stuck in evaluasi_selesai (eval already filled) > 3 jam → selesai.
+        //    Pengaman bila operator lupa klik "Selesai". selesai_timestamp dicap saat evaluasi
+        //    disubmit (= waktu evaluasi selesai), jadi itulah acuan jeda 3 jam-nya.
+        $stale_done = $this->db->query(
+            "SELECT k.id_kunjungan FROM tamdes_kunjungan k
+             WHERE k.created_by = 'whatsapp' AND k.status = 'evaluasi_selesai'
+               AND k.selesai_timestamp IS NOT NULL AND k.selesai_timestamp < ?",
+            [date('Y-m-d H:i:s', time() - 3 * 3600)]
+        )->result();
+        foreach ($stale_done as $v) {
+            $idk = (int) $v->id_kunjungan;
+            $this->db->where('id_kunjungan', $idk)->update('tamdes_kunjungan', ['status' => 'selesai']);
+            $this->wa_closing_enqueue($idk);
+            $this->audit_system('auto_close_wa_done', 'visit', $idk, ['from' => 'evaluasi_selesai', 'to' => 'selesai']);
+        }
     }
 
     private function wa_public_base() {
