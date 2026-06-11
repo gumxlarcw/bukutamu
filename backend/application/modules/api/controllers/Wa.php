@@ -644,6 +644,19 @@ class Wa extends Api_base {
             $this->validate_no_cross_layanan($jenis_layanan);
             $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
 
+            // Validasi tahun (boundary, sebelum LOCK → tidak ada kunjungan orphan bila ditolak):
+            // format tahun wajar + tahun_akhir tidak boleh sebelum tahun_awal (cegah salah ketik
+            // mis. 2015–2014 yang seharusnya 2015–2024).
+            $year_min = 1945; $year_max = (int) date('Y') + 1;
+            $rows_in  = (isset($input['permintaan']) && is_array($input['permintaan'])) ? $input['permintaan'] : [];
+            foreach ($rows_in as $r) {
+                $ta = (isset($r['tahun_awal'])  && $r['tahun_awal']  !== '' && $r['tahun_awal']  !== null) ? (int) $r['tahun_awal']  : null;
+                $tb = (isset($r['tahun_akhir']) && $r['tahun_akhir'] !== '' && $r['tahun_akhir'] !== null) ? (int) $r['tahun_akhir'] : null;
+                if ($ta !== null && ($ta < $year_min || $ta > $year_max)) $this->json_response(['success' => false, 'message' => 'Tahun awal tidak valid (gunakan format tahun, mis. 2024).'], 422);
+                if ($tb !== null && ($tb < $year_min || $tb > $year_max)) $this->json_response(['success' => false, 'message' => 'Tahun akhir tidak valid (gunakan format tahun, mis. 2024).'], 422);
+                if ($ta !== null && $tb !== null && $tb < $ta)            $this->json_response(['success' => false, 'message' => 'Tahun akhir tidak boleh sebelum tahun awal.'], 422);
+            }
+
             // Guest upsert by phone (LOCK pattern from Kiosk::register). wa_sessions ikut
             // dikunci & dicek-ulang DI DALAM lock: double-submit (TOCTOU) tidak boleh membuat
             // kunjungan ganda — hanya request pertama lolos, sisanya kembalikan tiket lama.
@@ -1004,7 +1017,7 @@ class Wa extends Api_base {
         )->row();
         if (!$info) return;
         $body = "Terima kasih telah menggunakan layanan data BPS Provinsi Maluku Utara. "
-              . "Permintaan Anda telah selesai kami proses. Semoga data yang kami sampaikan bermanfaat. "
+              . "Permintaan Anda telah selesai kami proses. "
               . "Salam hangat, semoga hari Anda menyenangkan 🙂";
         $this->db->insert('wa_outbox', [
             'phone_raw' => $info->notel, 'wa_chat_id' => ($info->wa_chat_id ?: $info->notel),

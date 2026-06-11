@@ -124,8 +124,8 @@ Enqueued to `wa_outbox` (`msg_type='closing'`, `wa_chat_id` from the latest
 session for the phone):
 
 > Terima kasih telah menggunakan layanan data BPS Provinsi Maluku Utara.
-> Permintaan Anda telah selesai kami proses. Semoga data yang kami sampaikan
-> bermanfaat. Salam hangat, semoga hari Anda menyenangkan 🙂
+> Permintaan Anda telah selesai kami proses. Salam hangat, semoga hari Anda
+> menyenangkan 🙂
 
 ### B4. 3-hour safety auto-close
 New step in `wa_dispatch_scan()` (runs every poll): WA visits in
