@@ -41,13 +41,15 @@ export interface WaIntakePayload extends Partial<GuestFormData> {
 export interface WaInboxRow {
   kind: 'pending' | 'visit'
   id_kunjungan: number | null   // null untuk pending (belum jadi visit)
-  session_id: number | null     // diisi untuk pending
+  session_id: number | null     // diisi untuk pending DAN visit (untuk Ambil alih)
   status: string                // 'menunggu_form' untuk pending; status visit lainnya
   date: string
   nama: string | null
   nama_instansi: string | null
   notel: string | null
   permintaan: string | null
+  assigned_to: number | null    // admin_users.id operator pemegang sesi (null = belum diambil)
+  operator_nama: string | null  // nama operator (sudah dibersihkan), untuk chip "Ditangani"
 }
 
 export interface WaMessage {

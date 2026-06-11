@@ -1,4 +1,4 @@
-export type VisitStatus = 'antri' | 'dipanggil' | 'proses' | 'diproses' | 'menunggu_evaluasi' | 'selesai'
+export type VisitStatus = 'antri' | 'dipanggil' | 'proses' | 'diproses' | 'menunggu_evaluasi' | 'evaluasi_selesai' | 'selesai'
 
 export interface Visit {
   id_kunjungan: number
