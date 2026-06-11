@@ -10,6 +10,24 @@ export function emptyPermintaanRow(): WaPermintaanRow {
   return { rincian_data: '', wilayah_data: '', level_data: null, periode_data: null, tahun_awal: null, tahun_akhir: null }
 }
 
+// Validasi tahun per-baris: format tahun wajar + tahun_akhir tidak boleh sebelum tahun_awal
+// (cegah salah ketik mis. 2015–2014 yang seharusnya 2015–2024). Cermin server (Wa::session).
+// eslint-disable-next-line react-refresh/only-export-components
+export function permintaanRowYearError(r: WaPermintaanRow): string | null {
+  const maxYear = new Date().getFullYear() + 1
+  const invalid = (y: number | null) => y != null && (!Number.isInteger(y) || y < 1945 || y > maxYear)
+  if (invalid(r.tahun_awal)) return 'Tahun awal tidak valid (gunakan format tahun, mis. 2024).'
+  if (invalid(r.tahun_akhir)) return 'Tahun akhir tidak valid (gunakan format tahun, mis. 2024).'
+  if (r.tahun_awal != null && r.tahun_akhir != null && r.tahun_akhir < r.tahun_awal)
+    return 'Tahun akhir tidak boleh sebelum tahun awal.'
+  return null
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function permintaanRowsValid(rows: WaPermintaanRow[]): boolean {
+  return rows.every(r => permintaanRowYearError(r) === null)
+}
+
 interface Props {
   rows: WaPermintaanRow[]
   onChange: (rows: WaPermintaanRow[]) => void
@@ -65,15 +83,18 @@ export function PermintaanDataForm({ rows, onChange }: Props) {
           <div className="flex gap-3">
             <div className="flex-1 space-y-1">
               <Label>Tahun awal</Label>
-              <Input type="number" min={2000} max={2100} value={row.tahun_awal ?? ''}
+              <Input type="number" min={1945} max={new Date().getFullYear() + 1} value={row.tahun_awal ?? ''}
                      onChange={e => update(idx, { tahun_awal: e.target.value ? Number(e.target.value) : null })} />
             </div>
             <div className="flex-1 space-y-1">
               <Label>Tahun akhir</Label>
-              <Input type="number" min={2000} max={2100} value={row.tahun_akhir ?? ''}
+              <Input type="number" min={1945} max={new Date().getFullYear() + 1} value={row.tahun_akhir ?? ''}
                      onChange={e => update(idx, { tahun_akhir: e.target.value ? Number(e.target.value) : null })} />
             </div>
           </div>
+          {permintaanRowYearError(row) && (
+            <p className="text-xs text-red-600 font-medium">⚠ {permintaanRowYearError(row)}</p>
+          )}
         </div>
       ))}
 

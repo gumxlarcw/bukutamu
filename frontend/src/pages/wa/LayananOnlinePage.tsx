@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { CheckCircle2 } from 'lucide-react'
 import { waApi } from '@/api/wa'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
-import { PermintaanDataForm, emptyPermintaanRow } from '@/components/wa/PermintaanDataForm'
+import { PermintaanDataForm, emptyPermintaanRow, permintaanRowsValid } from '@/components/wa/PermintaanDataForm'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import type { GuestFormData } from '@/types/guest'
@@ -134,6 +134,7 @@ export default function LayananOnlinePage() {
 
   const namaOk = effGuest.nama.trim() !== ''
   const permintaanOk = rows.some(r => r.rincian_data.trim() !== '')
+  const yearsOk = permintaanRowsValid(rows)   // tahun_akhir ≥ tahun_awal & format wajar
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6">
@@ -191,7 +192,7 @@ export default function LayananOnlinePage() {
           <PermintaanDataForm rows={rows} onChange={setRows} />
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>← Kembali</Button>
-            <Button className="flex-1" disabled={!permintaanOk || !namaOk || submit.isPending} onClick={() => submit.mutate()}>
+            <Button className="flex-1" disabled={!permintaanOk || !namaOk || !yearsOk || submit.isPending} onClick={() => submit.mutate()}>
               {submit.isPending ? 'Mengirim…' : 'Kirim Permintaan'}
             </Button>
           </div>
