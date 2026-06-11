@@ -49,4 +49,12 @@ export const waApi = {
   // Tandai visit 'diproses' saat petugas membuka popup Proses (antri/dipanggil → diproses).
   markProses: (idKunjungan: number) =>
     apiClient.post<ApiResponse<{ status: string }>>(`/api/wa/visits/${idKunjungan}/proses`),
+
+  // Ambil alih sesi (klaim operator). Terkunci ke operator pertama; admin bisa override.
+  assign: (sessionId: number) =>
+    apiClient.post<ApiResponse<{ assigned_to: number; operator_nama: string }>>(`/api/wa/sessions/${sessionId}/assign`),
+
+  // Tutup sesi WA secara manual (evaluasi_selesai → selesai) + kirim pesan penutup.
+  markSelesai: (idKunjungan: number) =>
+    apiClient.post<ApiResponse<{ status: string }>>(`/api/wa/visits/${idKunjungan}/selesai`),
 }
