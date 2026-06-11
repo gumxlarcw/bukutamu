@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StatsCard } from '@/components/admin/StatsCard'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { MessageSquare, MessageCircle, ExternalLink, Inbox, Clock, Hourglass, CircleCheck, Unplug, Send, Trash2, QrCode, Smartphone, Copy, Loader2, RefreshCw, ArrowRight } from 'lucide-react'
+import { MessageSquare, MessageCircle, ExternalLink, Inbox, Clock, Hourglass, CircleCheck, Unplug, Send, Trash2, QrCode, Smartphone, Copy, Loader2, RefreshCw, ArrowRight, Hand, UserCheck } from 'lucide-react'
 import type { WaInboxRow } from '@/types/wa'
 
 function formatWhen(iso: string): string {
@@ -290,6 +290,33 @@ export default function LayananOnlineInboxPage() {
   const openProses = (idk: number) => { setProsesId(idk); markProses.mutate(idk) }
   const closeProses = () => { setProsesId(null); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) }
 
+  // Ambil alih (klaim) sebuah sesi/visit; backend kirim "sedang ditangani" ke pengguna.
+  const assign = useMutation({
+    mutationFn: (sessionId: number) => waApi.assign(sessionId),
+    onSuccess: (res) => {
+      toast.success(`Diambil alih oleh ${res.data.data?.operator_nama ?? 'Anda'}`)
+      qc.invalidateQueries({ queryKey: ['wa-inbox'] })
+    },
+    onError: (e: unknown) => {
+      const msg = e && typeof e === 'object' && 'response' in e
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (e as any).response?.data?.message : null
+      toast.error(msg || 'Gagal mengambil alih')
+    },
+  })
+  // Tutup sesi WA secara manual (muncul setelah pengunjung mengisi evaluasi).
+  const selesai = useMutation({
+    mutationFn: (idk: number) => waApi.markSelesai(idk),
+    onSuccess: () => { toast.success('Sesi ditutup & pesan penutup dikirim'); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) },
+    onError: (e: unknown) => {
+      const msg = e && typeof e === 'object' && 'response' in e
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (e as any).response?.data?.message : null
+      toast.error(msg || 'Gagal menutup sesi')
+    },
+  })
+  const canReassign = user?.role === 'admin' || user?.role === 'superadmin'
+
   const { data, isLoading } = useQuery({
     queryKey: ['wa-inbox'],
     queryFn: () => waApi.inbox().then(r => r.data.data),
@@ -303,6 +330,7 @@ export default function LayananOnlineInboxPage() {
     baru: rows.filter(r => isVisit(r) && (r.status === 'antri' || r.status === 'dipanggil')).length,
     diproses: rows.filter(r => isVisit(r) && (r.status === 'proses' || r.status === 'diproses')).length,
     evaluasi: rows.filter(r => isVisit(r) && r.status === 'menunggu_evaluasi').length,
+    perluDitutup: rows.filter(r => isVisit(r) && r.status === 'evaluasi_selesai').length,
     selesai: rows.filter(r => isVisit(r) && r.status === 'selesai').length,
   }
 
@@ -320,11 +348,12 @@ export default function LayananOnlineInboxPage() {
       <WaConnectPanel />
 
       {/* Ringkasan status */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatsCard label="Menunggu Form" value={counts.form} icon={<Send className="w-5 h-5" />} accent="primary" />
         <StatsCard label="Baru" value={counts.baru} icon={<Inbox className="w-5 h-5" />} accent="secondary" />
         <StatsCard label="Diproses" value={counts.diproses} icon={<Clock className="w-5 h-5" />} accent="primary" />
         <StatsCard label="Menunggu Evaluasi" value={counts.evaluasi} icon={<Hourglass className="w-5 h-5" />} accent="secondary" />
+        <StatsCard label="Perlu Ditutup" value={counts.perluDitutup} icon={<CircleCheck className="w-5 h-5" />} accent="secondary" />
         <StatsCard label="Selesai" value={counts.selesai} icon={<CircleCheck className="w-5 h-5" />} accent="primary" />
       </div>
 
@@ -375,9 +404,33 @@ export default function LayananOnlineInboxPage() {
                   <StatusBadge status={r.status} />
                 )}
 
+                {r.assigned_to == null ? (
+                  <Button size="sm" variant="outline" className="shrink-0"
+                    disabled={assign.isPending || r.session_id == null}
+                    title="Ambil alih sesi ini" onClick={() => { if (r.session_id != null) assign.mutate(r.session_id) }}>
+                    <Hand className="w-3.5 h-3.5 mr-1" /> Ambil alih
+                  </Button>
+                ) : (
+                  <span
+                    className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700"
+                    style={canReassign ? { cursor: 'pointer' } : undefined}
+                    title={canReassign ? 'Pindahkan penanganan ke Anda (admin)' : `Ditangani oleh ${r.operator_nama ?? '-'}`}
+                    onClick={() => { if (canReassign && r.session_id != null && window.confirm(`Pindahkan penanganan dari ${r.operator_nama} ke Anda?`)) assign.mutate(r.session_id) }}
+                  >
+                    <UserCheck className="w-3.5 h-3.5" /> {r.operator_nama ?? 'Ditangani'}
+                  </span>
+                )}
                 {!pending && (
                   <Button size="sm" variant="outline" className="shrink-0" onClick={() => openProses(r.id_kunjungan as number)}>
                     <ExternalLink className="w-3.5 h-3.5 mr-1" /> Proses
+                  </Button>
+                )}
+                {!pending && r.status === 'evaluasi_selesai' && (
+                  <Button size="sm" className="shrink-0"
+                    disabled={selesai.isPending}
+                    title="Tutup sesi & kirim pesan penutup"
+                    onClick={() => { if (window.confirm('Tutup sesi ini & kirim pesan penutup ke pengguna?')) selesai.mutate(r.id_kunjungan as number) }}>
+                    <CircleCheck className="w-3.5 h-3.5 mr-1" /> Selesai
                   </Button>
                 )}
                 {r.notel && (
