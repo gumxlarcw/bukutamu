@@ -4,7 +4,7 @@ import { evaluationsApi } from '@/api/evaluations'
 import type { EvaluationSummaryVisit, EvaluationSummaryIndicator, EvaluationSummaryMonthly, EvaluationSummaryQuarterly } from '@/api/evaluations'
 import { parseLayanan } from '@/types/visit'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Star, Users, BarChart3, Download, Award, AlertTriangle, Target, Info, TrendingUp, ListChecks, CalendarRange } from 'lucide-react'
+import { Star, Users, BarChart3, Download, Award, AlertTriangle, Target, Info, TrendingUp, ListChecks, CalendarRange, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { exportCsv } from '@/lib/export-csv'
@@ -315,6 +315,15 @@ export default function EvaluationSummaryPage() {
     queryFn: () => evaluationsApi.getSummary({ tahun: tahun || undefined }).then(r => r.data.data),
   })
 
+  // Which per-visit cards are expanded to reveal their per-data-item quality (kualitas).
+  const [expandedVisits, setExpandedVisits] = useState<Set<number>>(new Set())
+  const toggleVisit = (id: number) => setExpandedVisits(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))
 
   // Compute best & worst indicator dengan label naratif untuk highlight cards.
@@ -579,24 +588,67 @@ export default function EvaluationSummaryPage() {
                                    rating >= 7 ? 'bg-sky-100 text-sky-700' :
                                    rating >= 5 ? 'bg-amber-100 text-amber-700' :
                                                  'bg-red-100 text-red-700'
+                      const vid = Number(v.id_kunjungan)
+                      const items = v.items ?? []
+                      const hasItems = items.length > 0
+                      const isOpen = expandedVisits.has(vid)
                       return (
-                        <div key={v.id_kunjungan} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/30 transition-colors">
-                          <div className={`w-10 h-10 rounded-full ${tone} flex items-center justify-center shrink-0`}>
-                            <span className="text-sm font-bold tabular-nums">{rating ?? '-'}</span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{v.nama}</p>
-                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              {parseLayanan(v.jenis_layanan).map((l, i) => (
-                                <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">{l}</span>
-                              ))}
-                              <span className="text-[11px] text-muted-foreground">{formatDate(v.date_visit)}</span>
+                        <div key={v.id_kunjungan} className="rounded-lg border hover:bg-muted/30 transition-colors">
+                          <div
+                            className={`flex items-center gap-3 p-3 ${hasItems ? 'cursor-pointer' : ''}`}
+                            onClick={hasItems ? () => toggleVisit(vid) : undefined}
+                            role={hasItems ? 'button' : undefined}
+                            tabIndex={hasItems ? 0 : undefined}
+                            aria-expanded={hasItems ? isOpen : undefined}
+                            onKeyDown={hasItems ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleVisit(vid) } } : undefined}
+                          >
+                            <div className={`w-10 h-10 rounded-full ${tone} flex items-center justify-center shrink-0`}>
+                              <span className="text-sm font-bold tabular-nums">{rating ?? '-'}</span>
                             </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{v.nama}</p>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {parseLayanan(v.jenis_layanan).map((l, i) => (
+                                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">{l}</span>
+                                ))}
+                                <span className="text-[11px] text-muted-foreground">{formatDate(v.date_visit)}</span>
+                                {hasItems && (
+                                  <span className="text-[11px] text-muted-foreground">· {items.length} data dinilai</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[10px] text-muted-foreground">Kepuasan</p>
+                              <p className="text-sm font-bold tabular-nums">{Number(v.avg_kepuasan).toFixed(2)}</p>
+                            </div>
+                            {hasItems && (
+                              <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                            )}
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-[10px] text-muted-foreground">Kepuasan</p>
-                            <p className="text-sm font-bold tabular-nums">{Number(v.avg_kepuasan).toFixed(2)}</p>
-                          </div>
+                          {hasItems && isOpen && (
+                            <div className="border-t bg-muted/20 px-3 py-2 space-y-1.5">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Kualitas Data Diterima</p>
+                              {items.map((it) => {
+                                const q = it.kualitas === null || it.kualitas === undefined ? null : Number(it.kualitas)
+                                const sesuai = Number(it.status_data) === 1
+                                return (
+                                  <div key={it.id} className="flex items-center gap-2">
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${sesuai ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                      {sesuai ? 'sesuai' : 'tidak sesuai'}
+                                    </span>
+                                    <span className="text-xs text-foreground flex-1 min-w-0 truncate" title={it.rincian_data}>{it.rincian_data}</span>
+                                    {q === null ? (
+                                      <span className="text-[11px] text-muted-foreground italic shrink-0">belum dinilai</span>
+                                    ) : (
+                                      <span className="text-xs font-bold tabular-nums shrink-0 flex items-center gap-0.5">
+                                        <Star className="w-3 h-3 text-amber-500 fill-amber-500" />{q}
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       )
                     })}

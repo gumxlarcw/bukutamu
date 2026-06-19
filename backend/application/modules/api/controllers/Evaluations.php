@@ -288,6 +288,32 @@ class Evaluations extends Api_base {
 
         $visits = $this->db->get()->result();
 
+        // Per-data-item quality (kualitas) drill-down for each visit. Mirror the eval form's
+        // status_data IN (1,2) filter (detail() line ~115) so we surface exactly the items that
+        // were rate-able. Attached as $v->items so the FE can expand each visit row, keeping the
+        // per-session data distinct (tiap permintaan data bisa berbeda).
+        $visit_ids = [];
+        foreach ($visits as $v) {
+            $visit_ids[] = (int) $v->id_kunjungan;
+        }
+        $items_by_visit = [];
+        if ($visit_ids) {
+            $items = $this->db
+                ->select('id_kunjungan, id, rincian_data, status_data, kualitas')
+                ->where_in('id_kunjungan', $visit_ids)
+                ->where_in('status_data', [1, 2])
+                ->order_by('id_kunjungan', 'ASC')
+                ->order_by('id', 'ASC')
+                ->get('konsultasi_pengunjung')
+                ->result();
+            foreach ($items as $it) {
+                $items_by_visit[$it->id_kunjungan][] = $it;
+            }
+        }
+        foreach ($visits as $v) {
+            $v->items = $items_by_visit[$v->id_kunjungan] ?? [];
+        }
+
         // Per-indicator average (IKM breakdown)
         $this->db->select('d.indikator_id, AVG(d.kepentingan) as avg_kepentingan, AVG(d.kepuasan) as avg_kepuasan, COUNT(DISTINCT d.id_kunjungan) as responden')
                  ->from('tamdes_evaluasi_detail d')

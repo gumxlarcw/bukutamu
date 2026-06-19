@@ -67,6 +67,13 @@ export const evaluationsApi = {
     apiClient.get<ApiResponse<EvaluationSummary>>('/api/evaluations/summary', { params }),
 }
 
+export interface EvaluationSummaryVisitItem {
+  id: number
+  rincian_data: string
+  status_data: number // 1 = sesuai, 2 = tidak sesuai (CI3 returns as string — coerce with Number())
+  kualitas: number | null // 1–10, or null if not yet rated
+}
+
 export interface EvaluationSummaryVisit {
   id_kunjungan: number
   nama: string
@@ -76,6 +83,7 @@ export interface EvaluationSummaryVisit {
   avg_kepentingan: number
   avg_kepuasan: number
   jumlah_indikator: number
+  items: EvaluationSummaryVisitItem[]
 }
 
 export interface EvaluationSummaryIndicator {
