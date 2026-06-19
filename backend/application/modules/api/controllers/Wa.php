@@ -878,10 +878,30 @@ class Wa extends Api_base {
 
         $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
         if (!$visit || $visit->created_by !== 'whatsapp') $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
-        if ($visit->status !== 'menunggu_evaluasi') $this->json_response(['success' => false, 'message' => 'Evaluasi sudah selesai atau ditutup'], 409);
 
-        $eval_token = $this->mint_kiosk_token('eval-submit', $id, 600); // short; used against UNCHANGED /api/evaluations/{id}
-        $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id, 'kiosk_token' => $eval_token], 'message' => 'OK']);
+        // Eval menempel per-kunjungan, tapi tautan WA terikat ke SATU id_kunjungan. Pemohon yang minta
+        // data lagi dalam <7 hari kerap memegang tautan SESI LAMA — kalau visit-nya sudah selesai, tautan
+        // itu mentok 409 padahal sesi barunya punya evaluasi sendiri yang menunggu. Maka bila visit pada
+        // tautan ini bukan menunggu_evaluasi, arahkan ke kunjungan WA TERBARU milik pemohon yang sama yang
+        // masih menunggu_evaluasi, supaya tiap sesi dievaluasi sendiri (data tiap permintaan bisa beda).
+        // Aman: token wa-eval-access sudah membuktikan kepemilikan salah satu kunjungan pemohon ini, jadi
+        // resolve dibatasi same id_user + created_by='whatsapp' (mirror gerbang enqueue eval_link).
+        $target = $id;
+        if ($visit->status !== 'menunggu_evaluasi') {
+            $cur = $this->db->select('id_kunjungan')
+                ->where('id_user', $visit->id_user)
+                ->where('created_by', 'whatsapp')
+                ->where('status', 'menunggu_evaluasi')
+                ->order_by('id_kunjungan', 'DESC')
+                ->limit(1)
+                ->get('tamdes_kunjungan')->row();
+            if (!$cur) $this->json_response(['success' => false, 'message' => 'Evaluasi sudah selesai atau ditutup'], 409);
+            $target = (int) $cur->id_kunjungan;
+            $this->audit_system('wa_eval_redirect', 'visit', $target, ['from' => $id, 'id_user' => (int) $visit->id_user]);
+        }
+
+        $eval_token = $this->mint_kiosk_token('eval-submit', $target, 600); // short; used against UNCHANGED /api/evaluations/{id}
+        $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $target, 'kiosk_token' => $eval_token], 'message' => 'OK']);
     }
 
     // /api/wa/qr-state — POST (internal-secret): connector pushes {qr?, ready, number?}.

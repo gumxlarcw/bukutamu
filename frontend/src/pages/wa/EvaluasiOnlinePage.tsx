@@ -57,28 +57,31 @@ export default function EvaluasiOnlinePage() {
   const [params] = useSearchParams()
   const accessToken = params.get('t') ?? ''
   const [evalToken, setEvalToken] = useState<string | undefined>()
+  const [evalId, setEvalId] = useState<number | undefined>()
   const [done, setDone] = useState(false)
   const [closed, setClosed] = useState(false)
   const [failed, setFailed] = useState(false)
 
-  // Exchange the durable access token for a short eval-submit token.
+  // Exchange the durable access token for a short eval-submit token. The server may smart-route an
+  // old session's link to the visitor's CURRENT pending eval, so trust the id_kunjungan it returns
+  // (not the URL id) for the form fetch + submit — the eval-submit token is bound to that resolved id.
   useEffect(() => {
     if (!id || !accessToken) return
     let cancelled = false
     waApi.getEvalToken(Number(id), accessToken)
-      .then(r => { if (!cancelled) setEvalToken(r.data.data?.kiosk_token) })
+      .then(r => { if (!cancelled) { setEvalToken(r.data.data?.kiosk_token); setEvalId(r.data.data?.id_kunjungan) } })
       .catch((e) => { if (!cancelled) { if (e?.response?.status === 409) setClosed(true); else setFailed(true) } })
     return () => { cancelled = true }
   }, [id, accessToken])
 
   const { data: formData, isLoading, isError } = useQuery({
-    queryKey: ['wa-eval-form', id, evalToken],
-    queryFn: () => evaluationsApi.getForm(Number(id), evalToken!).then(r => r.data.data),
-    enabled: !!id && !!evalToken,
+    queryKey: ['wa-eval-form', evalId, evalToken],
+    queryFn: () => evaluationsApi.getForm(evalId!, evalToken!).then(r => r.data.data),
+    enabled: !!evalId && !!evalToken,
   })
 
   const submit = useMutation({
-    mutationFn: (data: EvaluationSubmission) => evaluationsApi.submit(Number(id), data, evalToken!),
+    mutationFn: (data: EvaluationSubmission) => evaluationsApi.submit(evalId!, data, evalToken!),
     onSuccess: () => setDone(true),
     onError: () => toast.error('Gagal mengirim evaluasi'),
   })
