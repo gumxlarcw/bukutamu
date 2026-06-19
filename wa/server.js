@@ -175,8 +175,53 @@ async function failFast(reason) {
 client.on('auth_failure', (m) => { failFast('auth_failure: ' + m); });
 client.on('disconnected', (r) => { failFast('disconnected: ' + r); });
 
+// Status pengiriman (ack) pesan KELUAR kita: 1=server ✓, 2=delivered ✓✓, 3=read ✓✓ biru, 4=played.
+// Di-buffer di sini lalu di-flush ke backend tiap tick bersama ack lain (hemat request, urut naik saja).
+const ackStates = new Map(); // wa_msg_id -> ack tertinggi yang terlihat
+client.on('message_ack', (msg, ack) => {
+  try {
+    const id = msg && msg.id && msg.id._serialized;
+    if (!id || !msg.fromMe) return; // hanya lacak pesan yang KITA kirim
+    if ((ackStates.get(id) || 0) < ack) ackStates.set(id, ack);
+  } catch (_) { /* noop */ }
+});
+
+// Reaksi (visitor ↔ kita) pada sebuah pesan: buffer lalu flush tiap tick (emoji terbaru menang).
+const reactionBuf = new Map(); // wa_msg_id -> emoji ('' = reaksi dihapus)
+client.on('message_reaction', (reaction) => {
+  try {
+    const id = reaction && reaction.msgId && reaction.msgId._serialized;
+    if (!id) return;
+    reactionBuf.set(id, reaction.reaction || '');
+  } catch (_) { /* noop */ }
+});
+
 // Tipe pesan sistem / non-percakapan yang harus diabaikan.
 const IGNORED_TYPES = new Set(['e2e_notification', 'notification_template', 'gp2', 'call_log', 'ciphertext', 'revoked', 'protocol', 'interactive', 'notification']);
+
+// msg_type DB dari msg.type wwebjs + mime. Stiker=webp; ptt=voice note; gif≈video.
+function mediaTypeOf(msg, mime) {
+  if (msg.type === 'sticker') return 'sticker';
+  if (msg.type === 'ptt' || msg.type === 'audio' || (mime && mime.startsWith('audio/'))) return 'audio';
+  if (msg.type === 'video' || msg.type === 'gif' || (mime && mime.startsWith('video/'))) return 'video';
+  if (mime && mime.startsWith('image/')) return 'image';
+  return 'document';
+}
+// Pesan non-file (lokasi / kontak vCard) → set payload.type + body, tanpa media. true bila ditangani.
+function applyNonFile(msg, payload) {
+  if (msg.type === 'location' && msg.location) {
+    const loc = msg.location;
+    payload.type = 'location';
+    payload.body = (loc.description ? loc.description + '\n' : '') + 'https://maps.google.com/?q=' + loc.latitude + ',' + loc.longitude;
+    return true;
+  }
+  if (msg.type === 'vcard' || msg.type === 'multi_vcard') {
+    payload.type = 'contact';
+    payload.body = msg.body || '[kontak]';
+    return true;
+  }
+  return false;
+}
 
 client.on('message', async (msg) => {
   try {
@@ -228,7 +273,16 @@ client.on('message', async (msg) => {
     let mediaFile = null; // file media yang ditulis — dihapus bila backend tak menyimpan (cegah orphan)
     try {
       const waMsgId = (msg.id && msg.id._serialized) || null;
-      let payload = { phone, wa_chat_id: waId, wa_msg_id: waMsgId, type: 'text', body: bodyText };
+      // Reply: tangkap pesan yang dikutip (utk chip kutipan di FE).
+      let quoted = {};
+      if (msg.hasQuotedMsg) {
+        try {
+          const q = await withTimeout(msg.getQuotedMessage(), WA_OP_TIMEOUT_MS, 'getQuotedMessage-in');
+          if (q) quoted = { quoted_msg_id: (q.id && q.id._serialized) || null, quoted_preview: (q.body || '').slice(0, 255) };
+        } catch (_) { /* best-effort */ }
+      }
+      let payload = { phone, wa_chat_id: waId, wa_msg_id: waMsgId, type: 'text', body: bodyText, ...quoted };
+      applyNonFile(msg, payload); // lokasi / kontak (tanpa file)
       if (msg.hasMedia) {
         const media = await withTimeout(msg.downloadMedia(), WA_OP_TIMEOUT_MS, 'downloadMedia-in');
         if (media && media.data) {
@@ -241,8 +295,9 @@ client.on('message', async (msg) => {
           try { fs.chmodSync(mediaFile, 0o644); } catch (_) { /* www-data harus bisa baca */ }
           payload = {
             phone, wa_chat_id: waId, wa_msg_id: waMsgId,
-            type: mime.startsWith('image/') ? 'image' : 'document',
+            type: mediaTypeOf(msg, mime),
             body: msg.body || '', media_path: fname, media_mime: mime, media_name: media.filename || fname,
+            ...quoted,
           };
         }
       }
@@ -306,13 +361,14 @@ async function tick() {
       processed++;
       try {
         const dest = m.wa_chat_id || jidFromLocal(m.phone);
+        const sendOpts = m.quoted_msg_id ? { quotedMessageId: m.quoted_msg_id } : {}; // reply → kutip pesan
         let sentMsg;
         if (m.kind === 'chat' && m.media_path) {
           const media = MessageMedia.fromFilePath(path.join(MEDIA_DIR, path.basename(m.media_path)));
           if (m.media_name) media.filename = m.media_name; // pakai nama asli, bukan uuid disk, di WhatsApp
-          sentMsg = await withTimeout(client.sendMessage(dest, media, { caption: m.body || '' }), WA_OP_TIMEOUT_MS, 'send-media');
+          sentMsg = await withTimeout(client.sendMessage(dest, media, { caption: m.body || '', ...sendOpts }), WA_OP_TIMEOUT_MS, 'send-media');
         } else {
-          sentMsg = await withTimeout(client.sendMessage(dest, m.body || ''), WA_OP_TIMEOUT_MS, 'send-text');
+          sentMsg = await withTimeout(client.sendMessage(dest, m.body || '', sendOpts), WA_OP_TIMEOUT_MS, 'send-text');
         }
         if (m.kind === 'chat') chatSent.push({ id: m.id, wa_msg_id: (sentMsg && sentMsg.id && sentMsg.id._serialized) || '' });
         else sentOutbox.push(m.id);
@@ -327,6 +383,22 @@ async function tick() {
           if (m.kind === 'chat') failedChat.push(m.id);
         }
       }
+    }
+    // ── Auto-seen: chat yang dibuka petugas → tandai "dibaca" (centang biru utk visitor). Best-effort. ──
+    const seenChats = (body.data && body.data.seen) || [];
+    for (const cid of seenChats) {
+      try {
+        const c = await withTimeout(client.getChatById(cid), WA_OP_TIMEOUT_MS, 'getChatById-seen');
+        await withTimeout(c.sendSeen(), WA_OP_TIMEOUT_MS, 'sendSeen');
+      } catch (e) { log('sendSeen err ' + cid, e.message); }
+    }
+    // ── Reaksi keluar (petugas → visitor): message.react(emoji). Best-effort. ──
+    const reactionsOut = (body.data && body.data.reactions_out) || [];
+    for (const ro of reactionsOut) {
+      try {
+        const rm = await withTimeout(client.getMessageById(ro.wa_msg_id), WA_OP_TIMEOUT_MS, 'getMessageById-react');
+        if (rm) await withTimeout(rm.react(ro.emoji || ''), WA_OP_TIMEOUT_MS, 'react');
+      } catch (e) { log('react-out err ' + ro.wa_msg_id, e.message); }
     }
     // ── Backfill: ambil histori chat dari WhatsApp → ingest (dedup). Juga recovery pasca-outage. ──
     const backfills = (body.data && body.data.backfills) || [];
@@ -357,6 +429,13 @@ async function tick() {
             from_me: !!msg.fromMe, ts: msg.timestamp || 0, backfill: true,
             type: 'text', body: msg.body || '',
           };
+          if (msg.hasQuotedMsg) {
+            try {
+              const q = await withTimeout(msg.getQuotedMessage(), WA_OP_TIMEOUT_MS, 'getQuotedMessage-bf');
+              if (q) { payload.quoted_msg_id = (q.id && q.id._serialized) || null; payload.quoted_preview = (q.body || '').slice(0, 255); }
+            } catch (_) { /* best-effort */ }
+          }
+          applyNonFile(msg, payload); // lokasi / kontak (tanpa file)
           let mf = null;
           if (msg.hasMedia) {
             try {
@@ -368,11 +447,15 @@ async function tick() {
                 mf = path.join(MEDIA_DIR, fname);
                 fs.writeFileSync(mf, Buffer.from(media.data, 'base64'));
                 try { fs.chmodSync(mf, 0o644); } catch (_) { /* readable oleh www-data */ }
-                payload.type = mime.startsWith('image/') ? 'image' : 'document';
+                payload.type = mediaTypeOf(msg, mime);
                 payload.media_path = fname; payload.media_mime = mime; payload.media_name = media.filename || fname;
               }
             } catch (e) { log('backfill media err', e.message); }
           }
+          // Media gagal diunduh (timeout/throttle) → JANGAN ingest baris teks-only ber-wa_msg_id.
+          // Kalau diingest, wa_msg_id terkunci ke baris tanpa media → backfill ulang ditolak duplikat
+          // → media hilang permanen (audit 2026-06-19, dedup-poison). Lewati; backfill berikut retry bersih.
+          if (msg.hasMedia && !payload.media_path) { log('backfill skip media-undownloaded msg=' + payload.wa_msg_id); continue; }
           try {
             const rr = await bfetch(CHAT_INGEST_URL, {
               method: 'POST',
@@ -394,13 +477,26 @@ async function tick() {
       if (ok) backfillDone.push(bf.id); else backfillFailed.push(bf.id);
     }
 
-    if (sentOutbox.length || chatSent.length || backfillDone.length || backfillFailed.length) {
-      await bfetch(ACK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
-        body: JSON.stringify({ ids: sentOutbox, chat_sent: chatSent, backfill_ids: backfillDone, backfill_fail: backfillFailed }),
-      });
-      log('acked outbox=' + sentOutbox.length + ' chat=' + chatSent.length + ' backfill=' + backfillDone.length + ' bf_fail=' + backfillFailed.length);
+    // Snapshot buffer ack/reaksi TANPA clear dulu — buffer ini state ephemeral connector; kalau
+    // POST gagal & sudah ter-clear, tick delivered/read & reaksi masuk HILANG permanen. Hapus hanya
+    // setelah POST sukses, dan hanya entri yang belum berubah (event baru saat POST in-flight tetap aman).
+    const ackArr = [];
+    for (const [wa_msg_id, ack] of ackStates) ackArr.push({ wa_msg_id, ack });
+    const reactArr = [];
+    for (const [wa_msg_id, emoji] of reactionBuf) reactArr.push({ wa_msg_id, emoji });
+    if (sentOutbox.length || chatSent.length || backfillDone.length || backfillFailed.length || ackArr.length || reactArr.length) {
+      try {
+        await bfetch(ACK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
+          body: JSON.stringify({ ids: sentOutbox, chat_sent: chatSent, backfill_ids: backfillDone, backfill_fail: backfillFailed, ack_states: ackArr, reactions: reactArr }),
+        });
+        for (const a of ackArr) if (ackStates.get(a.wa_msg_id) === a.ack) ackStates.delete(a.wa_msg_id);
+        for (const r of reactArr) if (reactionBuf.get(r.wa_msg_id) === r.emoji) reactionBuf.delete(r.wa_msg_id);
+        log('acked outbox=' + sentOutbox.length + ' chat=' + chatSent.length + ' backfill=' + backfillDone.length + ' bf_fail=' + backfillFailed.length + ' ack=' + ackArr.length + ' react=' + reactArr.length);
+      } catch (e) {
+        log('ack POST gagal — buffer dipertahankan, retry tick berikutnya', e.message); // jangan hapus → cegah hilang
+      }
     }
     if (failedChat.length) {
       await bfetch(FAIL_URL, {

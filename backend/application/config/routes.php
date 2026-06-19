@@ -81,6 +81,8 @@ $route['api/kiosk/visit']                    = 'api/kiosk/visit';
 $route['api/kiosk/ticket/(:num)']            = 'api/kiosk/ticket/$1';
 $route['api/kiosk/profile-gaps/(:num)']      = 'api/kiosk/profile_gaps/$1';
 $route['api/kiosk/profile-update/(:num)']    = 'api/kiosk/profile_update/$1';
+$route['api/kiosk/wa-lookup']                = 'api/kiosk/wa_lookup';    // POST find WA online registrant by phone (kiosk check-in)
+$route['api/kiosk/wa-promote']               = 'api/kiosk/wa_promote';   // POST enroll face + promote WA visit to physical queue
 
 // WhatsApp online data-request channel (api/wa/*)
 $route['api/wa/ingest']          = 'api/wa/ingest';        // POST internal-secret
@@ -99,6 +101,8 @@ $route['api/wa/messages/fail']     = 'api/wa/messages_fail';     // POST interna
 $route['api/wa/messages/backfill'] = 'api/wa/messages_backfill'; // POST auth+PST (enqueue history backfill)
 $route['api/wa/backfill-active']   = 'api/wa/backfill_active';   // POST internal-secret (reconnect/outage recovery)
 $route['api/wa/messages']        = 'api/wa/messages';        // GET thread / POST send text (auth+PST)
+$route['api/wa/seen']            = 'api/wa/seen';            // POST mark-seen (auth+PST → connector sendSeen)
+$route['api/wa/react']           = 'api/wa/react';           // POST react emoji to a message (auth+PST)
 $route['api/wa/media/(:num)']    = 'api/wa/media/$1';        // GET media stream (auth+PST)
 $route['api/wa/sessions/(:num)/assign'] = 'api/wa/session_assign/$1'; // POST take-over (auth+PST)
 $route['api/wa/sessions/(:num)'] = 'api/wa/session_delete/$1'; // DELETE pending session (admin only)

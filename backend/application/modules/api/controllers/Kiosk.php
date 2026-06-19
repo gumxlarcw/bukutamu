@@ -371,4 +371,140 @@ class Kiosk extends Api_base {
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Profil berhasil dilengkapi']);
     }
 
+    /**
+     * POST /api/kiosk/wa-lookup { phone }
+     * Jalur check-in kiosk untuk pendaftar layanan-online WhatsApp (telepon + wajah).
+     * Cari tamu berdasarkan nomor HP + kunjungan WA yang bisa dipromosikan, lalu kembalikan
+     * kiosk-token (bound ke id_kunjungan) untuk langkah wa-promote.
+     */
+    public function wa_lookup() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+        $this->require_rate_limit('kiosk/wa-lookup', 30);
+
+        $input = $this->get_json_input();
+        $phone = $this->normalize_phone((string) ($input['phone'] ?? ''));
+        if ($phone === '') {
+            $this->json_response(['success' => false, 'message' => 'Nomor HP diperlukan'], 422);
+        }
+
+        // Identitas harus tunggal: >1 tamu dengan nomor sama → tak bisa dipastikan siapa
+        // (mis. nomor dipakai bersama) → minta bantuan petugas. (mirror multi-match prefill WA)
+        $guests = $this->db->select('id_user, nama')->where('notel', $phone)->get('tamdes_buku')->result();
+        if (count($guests) === 0) {
+            $this->json_response(['success' => false, 'message' => 'Nomor ini tidak terdaftar melalui layanan online WhatsApp. Silakan pilih "Belum Pernah Daftar".'], 404);
+        }
+        if (count($guests) > 1) {
+            $this->json_response(['success' => false, 'message' => 'Nomor terdaftar untuk lebih dari satu pengunjung. Silakan hubungi petugas.'], 409);
+        }
+        $guest = $guests[0];
+
+        // Kunjungan WA terbaru milik tamu ini (yang masih bisa dilayani fisik).
+        $visit = $this->db->select('id_kunjungan, status')
+                          ->where('id_user', $guest->id_user)
+                          ->where('created_by', 'whatsapp')
+                          ->order_by('id_kunjungan', 'DESC')
+                          ->limit(1)
+                          ->get('tamdes_kunjungan')->row();
+        if (!$visit) {
+            $this->json_response(['success' => false, 'message' => 'Tidak ada permintaan layanan online WhatsApp untuk nomor ini.'], 404);
+        }
+        if (in_array($visit->status, ['selesai', 'evaluasi_selesai'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Permintaan Anda sudah selesai kami proses. Silakan daftar baru untuk permintaan lainnya.'], 409);
+        }
+
+        // Token bound ke id_kunjungan (TTL 5 menit) — wajib utk wa-promote.
+        $kiosk_token = $this->mint_kiosk_token('wa-checkin', (int) $visit->id_kunjungan, 300);
+
+        $this->json_response([
+            'success' => true,
+            'data'    => ['nama' => $guest->nama, 'id_kunjungan' => (int) $visit->id_kunjungan, 'kiosk_token' => $kiosk_token],
+            'message' => 'OK',
+        ]);
+    }
+
+    /**
+     * POST /api/kiosk/wa-promote { id_kunjungan, face_descriptor, foto?, biometric_consent,
+     *   consent_timestamp, jenis_layanan, layanan_lainnya, sarana, sarana_lainnya }
+     * Daftarkan biometrik wajah ke tamu WA (yang sebelumnya tak punya), lalu PROMOSIKAN
+     * kunjungan WA-nya jadi kunjungan fisik: layanan pilihan kiosk + nomor antrian fisik +
+     * created_by='wa_kiosk' (keluar dari inbox Layanan Online, masuk antrean PST; provenance tetap).
+     * Dijaga kiosk-token (purpose wa-checkin) bound ke id_kunjungan.
+     */
+    public function wa_promote() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+        $input        = $this->get_json_input();
+        $id_kunjungan = (int) ($input['id_kunjungan'] ?? 0);
+        if ($id_kunjungan <= 0) {
+            $this->json_response(['success' => false, 'message' => 'id_kunjungan diperlukan'], 422);
+        }
+        $this->require_kiosk_token('wa-checkin', $id_kunjungan);
+
+        // Taksonomi layanan — sama seperti register/visit (sebelum LOCK; bisa sentuh tabel lain).
+        $this->validate_no_cross_layanan($input['jenis_layanan'] ?? null);
+        $this->validate_sarana_for_layanan($input['jenis_layanan'] ?? null, $input['sarana'] ?? []);
+
+        // Wajah wajib — inti jalur ini adalah mendaftarkan biometrik.
+        if (empty($input['face_descriptor']) || !is_array($input['face_descriptor'])) {
+            $this->json_response(['success' => false, 'message' => 'Pemindaian wajah diperlukan'], 422);
+        }
+
+        // Kunci + recheck (TOCTOU): kunjungan harus masih WA & belum selesai saat dipromosikan.
+        $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE');
+        $visit = $this->db->select('id_kunjungan, id_user, created_by, status')
+                          ->where('id_kunjungan', $id_kunjungan)
+                          ->get('tamdes_kunjungan')->row();
+        if (!$visit || $visit->created_by !== 'whatsapp') {
+            $this->db->query('UNLOCK TABLES');
+            $this->json_response(['success' => false, 'message' => 'Kunjungan WhatsApp tidak ditemukan atau sudah diproses.'], 409);
+        }
+        if (in_array($visit->status, ['selesai', 'evaluasi_selesai'], true)) {
+            $this->db->query('UNLOCK TABLES');
+            $this->json_response(['success' => false, 'message' => 'Permintaan Anda sudah selesai kami proses.'], 409);
+        }
+        $id_user = (int) $visit->id_user;
+
+        // 1) Daftarkan wajah + consent ke tamu (tamu WA sebelumnya face_descriptor NULL).
+        $foto = null;
+        if (!empty($input['foto'])) {
+            $b64  = preg_replace('/^data:image\/\w+;base64,/', '', $input['foto']);
+            $foto = base64_decode($b64);
+        }
+        $guest_update = [
+            'face_descriptor'   => json_encode($input['face_descriptor']),
+            'biometric_consent' => !empty($input['biometric_consent']) ? 1 : 0,
+            'consent_timestamp' => !empty($input['consent_timestamp']) ? date('Y-m-d H:i:s', strtotime($input['consent_timestamp'])) : date('Y-m-d H:i:s'),
+        ];
+        if ($foto !== null) $guest_update['foto'] = $foto;
+        $this->db->where('id_user', $id_user)->update('tamdes_buku', $guest_update);
+
+        // 2) Promosikan kunjungan: layanan pilihan kiosk + nomor antrian fisik + created_by='wa_kiosk'.
+        $jl_raw = $input['jenis_layanan'] ?? '';
+        $jl     = is_array($jl_raw) ? json_encode($jl_raw) : $jl_raw;
+        $sr_raw = $input['sarana'] ?? [];
+        $sr     = is_array($sr_raw) ? json_encode($sr_raw) : $sr_raw;
+        $nomor_antrian = $this->generate_queue_number(is_array($jl_raw) ? ($jl_raw[0] ?? '') : $jl_raw);
+
+        $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
+            'jenis_layanan'   => $jl,
+            'layanan_lainnya' => $input['layanan_lainnya'] ?? null,
+            'sarana'          => $sr,
+            'sarana_lainnya'  => $input['sarana_lainnya'] ?? null,
+            'nomor_antrian'   => $nomor_antrian,
+            'status'          => 'antri',
+            'date_visit'      => date('Y-m-d H:i:s'),
+            'created_by'      => 'wa_kiosk',
+        ]);
+        $this->db->query('UNLOCK TABLES');
+
+        $this->json_response([
+            'success' => true,
+            'data'    => ['id_kunjungan' => $id_kunjungan, 'nomor_antrian' => $nomor_antrian],
+            'message' => 'Check-in berhasil',
+        ], 200);
+    }
+
 }

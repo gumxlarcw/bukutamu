@@ -94,6 +94,7 @@ class Wa extends Api_base {
             $messages[] = [
                 'id' => (int) $m->id, 'kind' => 'chat', 'phone' => $m->phone_norm, 'wa_chat_id' => $m->wa_chat_id,
                 'body' => $m->body, 'media_path' => $m->media_path, 'media_mime' => $m->media_mime, 'media_name' => $m->media_name,
+                'quoted_msg_id' => $m->quoted_msg_id,
             ];
         }
 
@@ -108,7 +109,23 @@ class Wa extends Api_base {
             return ['id' => (int) $b->id, 'phone' => $b->phone_norm, 'wa_chat_id' => $b->wa_chat_id];
         }, $bf);
 
-        $this->json_response(['success' => true, 'data' => ['messages' => $messages, 'command' => $command, 'backfills' => $backfills], 'message' => 'OK']);
+        // Antrian "sudah dibaca" + reaksi keluar (read-once). DILEWATI saat ada command (logout):
+        // connector return lebih awal sebelum loop seen/react → baris yang sudah dihapus tak diproses
+        // (hilang). Tunda ke tick berikutnya. NB sisa risiko: bila connector crash antara baca & dispatch,
+        // reaksi bisa hilang (at-most-once, best-effort UX); seen sembuh sendiri saat chat dibuka ulang.
+        $seen = []; $reactions_out = [];
+        if (!$command) {
+            $seenRows = $this->db->order_by('id', 'ASC')->limit(20)->get('wa_seen_queue')->result();
+            $seen = array_map(function ($s) { return $s->wa_chat_id; }, $seenRows);
+            if ($seenRows) {
+                $this->db->where_in('id', array_map(function ($s) { return (int) $s->id; }, $seenRows))->delete('wa_seen_queue');
+            }
+            $reactRows = $this->db->order_by('id', 'ASC')->limit(20)->get('wa_react_queue')->result();
+            $reactions_out = array_map(function ($r) { return ['wa_msg_id' => $r->wa_msg_id, 'emoji' => $r->emoji]; }, $reactRows);
+            if ($reactRows) $this->db->where_in('id', array_map(function ($r) { return (int) $r->id; }, $reactRows))->delete('wa_react_queue');
+        }
+
+        $this->json_response(['success' => true, 'data' => ['messages' => $messages, 'command' => $command, 'backfills' => $backfills, 'seen' => $seen, 'reactions_out' => $reactions_out], 'message' => 'OK']);
     }
 
     // POST /api/wa/disconnect (auth + PST role) — admin minta connector putus tautan & tampilkan QR baru (ganti nomor).
@@ -134,6 +151,8 @@ class Wa extends Api_base {
         $csent = (isset($input['chat_sent']) && is_array($input['chat_sent'])) ? $input['chat_sent'] : [];
         $bids  = (isset($input['backfill_ids']) && is_array($input['backfill_ids'])) ? array_map('intval', $input['backfill_ids']) : [];
         $bfail = (isset($input['backfill_fail']) && is_array($input['backfill_fail'])) ? array_map('intval', $input['backfill_fail']) : [];
+        $acks  = (isset($input['ack_states']) && is_array($input['ack_states'])) ? $input['ack_states'] : [];
+        $reacts = (isset($input['reactions']) && is_array($input['reactions'])) ? $input['reactions'] : [];
         if ($ids)  $this->db->where_in('id', $ids)->update('wa_outbox', ['status' => 'sent', 'sent_at' => date('Y-m-d H:i:s')]);
         if ($cids) $this->db->where_in('id', $cids)->where('direction', 'out')->update('wa_messages', ['status' => 'sent']);
         // Chat keluar terkirim → simpan WA message-id-nya supaya backfill/recovery TIDAK menggandakan pesan kita sendiri.
@@ -151,6 +170,21 @@ class Wa extends Api_base {
         if ($bfail) {
             $this->db->where_in('id', $bfail)->set('attempts', 'attempts+1', false)->update('wa_backfill');
             $this->db->where_in('id', $bfail)->where('attempts >=', 4)->update('wa_backfill', ['status' => 'done']);
+        }
+        // Status pengiriman WhatsApp (delivered/read) → naikkan `ack` pesan keluar (jangan turunkan).
+        foreach ($acks as $a) {
+            $wid = trim((string) ($a['wa_msg_id'] ?? ''));
+            $lvl = (int) ($a['ack'] ?? 0);
+            if ($wid === '' || $lvl <= 0) continue;
+            $this->db->where('wa_msg_id', $wid)->where('direction', 'out')->where('ack <', $lvl)
+                     ->update('wa_messages', ['ack' => $lvl]);
+        }
+        // Reaksi masuk (visitor → kita) dari message_reaction connector → simpan di baris pesan terkait.
+        foreach ($reacts as $r) {
+            $wid = trim((string) ($r['wa_msg_id'] ?? ''));
+            if ($wid === '') continue;
+            $emoji = (string) ($r['emoji'] ?? '');
+            $this->db->where('wa_msg_id', $wid)->update('wa_messages', ['reaction' => ($emoji !== '' ? mb_substr($emoji, 0, 32) : null)]);
         }
         $this->json_response(['success' => true, 'data' => ['acked' => count($ids) + count($cids) + count($csent)], 'message' => 'OK']);
     }
@@ -184,7 +218,7 @@ class Wa extends Api_base {
             if ($dup) $this->json_response(['success' => true, 'data' => ['stored' => false, 'id' => (int) $dup->id], 'message' => 'duplicate']);
         }
 
-        $type = in_array(($in['type'] ?? 'text'), ['text', 'image', 'document'], true) ? $in['type'] : 'text';
+        $type = in_array(($in['type'] ?? 'text'), ['text', 'image', 'document', 'audio', 'video', 'sticker', 'location', 'contact'], true) ? $in['type'] : 'text';
         $body = isset($in['body']) ? mb_substr((string) $in['body'], 0, 8000) : null;
 
         // Backfill re-ingest of OUR OWN outbound message: the live send path already recorded it,
@@ -201,7 +235,8 @@ class Wa extends Api_base {
         }
 
         $media_path = null; $media_mime = null; $media_name = null;
-        if ($type !== 'text') {
+        // Hanya tipe ber-file yang lewat pipeline media; location/contact (& text) simpan body saja.
+        if (in_array($type, ['image', 'document', 'audio', 'video', 'sticker'], true)) {
             $base = basename((string) ($in['media_path'] ?? '')); // buang komponen path apa pun
             if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.[A-Za-z0-9]{1,8}$/', $base)) {
                 $this->json_response(['success' => false, 'message' => 'media_path tidak valid'], 422);
@@ -216,7 +251,9 @@ class Wa extends Api_base {
             $media_path = $base;
             $media_mime = $mime;
             $media_name = isset($in['media_name']) ? mb_substr((string) $in['media_name'], 0, 200) : $base;
-            $type = (strpos($mime, 'image/') === 0) ? 'image' : 'document';
+            $derived = $this->wa_media_type($mime);
+            // webp dari WA = stiker bila connector memberi hint type='sticker'; selain itu ikuti mime.
+            $type = ($derived === 'image' && ($in['type'] ?? '') === 'sticker') ? 'sticker' : $derived;
         }
 
         $row = [
@@ -230,6 +267,8 @@ class Wa extends Api_base {
             'media_mime'   => $media_mime,
             'media_name'   => $media_name,
             'wa_msg_id'    => ($wa_msg_id !== '' ? $wa_msg_id : null),
+            'quoted_msg_id'  => (isset($in['quoted_msg_id']) && trim((string) $in['quoted_msg_id']) !== '') ? trim((string) $in['quoted_msg_id']) : null,
+            'quoted_preview' => isset($in['quoted_preview']) ? mb_substr((string) $in['quoted_preview'], 0, 255) : null,
             'status'       => $from_me ? 'sent' : 'received',
         ];
         if ($ts > 0) $row['created_at'] = date('Y-m-d H:i:s', $ts); // backfill: pertahankan waktu asli pesan
@@ -251,8 +290,12 @@ class Wa extends Api_base {
             $phone = $this->normalize_phone((string) $this->input->get('phone'));
             $after = (int) $this->input->get('after');
             if ($phone === '') $this->json_response(['success' => false, 'message' => 'phone diperlukan'], 400);
+            // Ambil 500 pesan TERBARU lalu balik ke urutan kronologis. Dgn ASC+LIMIT, thread yang
+            // melewati 500 pesan akan membeku di 500 pesan TERLAMA & pesan baru tak pernah muncul
+            // (audit 2026-06-19 — message-loss vector #1). DESC+limit lalu reverse = selalu tampil ekor terbaru.
             $rows = $this->db->where('phone_norm', $phone)->where('id >', $after)
-                             ->order_by('id', 'ASC')->limit(500)->get('wa_messages')->result();
+                             ->order_by('id', 'DESC')->limit(500)->get('wa_messages')->result();
+            $rows = array_reverse($rows);
             $this->json_response(['success' => true, 'data' => array_map([$this, 'wa_msg_public'], $rows), 'message' => 'OK']);
         }
 
@@ -265,21 +308,76 @@ class Wa extends Api_base {
             if (mb_strlen($body) > 4096) $this->json_response(['success' => false, 'message' => 'Pesan maksimal 4096 karakter'], 422);
             $sess = $this->wa_latest_session($phone);
             if (!$sess || !$sess->wa_chat_id) $this->json_response(['success' => false, 'message' => 'Kontak tidak ditemukan'], 404);
-            $this->db->insert('wa_messages', [
+            // Reply: FE mengirim DB id pesan yang dibalas → resolve wa_msg_id (utk kutip di WA) + snapshot teks.
+            $quoted_db = (int) ($in['quoted_id'] ?? 0);
+            $quoted_wa = null; $quoted_preview = null;
+            if ($quoted_db > 0) {
+                $qr = $this->db->select('wa_msg_id, body, msg_type')->where('id', $quoted_db)->where('phone_norm', $phone)->limit(1)->get('wa_messages')->row();
+                if ($qr) {
+                    $quoted_wa = $qr->wa_msg_id;
+                    $quoted_preview = mb_substr(($qr->body !== null && $qr->body !== '') ? $qr->body : ('[' . $qr->msg_type . ']'), 0, 255);
+                }
+            }
+            $ok = $this->db->insert('wa_messages', [
                 'phone_norm'   => $phone,
                 'wa_chat_id'   => $sess->wa_chat_id,
                 'id_kunjungan' => $sess->id_kunjungan ?: null,
                 'direction'    => 'out',
                 'msg_type'     => 'text',
                 'body'         => $body,
+                'quoted_msg_id'  => $quoted_wa,
+                'quoted_preview' => $quoted_preview,
                 'status'       => 'pending',
             ]);
+            // db_debug off di production → insert bisa gagal diam-diam. Tanpa cek ini FE dapat 200+data:null,
+            // composer dikosongkan, pesan hilang tanpa jejak (audit 2026-06-19; mirror messages_upload & chat_ingest).
+            if ($ok === false) $this->json_response(['success' => false, 'message' => 'Gagal menyimpan pesan'], 500);
             $id = (int) $this->db->insert_id();
             $this->audit_system('wa_chat_send', 'message', $id, ['type' => 'text']);
             $this->json_response(['success' => true, 'data' => $this->wa_msg_public($this->db->get_where('wa_messages', ['id' => $id])->row()), 'message' => 'OK']);
         }
 
         $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+    }
+
+    // POST /api/wa/seen { phone } — petugas membuka/melihat chat → antri sendSeen (centang biru utk visitor).
+    public function seen() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        $in    = $this->get_json_input();
+        $phone = $this->normalize_phone((string) ($in['phone'] ?? ''));
+        if ($phone === '') $this->json_response(['success' => false, 'message' => 'phone diperlukan'], 422);
+        $sess = $this->wa_latest_session($phone);
+        if ($sess && $sess->wa_chat_id) {
+            // INSERT IGNORE (UNIQUE wa_chat_id) → tak menumpuk saat chat dibuka berulang.
+            $this->db->query('INSERT IGNORE INTO wa_seen_queue (wa_chat_id) VALUES (?)', [$sess->wa_chat_id]);
+        }
+        // Tandai inbox sudah dibaca: majukan last_read_msg_id ke pesan terakhir nomor ini (forward-only).
+        $maxRow = $this->db->select_max('id')->where('phone_norm', $phone)->get('wa_messages')->row();
+        $maxId  = ($maxRow && $maxRow->id) ? (int) $maxRow->id : 0;
+        $this->db->query(
+            "INSERT INTO wa_read_state (phone_norm, last_read_msg_id) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE last_read_msg_id = GREATEST(last_read_msg_id, ?)",
+            [$phone, $maxId, $maxId]
+        );
+        $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
+    }
+
+    // POST /api/wa/react { wa_msg_id, emoji } — petugas memberi reaksi emoji ke sebuah pesan ('' = hapus).
+    public function react() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        $in    = $this->get_json_input();
+        $id    = (int) ($in['id'] ?? 0);
+        $emoji = mb_substr((string) ($in['emoji'] ?? ''), 0, 32);
+        if ($id <= 0) $this->json_response(['success' => false, 'message' => 'id pesan diperlukan'], 422);
+        $row = $this->db->select('wa_msg_id')->where('id', $id)->limit(1)->get('wa_messages')->row();
+        if (!$row || !$row->wa_msg_id) $this->json_response(['success' => false, 'message' => 'Pesan belum terkirim — tak bisa direaksi'], 409);
+        $this->db->insert('wa_react_queue', ['wa_msg_id' => $row->wa_msg_id, 'emoji' => $emoji]); // connector message.react()
+        $this->db->where('id', $id)->update('wa_messages', ['reaction' => ($emoji !== '' ? $emoji : null)]); // optimistic
+        $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
     }
 
     // POST /api/wa/messages/upload (multipart: phone, file, caption?) — kirim media keluar.
@@ -307,7 +405,7 @@ class Wa extends Api_base {
         $dest = $this->wa_media_dir() . $name;
         if (!move_uploaded_file($f['tmp_name'], $dest)) $this->json_response(['success' => false, 'message' => 'Gagal menyimpan file'], 500);
         @chmod($dest, 0644);
-        $type = (strpos($mime, 'image/') === 0) ? 'image' : 'document';
+        $type = $this->wa_media_type($mime);
 
         $ins = $this->db->insert('wa_messages', [
             'phone_norm'   => $phone,
@@ -340,7 +438,7 @@ class Wa extends Api_base {
             $this->json_response(['success' => false, 'message' => 'File tidak ada'], 404);
         }
         $mime  = $m->media_mime ?: 'application/octet-stream';
-        $disp  = (strpos($mime, 'image/') === 0) ? 'inline' : 'attachment';
+        $disp  = (strpos($mime, 'image/') === 0 || strpos($mime, 'audio/') === 0 || strpos($mime, 'video/') === 0) ? 'inline' : 'attachment';
         $fname = str_replace(['"', "\r", "\n", '/', '\\'], '', ($m->media_name ?: basename($real)));
         while (ob_get_level() > 0) ob_end_clean();
         header('Content-Type: ' . $mime);
@@ -584,6 +682,21 @@ class Wa extends Api_base {
                 'operator_nama' => ($s->operator_nama ? $this->wa_strip_role_annot($s->operator_nama) : null),
             ];
         }
+
+        // Pesan masuk BELUM dibaca per nomor (badge tombol chat). Satu query grup → map ke item.
+        // Pesan masuk LIVE sudah tersimpan terus-menerus (chat_ingest), jadi badge akurat di latar
+        // tanpa membuka chat. last_read_msg_id dimajukan saat petugas membuka chat (lihat seen()).
+        $unreadRows = $this->db->query(
+            "SELECT m.phone_norm, COUNT(*) AS unread
+             FROM wa_messages m
+             LEFT JOIN wa_read_state rs ON rs.phone_norm = m.phone_norm
+             WHERE m.direction = 'in' AND m.id > COALESCE(rs.last_read_msg_id, 0)
+             GROUP BY m.phone_norm"
+        )->result();
+        $unreadMap = [];
+        foreach ($unreadRows as $u) $unreadMap[$u->phone_norm] = (int) $u->unread;
+        foreach ($items as &$it) { $it['unread'] = ($it['notel'] !== null) ? ($unreadMap[$it['notel']] ?? 0) : 0; }
+        unset($it);
 
         // Urutkan gabungan berdasarkan aktivitas terbaru.
         usort($items, function ($a, $b) { return strcmp((string) $b['date'], (string) $a['date']); });
@@ -1038,9 +1151,19 @@ class Wa extends Api_base {
         return $dir;
     }
 
+    // Klasifikasi tipe pesan dari mime (image/audio/video/document). 'sticker' ditentukan caller via hint.
+    private function wa_media_type($mime) {
+        if (strpos($mime, 'image/') === 0) return 'image';
+        if (strpos($mime, 'audio/') === 0) return 'audio';
+        if (strpos($mime, 'video/') === 0) return 'video';
+        return 'document';
+    }
+
     private function wa_mime_allowed($mime) {
         return in_array($mime, [
             'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+            'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/amr', 'audio/wav',
+            'video/mp4', 'video/3gpp', 'video/quicktime', 'video/webm',
             'application/pdf', 'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'application/vnd.ms-excel',
@@ -1051,6 +1174,8 @@ class Wa extends Api_base {
     private function wa_ext_for_mime($mime) {
         $map = [
             'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
+            'audio/ogg' => 'ogg', 'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/aac' => 'aac', 'audio/amr' => 'amr', 'audio/wav' => 'wav',
+            'video/mp4' => 'mp4', 'video/3gpp' => '3gp', 'video/quicktime' => 'mov', 'video/webm' => 'webm',
             'application/pdf' => 'pdf', 'application/msword' => 'doc',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
             'application/vnd.ms-excel' => 'xls',
@@ -1097,6 +1222,10 @@ class Wa extends Api_base {
             'media_name' => $m->media_name,
             'media_mime' => $m->media_mime,
             'status'     => $m->status,
+            'ack'        => (int) ($m->ack ?? 0),
+            'reaction'       => $m->reaction ?? null,
+            'quoted_msg_id'  => $m->quoted_msg_id ?? null,
+            'quoted_preview' => $m->quoted_preview ?? null,
             'created_at' => $m->created_at,
         ];
     }

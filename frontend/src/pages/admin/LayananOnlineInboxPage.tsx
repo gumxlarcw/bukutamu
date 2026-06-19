@@ -256,7 +256,7 @@ export default function LayananOnlineInboxPage() {
     setChats((cs) => cs.some((c) => c.phone === phone)
       ? cs.map((c) => (c.phone === phone ? { phone, nama } : c)) // segarkan nama bila dibuka ulang
       : [...cs, { phone, nama }])
-  const closeChat = (phone: string) => setChats((cs) => cs.filter((c) => c.phone !== phone))
+  const closeChat = (phone: string) => { setChats((cs) => cs.filter((c) => c.phone !== phone)); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) }
 
   // Hapus entri inbox — HANYA admin/superadmin (bukan petugas PST).
   const { user } = useAuth()
@@ -320,10 +320,11 @@ export default function LayananOnlineInboxPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['wa-inbox'],
     queryFn: () => waApi.inbox().then(r => r.data.data),
-    refetchInterval: 30000,
+    refetchInterval: 15000,   // badge pesan belum-dibaca terasa hidup tanpa membuka chat
   })
 
   const rows: WaInboxRow[] = data ?? []
+  const openPhones = new Set(chats.map((c) => c.phone))   // sembunyikan badge utk chat yg sedang dibuka
   const isVisit = (r: WaInboxRow) => r.kind === 'visit'
   const counts = {
     form: rows.filter(r => r.kind === 'pending').length,
@@ -434,8 +435,13 @@ export default function LayananOnlineInboxPage() {
                   </Button>
                 )}
                 {r.notel && (
-                  <Button size="sm" variant="outline" className="shrink-0" title="Buka chat WhatsApp" onClick={() => openChat(r.notel as string, r.nama)}>
+                  <Button size="sm" variant="outline" className="shrink-0 relative" title="Buka chat WhatsApp" onClick={() => openChat(r.notel as string, r.nama)}>
                     <MessageCircle className="w-4 h-4" />
+                    {r.unread > 0 && !openPhones.has(r.notel) && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 grid place-items-center rounded-full text-[10px] font-bold text-white bg-red-500 shadow-sm">
+                        {r.unread > 99 ? '99+' : r.unread}
+                      </span>
+                    )}
                   </Button>
                 )}
                 {canDelete && (

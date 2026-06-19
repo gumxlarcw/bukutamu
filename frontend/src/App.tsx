@@ -32,6 +32,7 @@ const ServiceSelectPage = lazyRetry(() => import('@/pages/kiosk/ServiceSelectPag
 const VisitorFormPage = lazyRetry(() => import('@/pages/kiosk/VisitorFormPage'))
 const FaceCapturePage = lazyRetry(() => import('@/pages/kiosk/FaceCapturePage'))
 const FaceRecognizePage = lazyRetry(() => import('@/pages/kiosk/FaceRecognizePage'))
+const WaCheckInPage = lazyRetry(() => import('@/pages/kiosk/WaCheckInPage'))
 const TicketPage = lazyRetry(() => import('@/pages/kiosk/TicketPage'))
 const EvaluationStandbyPage = lazyRetry(() => import('@/pages/kiosk/EvaluationStandbyPage'))
 const EvaluationPage = lazyRetry(() => import('@/pages/kiosk/EvaluationPage'))
@@ -74,6 +75,7 @@ function App() {
                   <Route path="/kiosk/form" element={<VisitorFormPage />} />
                   <Route path="/kiosk/capture" element={<FaceCapturePage />} />
                   <Route path="/kiosk/recognize" element={<FaceRecognizePage />} />
+                  <Route path="/kiosk/wa-checkin" element={<WaCheckInPage />} />
                   <Route path="/kiosk/ticket/:id" element={<TicketPage />} />
                 </Route>
                 <Route path="/kiosk/evaluasi" element={<EvaluationStandbyPage />} />

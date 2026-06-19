@@ -50,17 +50,22 @@ export interface WaInboxRow {
   permintaan: string | null
   assigned_to: number | null    // admin_users.id operator pemegang sesi (null = belum diambil)
   operator_nama: string | null  // nama operator (sudah dibersihkan), untuk chip "Ditangani"
+  unread: number                // jumlah pesan masuk belum dibaca (badge tombol "Buka chat")
 }
 
 export interface WaMessage {
   id: number
   direction: 'in' | 'out'
-  msg_type: 'text' | 'image' | 'document'
+  msg_type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'location' | 'contact'
   body: string | null
   media_url: string | null    // '/api/wa/media/{id}' bila ada lampiran
   media_name: string | null
   media_mime: string | null
   status: 'pending' | 'sent' | 'failed' | 'received'
+  ack: number                  // 0..4 WhatsApp ack (khusus 'out'): 2=delivered ✓✓ abu, 3=read ✓✓ biru
+  reaction: string | null      // emoji reaksi pada pesan ini (null = tak ada)
+  quoted_msg_id: string | null // wa_msg_id pesan yang dibalas (reply) — internal, utk koneksi WA
+  quoted_preview: string | null// cuplikan teks pesan yang dibalas (utk chip kutipan)
   created_at: string
 }
 

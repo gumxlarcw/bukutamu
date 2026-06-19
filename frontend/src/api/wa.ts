@@ -25,8 +25,8 @@ export const waApi = {
   // Live chat (web petugas ↔ WhatsApp)
   getMessages: (phone: string, after = 0) =>
     apiClient.get<ApiResponse<WaMessage[]>>('/api/wa/messages', { params: { phone, after } }),
-  sendText: (phone: string, body: string) =>
-    apiClient.post<ApiResponse<WaMessage>>('/api/wa/messages', { phone, body }),
+  sendText: (phone: string, body: string, quotedId?: number) =>
+    apiClient.post<ApiResponse<WaMessage>>('/api/wa/messages', { phone, body, quoted_id: quotedId }),
   uploadFile: (phone: string, file: File, caption?: string, onProgress?: (pct: number) => void) => {
     const fd = new FormData()
     fd.append('phone', phone)
@@ -41,6 +41,14 @@ export const waApi = {
   // Antri-kan backfill histori chat (connector fetchMessages → wa_messages, dedup).
   requestBackfill: (phone: string) =>
     apiClient.post<ApiResponse<{ queued: boolean }>>('/api/wa/messages/backfill', { phone }),
+
+  // Tandai chat sudah dibaca petugas → connector chat.sendSeen() (centang biru utk visitor).
+  markSeen: (phone: string) =>
+    apiClient.post<ApiResponse<null>>('/api/wa/seen', { phone }),
+
+  // Beri/hapus reaksi emoji pada sebuah pesan (id = DB id pesan; emoji '' = hapus reaksi).
+  react: (id: number, emoji: string) =>
+    apiClient.post<ApiResponse<null>>('/api/wa/react', { id, emoji }),
 
   // Hapus sesi PENDING (admin only). Sesi yang sudah jadi kunjungan → visitsApi.delete.
   deleteSession: (sessionId: number) =>

@@ -45,4 +45,15 @@ export const kioskApi = {
     apiClient.post<ApiResponse<null>>(`/api/kiosk/profile-update/${id_user}`, data, {
       headers: { 'X-Kiosk-Token': kiosk_token },
     }),
+  // WA online check-in (phone + face): find the WA visit, then promote it to the physical queue.
+  // waLookup returns a short-lived kiosk_token bound to id_kunjungan; pass it to waPromote.
+  waLookup: (phone: string) =>
+    apiClient.post<ApiResponse<{ nama: string; id_kunjungan: number; kiosk_token: string }>>('/api/kiosk/wa-lookup', { phone }),
+  waPromote: (
+    data: { id_kunjungan: number; foto: string; face_descriptor: number[]; biometric_consent: boolean; consent_timestamp: string } & VisitContext,
+    kiosk_token: string,
+  ) =>
+    apiClient.post<ApiResponse<{ id_kunjungan: number; nomor_antrian: string | null }>>('/api/kiosk/wa-promote', data, {
+      headers: { 'X-Kiosk-Token': kiosk_token },
+    }),
 }
