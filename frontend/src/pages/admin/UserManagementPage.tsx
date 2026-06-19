@@ -30,6 +30,11 @@ const ROLE_COLORS: Record<string, string> = {
   resepsionis: 'bg-teal-100 text-teal-700',
 }
 
+// Mirror of the backend password rule (Users.php: minimal 8 karakter, harus mengandung
+// huruf DAN angka). Enforced client-side only for instant feedback — the BE check stays the
+// source of truth. Keep both in sync (lihat feedback_backend_parity).
+const isPasswordValid = (pw: string) => pw.length >= 8 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw)
+
 export default function UserManagementPage() {
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
@@ -69,6 +74,10 @@ export default function UserManagementPage() {
     onSuccess: () => { toast.success('Password berhasil diubah'); setPwOpen(false); setPwForm({ old_password: '', new_password: '' }) },
     onError: (e: unknown) => toast.error((axios.isAxiosError(e) ? e.response?.data?.message : null) || 'Gagal mengubah password'),
   })
+
+  // Gate "Buat User": username + nama wajib terisi dan password lolos aturan BE.
+  const createPasswordError = form.password.length > 0 && !isPasswordValid(form.password)
+  const createFormValid = form.username.trim() !== '' && form.nama.trim() !== '' && isPasswordValid(form.password)
 
   return (
     <div className="space-y-5">
@@ -126,7 +135,11 @@ export default function UserManagementPage() {
           <div className="space-y-3 py-2">
             <div className="space-y-1"><Label>Username</Label><Input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} /></div>
             <div className="space-y-1"><Label>Nama Lengkap</Label><Input value={form.nama} onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} /></div>
-            <div className="space-y-1"><Label>Password</Label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 karakter, huruf + angka" /></div>
+            <div className="space-y-1">
+              <Label>Password</Label>
+              <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 karakter, huruf + angka" aria-invalid={createPasswordError ? true : undefined} />
+              {createPasswordError && <p className="text-red-600 text-xs">Password minimal 8 karakter, harus mengandung huruf dan angka</p>}
+            </div>
             <div className="space-y-1">
               <Label>Role</Label>
               <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm bg-background">
@@ -138,7 +151,7 @@ export default function UserManagementPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Batal</Button>
-            <Button className="bg-orange-600 hover:bg-orange-700 text-white" onClick={() => createMut.mutate()} disabled={createMut.isPending}>
+            <Button className="bg-orange-600 hover:bg-orange-700 text-white" onClick={() => createMut.mutate()} disabled={createMut.isPending || !createFormValid}>
               {createMut.isPending ? 'Membuat...' : 'Buat User'}
             </Button>
           </DialogFooter>
