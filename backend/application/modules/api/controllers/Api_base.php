@@ -146,12 +146,14 @@ class Api_base extends CI_Controller {
         }
 
         // PST role mencakup 4 layanan inti SKD + Konsultasi DTSEN (PST tapi tanpa SKD eval).
+        // 'Lainnya Online' = WA category #3 — PST-handled online chat, no SKD eval.
         $pst_services = [
             'Perpustakaan',
             'Konsultasi Statistik',
             'Rekomendasi Kegiatan Statistik',
             'Penjualan Produk Statistik',
             'Konsultasi DTSEN',
+            'Lainnya Online', // WA category #3 — PST-handled online, no eval
         ];
         $resepsionis_services = ['Lainnya', 'Keperluan Pimpinan'];
 
