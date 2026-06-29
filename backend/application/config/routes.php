@@ -105,6 +105,7 @@ $route['api/wa/seen']            = 'api/wa/seen';            // POST mark-seen (
 $route['api/wa/react']           = 'api/wa/react';           // POST react emoji to a message (auth+PST)
 $route['api/wa/media/(:num)']    = 'api/wa/media/$1';        // GET media stream (auth+PST)
 $route['api/wa/sessions/(:num)/assign'] = 'api/wa/session_assign/$1'; // POST take-over (auth+PST)
+$route['api/wa/sessions/(:num)/send-data-form'] = 'api/wa/send_data_form/$1'; // POST petugas → kirim form Permintaan Data (auth+PST)
 $route['api/wa/sessions/(:num)'] = 'api/wa/session_delete/$1'; // DELETE pending session (admin only)
 $route['api/wa/visits/(:num)/proses'] = 'api/wa/visit_proses/$1'; // POST mark visit 'diproses' (auth+PST)
 $route['api/wa/visits/(:num)/selesai'] = 'api/wa/visit_selesai/$1'; // POST manual close (evaluasi_selesai → selesai)

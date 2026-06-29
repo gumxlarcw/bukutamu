@@ -142,6 +142,21 @@ class Wa extends Api_base {
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Memutuskan koneksi… QR baru akan muncul sebentar lagi.']);
     }
 
+    // POST /api/wa/sessions/(:num)/send-data-form (auth + PST) — petugas alihkan pemohon yang
+    // sebenarnya butuh data online (mis. salah pilih #2 Antrian Offline / #3 Lainnya) ke form
+    // Permintaan Data. Reuse wa_switch_to_data: menolak bila kunjungan sudah check-in kiosk/selesai,
+    // selain itu set category='data' + kirim tautan form (id_kunjungan dipertahankan utk konversi).
+    public function send_data_form($sid) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        $sid  = (int) $sid;
+        $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
+        if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+        $this->wa_switch_to_data($sess, ($sess->wa_chat_id ?: $sess->phone_raw));
+        $this->json_response(['success' => true, 'data' => null, 'message' => 'Diproses — tautan form Permintaan Data dikirim ke pemohon (kecuali bila kunjungan sudah dilayani langsung).']);
+    }
+
     // POST /api/wa/ack  { ids:[...] }
     public function ack() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
