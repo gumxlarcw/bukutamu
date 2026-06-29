@@ -25,10 +25,13 @@ export interface WaGuestMatch {
   pemanfaatan: number | null
 }
 
+export type WaCategory = 'data' | 'offline' | 'lainnya'
+
 export interface WaSessionPrefill {
   session_id: number
   phone: string
-  state: 'awaiting_form' | 'submitted' | 'expired'
+  state: 'awaiting_category' | 'awaiting_form' | 'submitted' | 'expired'
+  category?: WaCategory   // 'data' (full form) | 'offline' (Data Diri only) — backend defaults to 'data'
   guest: WaGuestMatch | null
   multi_match: boolean
 }
