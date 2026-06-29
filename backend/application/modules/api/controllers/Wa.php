@@ -53,6 +53,11 @@ class Wa extends Api_base {
                 $this->wa_handle_category_choice($open, $reply_to, $text);
                 $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
             }
+            // Mitigasi: user salah pilih (#2/#3) dan balas "1" → alihkan ke form Permintaan Data.
+            if ($text === '1' && in_array($open->category, ['offline', 'lainnya'], true)) {
+                $this->wa_switch_to_data($open, $reply_to);
+                $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
+            }
             // awaiting_form / submitted lain → diam (petugas tangani live-chat).
             $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
         }
@@ -789,7 +794,7 @@ class Wa extends Api_base {
             // kunjungan ganda — hanya request pertama lolos, sisanya kembalikan tiket lama.
             $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE, wa_sessions WRITE');
             $fresh = $this->db->get_where('wa_sessions', ['id' => $id])->row();
-            if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan) {
+            if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan && $fresh->category === $category) {
                 $this->db->query('UNLOCK TABLES');
                 $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $fresh->id_kunjungan, 'ticket' => 'WA-' . $fresh->id_kunjungan], 'message' => 'Sudah dikirim']);
             }
@@ -809,17 +814,26 @@ class Wa extends Api_base {
                 if ($this->db->affected_rows() < 1) { $this->db->query('UNLOCK TABLES'); $this->json_response(['success' => false, 'message' => 'Gagal menyimpan data tamu'], 500); }
             }
 
-            $this->db->insert('tamdes_kunjungan', [
-                'id_user'       => $id_user,
-                'jenis_layanan' => json_encode($jenis_layanan),
-                'sarana'        => json_encode($sarana),
-                'date_visit'    => date('Y-m-d H:i:s'),
-                'status'        => 'antri',
-                'nomor_antrian' => null,
-                'created_by'    => 'whatsapp',
-            ]);
-            $id_kunjungan = (int) $this->db->insert_id();
-            if (!$id_kunjungan) { $this->db->query('UNLOCK TABLES'); $this->json_response(['success' => false, 'message' => 'Gagal membuat kunjungan'], 500); }
+            if (!empty($sess->id_kunjungan)) {
+                // Konversi visit lama (#2/#3) → data: re-label + lanjut isi rows di bawah (tidak duplikat).
+                $id_kunjungan = (int) $sess->id_kunjungan;
+                $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
+                    'jenis_layanan' => json_encode($jenis_layanan), 'sarana' => json_encode($sarana),
+                    'status' => 'antri', 'created_by' => 'whatsapp', 'date_visit' => date('Y-m-d H:i:s'),
+                ]);
+            } else {
+                $this->db->insert('tamdes_kunjungan', [
+                    'id_user'       => $id_user,
+                    'jenis_layanan' => json_encode($jenis_layanan),
+                    'sarana'        => json_encode($sarana),
+                    'date_visit'    => date('Y-m-d H:i:s'),
+                    'status'        => 'antri',
+                    'nomor_antrian' => null,
+                    'created_by'    => 'whatsapp',
+                ]);
+                $id_kunjungan = (int) $this->db->insert_id();
+                if (!$id_kunjungan) { $this->db->query('UNLOCK TABLES'); $this->json_response(['success' => false, 'message' => 'Gagal membuat kunjungan'], 500); }
+            }
 
             // Tandai sesi submitted DI DALAM lock (sebelum UNLOCK) agar request kedua yang
             // menunggu lock melihat state terbaru dan tidak membuat kunjungan kedua.
@@ -1229,6 +1243,25 @@ class Wa extends Api_base {
         $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', $body);
         $g = $this->wa_known_name($sess->phone_norm) ?: 'Pemohon';
         $this->wa_notify_group_enqueue("💬 *Lainnya — minta ditangani*\nNama: {$g}\nNomor: {$sess->phone_norm}\nTiket: WA-{$idk}\n" . $this->wa_public_base() . "/admin/layanan-online");
+    }
+
+    // Mitigasi salah kategori: alihkan sesi #2 (offline) atau #3 (lainnya) ke form Permintaan Data.
+    // Dipanggil dari ingest() saat user balas "1" dengan sesi aktif offline/lainnya.
+    private function wa_switch_to_data($sess, $reply_to) {
+        $sid = (int) $sess->id;
+        // Tidak bisa dialihkan kalau sudah check-in kiosk (sudah dilayani langsung) atau sudah selesai.
+        if (!empty($sess->id_kunjungan)) {
+            $v = $this->db->select('created_by,status')->get_where('tamdes_kunjungan', ['id_kunjungan' => (int) $sess->id_kunjungan])->row();
+            if ($v && ($v->created_by === 'wa_kiosk' || in_array($v->status, ['selesai', 'evaluasi_selesai'], true))) {
+                $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', "Mohon maaf, kunjungan Anda sudah diproses langsung sehingga tidak bisa dialihkan ke layanan online. Silakan mulai permintaan baru dengan membalas *menu*.");
+                return;
+            }
+        }
+        // Alihkan: kategori → data, kembali ke awaiting_form (id_kunjungan dipertahankan untuk konversi saat submit).
+        $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'awaiting_form', 'category' => 'data', 'link_sent_at' => date('Y-m-d H:i:s')]);
+        $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
+        $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
+        $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', "Baik 🙏 beralih ke *Permintaan Data*. Mohon lengkapi formulir berikut (berlaku 48 jam):\n" . $link);
     }
 
     // Notif ke GRUP WhatsApp petugas. Group id (@g.us) dibaca dari push.php (wa_notify_group);
