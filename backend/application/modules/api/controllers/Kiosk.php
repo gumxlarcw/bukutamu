@@ -400,18 +400,17 @@ class Kiosk extends Api_base {
         }
         $guest = $guests[0];
 
-        // Kunjungan WA terbaru milik tamu ini yang masih bisa dilayani fisik. HANYA pra-daftar
-        // "Daftar Antrian Offline" (kategori #2) yang boleh check-in kiosk — permintaan data online
-        // (#1) & "Lainnya Online" (#3) diproses lewat WhatsApp, bukan antrian fisik.
-        $visit = $this->db->select('id_kunjungan, status')
+        // Kunjungan WA terbaru milik tamu ini yang masih aktif (semua kategori: #1 data online,
+        // #2 antrian offline, #3 lainnya). Semua bisa check-in kiosk — #2 mendapat nomor antrian
+        // yang sudah ada, #1/#3 diarahkan ke Resepsionis oleh wa-promote.
+        $visit = $this->db->select('id_kunjungan, status, nomor_antrian, date_visit')
                           ->where('id_user', $guest->id_user)
                           ->where('created_by', 'whatsapp')
-                          ->like('jenis_layanan', 'Daftar Antrian Offline')
                           ->order_by('id_kunjungan', 'DESC')
                           ->limit(1)
                           ->get('tamdes_kunjungan')->row();
         if (!$visit) {
-            $this->json_response(['success' => false, 'message' => 'Tidak ada pendaftaran antrian offline untuk nomor ini. Permintaan data online diproses & dibalas lewat WhatsApp.'], 404);
+            $this->json_response(['success' => false, 'message' => 'Nomor ini belum terdaftar via WhatsApp. Silakan pilih "Belum Pernah Daftar".'], 404);
         }
         if (in_array($visit->status, ['selesai', 'evaluasi_selesai'], true)) {
             $this->json_response(['success' => false, 'message' => 'Permintaan Anda sudah selesai kami proses. Silakan daftar baru untuk permintaan lainnya.'], 409);
@@ -422,17 +421,19 @@ class Kiosk extends Api_base {
 
         $this->json_response([
             'success' => true,
-            'data'    => ['nama' => $guest->nama, 'id_kunjungan' => (int) $visit->id_kunjungan, 'kiosk_token' => $kiosk_token],
+            'data'    => ['nama' => $guest->nama, 'id_kunjungan' => (int) $visit->id_kunjungan, 'nomor_antrian' => $visit->nomor_antrian, 'kiosk_token' => $kiosk_token],
             'message' => 'OK',
         ]);
     }
 
     /**
      * POST /api/kiosk/wa-promote { id_kunjungan, face_descriptor, foto?, biometric_consent,
-     *   consent_timestamp, jenis_layanan, layanan_lainnya, sarana, sarana_lainnya }
+     *   consent_timestamp }
      * Daftarkan biometrik wajah ke tamu WA (yang sebelumnya tak punya), lalu PROMOSIKAN
-     * kunjungan WA-nya jadi kunjungan fisik: layanan pilihan kiosk + nomor antrian fisik +
-     * created_by='wa_kiosk' (keluar dari inbox Layanan Online, masuk antrean PST; provenance tetap).
+     * kunjungan WA-nya jadi kunjungan fisik. Server memutuskan layanan & nomor — TIDAK menerima
+     * jenis_layanan/sarana dari kiosk (server-decides pattern, anti-tamper).
+     *   #2 (nomor_antrian ada): pertahankan layanan & nomor; regenerasi hanya jika stale-day.
+     *   #1/#3 (nomor_antrian null): arahkan ke Resepsionis (jenis=['Lainnya'], nomor=null).
      * Dijaga kiosk-token (purpose wa-checkin) bound ke id_kunjungan.
      */
     public function wa_promote() {
@@ -446,10 +447,6 @@ class Kiosk extends Api_base {
         }
         $this->require_kiosk_token('wa-checkin', $id_kunjungan);
 
-        // Taksonomi layanan — sama seperti register/visit (sebelum LOCK; bisa sentuh tabel lain).
-        $this->validate_no_cross_layanan($input['jenis_layanan'] ?? null);
-        $this->validate_sarana_for_layanan($input['jenis_layanan'] ?? null, $input['sarana'] ?? []);
-
         // Wajah wajib — inti jalur ini adalah mendaftarkan biometrik.
         if (empty($input['face_descriptor']) || !is_array($input['face_descriptor'])) {
             $this->json_response(['success' => false, 'message' => 'Pemindaian wajah diperlukan'], 422);
@@ -457,7 +454,7 @@ class Kiosk extends Api_base {
 
         // Kunci + recheck (TOCTOU): kunjungan harus masih WA & belum selesai saat dipromosikan.
         $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE');
-        $visit = $this->db->select('id_kunjungan, id_user, created_by, status')
+        $visit = $this->db->select('id_kunjungan, id_user, created_by, status, nomor_antrian, date_visit, jenis_layanan')
                           ->where('id_kunjungan', $id_kunjungan)
                           ->get('tamdes_kunjungan')->row();
         if (!$visit || $visit->created_by !== 'whatsapp') {
@@ -484,28 +481,39 @@ class Kiosk extends Api_base {
         if ($foto !== null) $guest_update['foto'] = $foto;
         $this->db->where('id_user', $id_user)->update('tamdes_buku', $guest_update);
 
-        // 2) Promosikan kunjungan: layanan pilihan kiosk + nomor antrian fisik + created_by='wa_kiosk'.
-        $jl_raw = $input['jenis_layanan'] ?? '';
-        $jl     = is_array($jl_raw) ? json_encode($jl_raw) : $jl_raw;
-        $sr_raw = $input['sarana'] ?? [];
-        $sr     = is_array($sr_raw) ? json_encode($sr_raw) : $sr_raw;
-        $nomor_antrian = $this->generate_queue_number(is_array($jl_raw) ? ($jl_raw[0] ?? '') : $jl_raw);
-
-        $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
-            'jenis_layanan'   => $jl,
-            'layanan_lainnya' => $input['layanan_lainnya'] ?? null,
-            'sarana'          => $sr,
-            'sarana_lainnya'  => $input['sarana_lainnya'] ?? null,
-            'nomor_antrian'   => $nomor_antrian,
-            'status'          => 'antri',
-            'date_visit'      => date('Y-m-d H:i:s'),
-            'created_by'      => 'wa_kiosk',
-        ]);
+        // 2) Promosikan kunjungan: server memutuskan layanan berdasarkan data WA, bukan input kiosk.
+        $today  = date('Y-m-d');
+        $hasNum = !empty($visit->nomor_antrian);
+        $stale  = $hasNum && (date('Y-m-d', strtotime($visit->date_visit)) !== $today);
+        if ($hasNum) {
+            // #2 offline: pertahankan layanan & nomor antrian yang sudah ada.
+            // Regenerasi nomor hanya bila kunjungan dari hari sebelumnya (reset harian).
+            $upd = ['created_by' => 'wa_kiosk', 'status' => 'antri', 'date_visit' => date('Y-m-d H:i:s')];
+            if ($stale) {
+                $svc = json_decode($visit->jenis_layanan, true);
+                $upd['nomor_antrian'] = $this->generate_queue_number(is_array($svc) ? ($svc[0] ?? '') : (string) $svc);
+            }
+            $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', $upd);
+            $nomor_antrian = $stale ? $upd['nomor_antrian'] : $visit->nomor_antrian;
+            $mode = 'queue';
+        } else {
+            // #1/#3 fallback: tidak ada nomor antrian — arahkan ke Resepsionis (tanpa nomor TV).
+            $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
+                'created_by'    => 'wa_kiosk',
+                'status'        => 'antri',
+                'jenis_layanan' => json_encode(['Lainnya']),
+                'sarana'        => json_encode([1]),
+                'nomor_antrian' => null,
+                'date_visit'    => date('Y-m-d H:i:s'),
+            ]);
+            $nomor_antrian = null;
+            $mode = 'resepsionis';
+        }
         $this->db->query('UNLOCK TABLES');
 
         $this->json_response([
             'success' => true,
-            'data'    => ['id_kunjungan' => $id_kunjungan, 'nomor_antrian' => $nomor_antrian],
+            'data'    => ['id_kunjungan' => $id_kunjungan, 'nomor_antrian' => $nomor_antrian, 'mode' => $mode],
             'message' => 'Check-in berhasil',
         ], 200);
     }
