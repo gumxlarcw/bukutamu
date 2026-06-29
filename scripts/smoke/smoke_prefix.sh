@@ -57,11 +57,13 @@ echo "===== cleanup ====="
 for idk in $IDK1 $IDK2 $IDK3; do
   IDU=$(Q "SELECT id_user FROM tamdes_kunjungan WHERE id_kunjungan=$idk")
   Q "DELETE FROM tamdes_kunjungan WHERE id_kunjungan=$idk"
-  # delete the test guest only if it's one of ours (test notel) and has no other visits
-  Q "DELETE FROM tamdes_buku WHERE id_user=$IDU AND notel LIKE '62888399%' AND NOT EXISTS (SELECT 1 FROM tamdes_kunjungan k WHERE k.id_user=$IDU)"
+  # delete the test guest only if it's one of ours (test notel, stored NORMALIZED 0888399*)
+  # and it has no other visits. NB: notel is the normalized form, never the raw 62* form.
+  Q "DELETE FROM tamdes_buku WHERE id_user=$IDU AND notel LIKE '0888399%' AND NOT EXISTS (SELECT 1 FROM tamdes_kunjungan k WHERE k.id_user=$IDU)"
   Q "DELETE FROM wa_outbox WHERE id_kunjungan=$idk"
 done
-Q "DELETE FROM wa_outbox WHERE phone_raw IN ('$P1','$P2','$P3')"
+# user-directed (phone_raw raw 62*) AND group_notify (wa_chat_id = fake group, no id_kunjungan)
+Q "DELETE FROM wa_outbox WHERE phone_raw IN ('$P1','$P2','$P3') OR phone_raw LIKE '0888399%' OR wa_chat_id='$FAKE_GROUP'"
 Q "DELETE FROM wa_sessions WHERE phone_norm IN ('$N1','$N2','$N3')"
 
 # --- restore group ---
@@ -71,8 +73,8 @@ ok "group restored" "$ORIG_GROUP" "$RG"
 
 echo "===== residual check (must all be 0) ====="
 ok "no test sessions"   "0" "$(Q "SELECT COUNT(*) FROM wa_sessions WHERE phone_norm IN ('$N1','$N2','$N3')")"
-ok "no test guests"     "0" "$(Q "SELECT COUNT(*) FROM tamdes_buku WHERE notel LIKE '62888399%'")"
-ok "no test outbox"     "0" "$(Q "SELECT COUNT(*) FROM wa_outbox WHERE phone_raw IN ('$P1','$P2','$P3')")"
+ok "no test guests"     "0" "$(Q "SELECT COUNT(*) FROM tamdes_buku WHERE notel LIKE '0888399%'")"
+ok "no test outbox"     "0" "$(Q "SELECT COUNT(*) FROM wa_outbox WHERE phone_raw LIKE '0888399%' OR phone_raw IN ('$P1','$P2','$P3') OR wa_chat_id='$FAKE_GROUP'")"
 ok "no test visits"     "0" "$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE id_kunjungan IN ($IDK1,$IDK2,$IDK3)")"
 
 echo
