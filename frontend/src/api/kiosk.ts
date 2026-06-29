@@ -47,13 +47,14 @@ export const kioskApi = {
     }),
   // WA online check-in (phone + face): find the WA visit, then promote it to the physical queue.
   // waLookup returns a short-lived kiosk_token bound to id_kunjungan; pass it to waPromote.
+  // Server decides service/sarana from the WA registration — client sends NO service state.
   waLookup: (phone: string) =>
-    apiClient.post<ApiResponse<{ nama: string; id_kunjungan: number; kiosk_token: string }>>('/api/kiosk/wa-lookup', { phone }),
+    apiClient.post<ApiResponse<{ nama: string; id_kunjungan: number; nomor_antrian: string | null; kiosk_token: string }>>('/api/kiosk/wa-lookup', { phone }),
   waPromote: (
-    data: { id_kunjungan: number; foto: string; face_descriptor: number[]; biometric_consent: boolean; consent_timestamp: string } & VisitContext,
+    data: { id_kunjungan: number; foto: string; face_descriptor: number[]; biometric_consent: boolean; consent_timestamp: string },
     kiosk_token: string,
   ) =>
-    apiClient.post<ApiResponse<{ id_kunjungan: number; nomor_antrian: string | null }>>('/api/kiosk/wa-promote', data, {
+    apiClient.post<ApiResponse<{ id_kunjungan: number; nomor_antrian: string | null; mode: 'queue' | 'resepsionis' }>>('/api/kiosk/wa-promote', data, {
       headers: { 'X-Kiosk-Token': kiosk_token },
     }),
 }
