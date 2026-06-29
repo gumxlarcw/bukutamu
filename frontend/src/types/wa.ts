@@ -45,6 +45,7 @@ export interface WaInboxRow {
   kind: 'pending' | 'visit'
   id_kunjungan: number | null   // null untuk pending (belum jadi visit)
   session_id: number | null     // diisi untuk pending DAN visit (untuk Ambil alih)
+  category: WaCategory | null   // kategori sesi (data|offline|lainnya) — untuk tombol "Kirim Form Data"
   status: string                // 'menunggu_form' untuk pending; status visit lainnya
   date: string
   nama: string | null

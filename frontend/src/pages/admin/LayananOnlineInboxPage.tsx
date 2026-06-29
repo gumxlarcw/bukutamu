@@ -315,6 +315,17 @@ export default function LayananOnlineInboxPage() {
       toast.error(msg || 'Gagal menutup sesi')
     },
   })
+  // Petugas: alihkan sesi #2 (offline) / #3 (lainnya) ke form Permintaan Data (backend guard offline/lainnya).
+  const sendDataForm = useMutation({
+    mutationFn: (sessionId: number) => waApi.sendDataForm(sessionId),
+    onSuccess: () => { toast.success('Tautan form Permintaan Data dikirim ke pemohon'); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) },
+    onError: (e: unknown) => {
+      const msg = e && typeof e === 'object' && 'response' in e
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (e as any).response?.data?.message : null
+      toast.error(msg || 'Gagal mengirim form')
+    },
+  })
   const canReassign = user?.role === 'admin' || user?.role === 'superadmin'
 
   const { data, isLoading } = useQuery({
@@ -442,6 +453,14 @@ export default function LayananOnlineInboxPage() {
                         {r.unread > 99 ? '99+' : r.unread}
                       </span>
                     )}
+                  </Button>
+                )}
+                {(r.category === 'offline' || r.category === 'lainnya') && r.session_id != null && (
+                  <Button size="sm" variant="outline" className="shrink-0"
+                    disabled={sendDataForm.isPending}
+                    title="Alihkan ke Permintaan Data — kirim tautan form data ke pemohon"
+                    onClick={() => { if (r.session_id != null) sendDataForm.mutate(r.session_id) }}>
+                    <Send className="w-3.5 h-3.5 mr-1" /> Form Data
                   </Button>
                 )}
                 {canDelete && (

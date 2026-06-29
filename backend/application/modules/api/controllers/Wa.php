@@ -668,6 +668,7 @@ class Wa extends Api_base {
             ->select("(SELECT s.id FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS session_id", FALSE)
             ->select("(SELECT s.assigned_to FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS assigned_to", FALSE)
             ->select("(SELECT au.nama FROM wa_sessions s JOIN admin_users au ON au.id = s.assigned_to WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS operator_nama", FALSE)
+            ->select("(SELECT s.category FROM wa_sessions s WHERE s.id_kunjungan = k.id_kunjungan ORDER BY s.id DESC LIMIT 1) AS category", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('k.created_by', 'whatsapp')
@@ -689,11 +690,12 @@ class Wa extends Api_base {
                 'permintaan'    => $v->permintaan,
                 'assigned_to'   => ($v->assigned_to !== null ? (int) $v->assigned_to : null),
                 'operator_nama' => ($v->operator_nama ? $this->wa_strip_role_annot($v->operator_nama) : null),
+                'category'      => ($v->category ?: null),
             ];
         }
 
         // 2) Sesi yang sudah dikirimi link tapi BELUM mengisi form (awaiting_form).
-        $pend = $this->db->select('s.id, s.phone_norm, s.last_inbound_at, s.link_sent_at, s.created_at, s.assigned_to, au.nama AS operator_nama')
+        $pend = $this->db->select('s.id, s.phone_norm, s.last_inbound_at, s.link_sent_at, s.created_at, s.category, s.assigned_to, au.nama AS operator_nama')
                          ->from('wa_sessions s')
                          ->join('admin_users au', 'au.id = s.assigned_to', 'left')
                          ->where('s.state', 'awaiting_form')
@@ -711,6 +713,7 @@ class Wa extends Api_base {
                 'permintaan'    => null,
                 'assigned_to'   => ($s->assigned_to !== null ? (int) $s->assigned_to : null),
                 'operator_nama' => ($s->operator_nama ? $this->wa_strip_role_annot($s->operator_nama) : null),
+                'category'      => ($s->category ?: null),
             ];
         }
 

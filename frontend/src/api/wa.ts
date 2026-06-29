@@ -62,6 +62,10 @@ export const waApi = {
   assign: (sessionId: number) =>
     apiClient.post<ApiResponse<{ assigned_to: number; operator_nama: string }>>(`/api/wa/sessions/${sessionId}/assign`),
 
+  // Petugas alihkan sesi #2 (offline) / #3 (lainnya) ke form Permintaan Data (kirim tautan form data).
+  sendDataForm: (sessionId: number) =>
+    apiClient.post<ApiResponse<null>>(`/api/wa/sessions/${sessionId}/send-data-form`),
+
   // Tutup sesi WA secara manual (evaluasi_selesai → selesai) + kirim pesan penutup.
   markSelesai: (idKunjungan: number) =>
     apiClient.post<ApiResponse<{ status: string }>>(`/api/wa/visits/${idKunjungan}/selesai`),
