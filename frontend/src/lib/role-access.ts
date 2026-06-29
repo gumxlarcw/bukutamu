@@ -10,11 +10,14 @@ const SKD_SERVICES = [
 
 // Layanan PST di luar SKD — tetap ditangani petugas_pst & pakai panggilan TV,
 // tapi tidak memicu evaluasi SKD (langsung selesai setelah finalisasi).
-// 'Lainnya Online' = WA category #3: PST handles via chat, finishes to 'selesai' (no eval).
-const DTSEN_SERVICES = ['Konsultasi DTSEN', 'Lainnya Online'] as const
+const DTSEN_SERVICES = ['Konsultasi DTSEN'] as const
+
+// 'Lainnya Online' = WA category #3: PST handles via online chat, finishes to 'selesai' (no eval).
+// NEVER part of the physical kiosk queue — no TV call, no dtsen_konsultasi form.
+const ONLINE_SERVICES = ['Lainnya Online'] as const
 
 // Semua layanan yang ditangani petugas_pst (role-wise).
-const PST_SERVICES = [...SKD_SERVICES, ...DTSEN_SERVICES] as const
+const PST_SERVICES = [...SKD_SERVICES, ...DTSEN_SERVICES, ...ONLINE_SERVICES] as const
 
 // 'Daftar Antrian Offline' = WA category #2: front-office pre-registration.
 // Label is overwritten with the real service at kiosk promotion (created_by='wa_kiosk').
@@ -82,13 +85,19 @@ export function isDtsenLayanan(name: string): boolean {
   return (DTSEN_SERVICES as readonly string[]).includes(name)
 }
 
+/** Apakah layanan ini Online (PST role-wise, chat-only, tanpa kunjungan fisik). */
+export function isOnlineLayanan(name: string): boolean {
+  return (ONLINE_SERVICES as readonly string[]).includes(name)
+}
+
 /**
  * Apakah visit dengan kombinasi layanan ini butuh fitur Panggil (TV + TTS)?
- * - PST: ya (tamu duduk di ruang tunggu, dipanggil via layar TV)
+ * - SKD/DTSEN: ya (tamu duduk di ruang tunggu, dipanggil via layar TV)
+ * - ONLINE (Lainnya Online): tidak (chat-handled, tamu tidak hadir secara fisik)
  * - Resepsionis (Lainnya, Keperluan Pimpinan): tidak (face-to-face, tamu langsung di depan resepsionis)
  */
 export function needsQueueCall(layanan_list: string[]): boolean {
-  return layanan_list.some(l => (PST_SERVICES as readonly string[]).includes(l))
+  return layanan_list.some(l => isSkdLayanan(l) || isDtsenLayanan(l))
 }
 
 export function isPstLayanan(name: string): boolean {
@@ -99,13 +108,14 @@ export function isResepsionisLayanan(name: string): boolean {
   return (RESEPSIONIS_SERVICES as readonly string[]).includes(name)
 }
 
-export type ServiceGroup = 'SKD' | 'DTSEN' | 'RESEPSIONIS'
+export type ServiceGroup = 'SKD' | 'DTSEN' | 'RESEPSIONIS' | 'ONLINE'
 
 /** Tentukan grup sebuah layanan, atau null jika tidak dikenal. */
 export function getServiceGroup(name: string): ServiceGroup | null {
   if ((SKD_SERVICES as readonly string[]).includes(name)) return 'SKD'
   if ((DTSEN_SERVICES as readonly string[]).includes(name)) return 'DTSEN'
   if ((RESEPSIONIS_SERVICES as readonly string[]).includes(name)) return 'RESEPSIONIS'
+  if ((ONLINE_SERVICES as readonly string[]).includes(name)) return 'ONLINE'
   return null
 }
 
@@ -120,7 +130,7 @@ export function getActiveServiceGroup(layanan_list: string[]): ServiceGroup | nu
 
 /**
  * Cek apakah kombinasi layanan ini "cross" (mencampur 2+ grup berbeda).
- * Strategi C: tamu HARUS pilih satu grup saja (SKD / DTSEN / Resepsionis).
+ * Strategi C: tamu HARUS pilih satu grup saja (SKD / DTSEN / ONLINE / Resepsionis).
  */
 export function isCrossLayanan(layanan_list: string[]): boolean {
   const groups = new Set<ServiceGroup>()
@@ -144,10 +154,12 @@ export function wouldBeCross(currentList: string[], newLayanan: string): boolean
 // Whitelist sarana per grup layanan. Kode sarana didefinisikan di src/types/guest.ts.
 // - SKD: 6 sarana standar BPS (PST datang/online, Website, Surat, Chat, Lainnya).
 // - DTSEN: hanya PST datang langsung (konsultasi tatap muka di kantor).
+// - ONLINE: hanya sarana online/WA (kode 2).
 // - RESEPSIONIS: 4 ruangan internal (Halmahera/Vicon/Gamalama/Pimpinan).
 const SARANA_BY_GROUP: Record<ServiceGroup, readonly number[]> = {
   SKD: [1, 2, 4, 9, 16, 32],
   DTSEN: [1],
+  ONLINE: [2],
   RESEPSIONIS: [33, 34, 35, 36],
 }
 

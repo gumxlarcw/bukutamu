@@ -121,7 +121,8 @@ class Api_base extends CI_Controller {
 
     /**
      * Layanan-based authorization. Pastikan role user sesuai dengan jenis layanan visit.
-     * - petugas_pst: 4 layanan SKD (Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan) + Konsultasi DTSEN
+     * - petugas_pst: 4 layanan SKD (Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan)
+     *               + Konsultasi DTSEN + Lainnya Online (online, no-eval, WA category #3)
      * - resepsionis: layanan front-office (Lainnya, Keperluan Pimpinan)
      * - admin/superadmin: bypass (full access)
      * - operator (legacy): bypass (untuk backward compat)
@@ -188,21 +189,23 @@ class Api_base extends CI_Controller {
             $decoded = json_decode($jenis_layanan_raw, true);
             $list = is_array($decoded) ? $decoded : [$jenis_layanan_raw];
         }
-        // 3 grup mutual-exclusive. Cermin frontend src/lib/role-access.ts getServiceGroup().
-        $skd_services   = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
-        $dtsen_services = ['Konsultasi DTSEN'];
-        $resep_services = ['Lainnya', 'Keperluan Pimpinan'];
+        // 4 grup mutual-exclusive. Cermin frontend src/lib/role-access.ts getServiceGroup().
+        $skd_services    = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        $dtsen_services  = ['Konsultasi DTSEN'];
+        $online_services = ['Lainnya Online']; // WA category #3 — online chat, PST-handled, no eval
+        $resep_services  = ['Lainnya', 'Keperluan Pimpinan'];
 
         $groups = [];
         foreach ($list as $l) {
-            if (in_array($l, $skd_services, true))       $groups['SKD'] = true;
-            elseif (in_array($l, $dtsen_services, true)) $groups['DTSEN'] = true;
-            elseif (in_array($l, $resep_services, true)) $groups['RESEPSIONIS'] = true;
+            if (in_array($l, $skd_services, true))        $groups['SKD'] = true;
+            elseif (in_array($l, $dtsen_services, true))  $groups['DTSEN'] = true;
+            elseif (in_array($l, $online_services, true)) $groups['ONLINE'] = true;
+            elseif (in_array($l, $resep_services, true))  $groups['RESEPSIONIS'] = true;
         }
         if (count($groups) > 1) {
             $this->json_response([
                 'success' => false,
-                'message' => 'Tidak bisa mencampur kategori layanan. Pilih satu grup saja: SKD inti (Perpustakaan/Konsultasi/Rekomendasi/Penjualan), Konsultasi DTSEN, atau Front-office (Lainnya/Keperluan Pimpinan).',
+                'message' => 'Tidak bisa mencampur kategori layanan. Pilih satu grup saja: SKD inti (Perpustakaan/Konsultasi/Rekomendasi/Penjualan), Konsultasi DTSEN, Lainnya Online, atau Front-office (Lainnya/Keperluan Pimpinan).',
             ], 400);
         }
     }
@@ -212,6 +215,7 @@ class Api_base extends CI_Controller {
      * Cermin frontend src/lib/role-access.ts getAllowedSaranaCodes().
      * - SKD: 1, 2, 4, 9, 16, 32 (6 sarana standar BPS)
      * - DTSEN: 1 (PST datang langsung saja)
+     * - ONLINE: 2 (sarana online/WA — Lainnya Online)
      * - Resepsionis: 33, 34, 35, 36 (4 ruangan internal)
      */
     protected function validate_sarana_for_layanan($jenis_layanan_raw, $sarana_raw) {
@@ -225,22 +229,25 @@ class Api_base extends CI_Controller {
         $sarana_list = is_array($sarana_raw) ? $sarana_raw : (json_decode((string)$sarana_raw, true) ?: []);
         if (empty($layanan_list) || empty($sarana_list)) return;
 
-        $skd_services   = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
-        $dtsen_services = ['Konsultasi DTSEN'];
-        $resep_services = ['Lainnya', 'Keperluan Pimpinan'];
+        $skd_services    = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        $dtsen_services  = ['Konsultasi DTSEN'];
+        $online_services = ['Lainnya Online']; // WA category #3 — online chat, PST-handled, no eval
+        $resep_services  = ['Lainnya', 'Keperluan Pimpinan'];
 
         // Determine grup pertama yang dikenal (asumsi validate_no_cross_layanan sudah dipanggil duluan).
         $group = null;
         foreach ($layanan_list as $l) {
-            if (in_array($l, $skd_services, true))       { $group = 'SKD'; break; }
-            if (in_array($l, $dtsen_services, true))     { $group = 'DTSEN'; break; }
-            if (in_array($l, $resep_services, true))     { $group = 'RESEPSIONIS'; break; }
+            if (in_array($l, $skd_services, true))        { $group = 'SKD'; break; }
+            if (in_array($l, $dtsen_services, true))      { $group = 'DTSEN'; break; }
+            if (in_array($l, $online_services, true))     { $group = 'ONLINE'; break; }
+            if (in_array($l, $resep_services, true))      { $group = 'RESEPSIONIS'; break; }
         }
         if ($group === null) return;
 
         $allowed = [
             'SKD'         => [1, 2, 4, 9, 16, 32],
             'DTSEN'       => [1],
+            'ONLINE'      => [2],
             'RESEPSIONIS' => [33, 34, 35, 36],
         ][$group];
 
