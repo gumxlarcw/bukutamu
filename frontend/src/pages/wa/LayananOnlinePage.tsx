@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import { CheckCircle2 } from 'lucide-react'
 import { waApi } from '@/api/wa'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
+import { ServiceSaranaSelector } from '@/components/kiosk/ServiceSaranaSelector'
+import type { ServiceSaranaSelectorValue } from '@/components/kiosk/ServiceSaranaSelector'
 import { PermintaanDataForm, emptyPermintaanRow, permintaanRowsValid } from '@/components/wa/PermintaanDataForm'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -32,7 +34,10 @@ function CountUp({ text }: { text: string }) {
 }
 
 /** Layar sukses bergaya tiket (meniru QueueTicket kiosk offline). */
-function SuccessTicket({ ticket, offline = false }: { ticket: string; offline?: boolean }) {
+function SuccessTicket({ ticket, offline = false, nomorAntrian }: { ticket: string; offline?: boolean; nomorAntrian?: string | null }) {
+  const displayCode = offline && nomorAntrian ? nomorAntrian : ticket
+  const displayLabel = offline && nomorAntrian ? 'Nomor Antrian' : offline ? 'Kode Pendaftaran' : 'Nomor Tiket'
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(160deg,#fff7ed,#ffe7cc)' }}>
       <style>{`
@@ -53,13 +58,17 @@ function SuccessTicket({ ticket, offline = false }: { ticket: string; offline?: 
         <h2 className="text-base font-bold text-gray-900 mb-4">BPS Provinsi Maluku Utara</h2>
 
         <div className="wa-tk-glow bg-orange-50 border-2 border-orange-200 rounded-xl py-4 px-3 mb-4">
-          <p className="text-orange-600 text-[11px] font-semibold mb-1 uppercase tracking-wide">{offline ? 'Kode Pendaftaran' : 'Nomor Tiket'}</p>
-          <p className="text-5xl font-black text-orange-600 leading-none tracking-tight font-mono"><CountUp text={ticket} /></p>
+          <p className="text-orange-600 text-[11px] font-semibold mb-1 uppercase tracking-wide">{displayLabel}</p>
+          <p className="text-5xl font-black text-orange-600 leading-none tracking-tight font-mono"><CountUp text={displayCode} /></p>
         </div>
 
-        {offline ? (
+        {offline && nomorAntrian ? (
           <p className="text-sm text-gray-600 leading-relaxed">
-            Pendaftaran Anda diterima. Datang ke kantor pada jam layanan, lalu di kiosk pilih <b>“Sudah Daftar via WhatsApp”</b>, masukkan nomor HP &amp; pindai wajah untuk masuk antrian.
+            Nomor antrian Anda: <b>{nomorAntrian}</b> (berlaku hari ini) — cetak tiket di Resepsionis.
+          </p>
+        ) : offline ? (
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Pendaftaran Anda diterima. Datang ke kantor pada jam layanan dan langsung menuju meja Resepsionis.
           </p>
         ) : (
           <p className="text-sm text-gray-600 leading-relaxed">
@@ -84,6 +93,10 @@ function blankGuest(phone: string): GuestFormData {
     pekerjaan_lainnya: '', kategori_instansi: 0, kategori_lainnya: '',
     nama_instansi: '', pemanfaatan: 0, pemanfaatan_lainnya: '', pengaduan: 'Tidak',
   }
+}
+
+const emptySvcValue: ServiceSaranaSelectorValue = {
+  jenis_layanan: [], layanan_lainnya: '', sarana: [], sarana_lainnya: '',
 }
 
 export default function LayananOnlinePage() {
@@ -112,20 +125,38 @@ export default function LayananOnlinePage() {
 
   // Identitas hanya boleh dari DB (match nomor HP). known = nomor cocok unik di DB.
   const known = !!prefill?.guest && !prefill?.multi_match
-  // Kategori #2 "Daftar Antrian Offline" → form Data Diri SAJA (tanpa langkah Permintaan Data).
+  // Kategori #2 "Daftar Antrian Offline" → form Data Diri + Pilih Layanan (tanpa langkah Permintaan Data).
   const isOffline = prefill?.category === 'offline'
 
   const [guest, setGuest] = useState<GuestFormData | null>(null)
   const [rows, setRows] = useState<WaPermintaanRow[]>([emptyPermintaanRow()])
+  // Stable setter reference — required by ServiceSaranaSelector's pruning effect (onChange not in its deps).
+  const [svcValue, setSvcValue] = useState<ServiceSaranaSelectorValue>(emptySvcValue)
   const [ticket, setTicket] = useState<string | null>(null)
-  const [step, setStep] = useState<1 | 2>(1)         // 1 = Data Diri, 2 = Data yang Dibutuhkan
+  const [nomorAntrian, setNomorAntrian] = useState<string | null>(null)
+  const [step, setStep] = useState<1 | 2>(1)         // 1 = Data Diri, 2 = Pilih Layanan (offline) | Data yang Dibutuhkan (data/lainnya)
   const [editProfile, setEditProfile] = useState(false) // true → user memilih "Perbarui Profil"
   const effGuest = guest ?? initialGuest
 
   const submit = useMutation({
-    mutationFn: () =>
-      waApi.submitSession(Number(sessionId), token, { ...effGuest, permintaan: isOffline ? [] : rows, update_profile: editProfile }).then(r => r.data.data),
-    onSuccess: (d) => setTicket(d?.ticket ?? null),
+    mutationFn: () => {
+      const payload = isOffline
+        ? {
+            ...effGuest,
+            permintaan: [],
+            update_profile: editProfile,
+            jenis_layanan: svcValue.jenis_layanan,
+            layanan_lainnya: svcValue.layanan_lainnya,
+            sarana: svcValue.sarana,
+            sarana_lainnya: svcValue.sarana_lainnya,
+          }
+        : { ...effGuest, permintaan: rows, update_profile: editProfile }
+      return waApi.submitSession(Number(sessionId), token, payload).then(r => r.data.data)
+    },
+    onSuccess: (d) => {
+      setTicket(d?.ticket ?? null)
+      setNomorAntrian(d?.nomor_antrian ?? null)
+    },
     onError: (e: unknown) => {
       const msg = e && typeof e === 'object' && 'response' in e
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,23 +169,24 @@ export default function LayananOnlinePage() {
   if (isLoading) return <LoadingSpinner className="min-h-screen" />
   if (isError || !prefill) return <p className="p-8 text-center">Tautan kedaluwarsa atau tidak valid. Silakan kirim pesan ulang ke WhatsApp layanan.</p>
   if (prefill.state === 'submitted' || ticket) {
-    return <SuccessTicket ticket={ticket ?? `WA-${prefill.session_id}`} offline={isOffline} />
+    return <SuccessTicket ticket={ticket ?? `WA-${prefill.session_id}`} offline={isOffline} nomorAntrian={nomorAntrian} />
   }
 
   const namaOk = effGuest.nama.trim() !== ''
   const permintaanOk = rows.some(r => r.rincian_data.trim() !== '')
   const yearsOk = permintaanRowsValid(rows)   // tahun_akhir ≥ tahun_awal & format wajar
+  const serviceOk = svcValue.jenis_layanan.length > 0
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6">
       <header className="text-center space-y-2">
         <h1 className="text-lg font-bold">Layanan Data BPS Maluku Utara</h1>
         <p className="text-sm text-muted-foreground">
-          {isOffline ? 'Pendaftaran Antrian Offline — Data Diri' : `Langkah ${step} dari 2 — ${step === 1 ? 'Data Diri' : 'Data yang Dibutuhkan'}`}
+          {`Langkah ${step} dari 2 — ${step === 1 ? 'Data Diri' : isOffline ? 'Pilih Layanan' : 'Data yang Dibutuhkan'}`}
         </p>
         <div className="flex gap-1.5 justify-center">
           <span className={`h-1.5 w-12 rounded-full transition-colors ${step >= 1 ? 'bg-primary' : 'bg-muted'}`} />
-          {!isOffline && <span className={`h-1.5 w-12 rounded-full transition-colors ${step >= 2 ? 'bg-primary' : 'bg-muted'}`} />}
+          <span className={`h-1.5 w-12 rounded-full transition-colors ${step >= 2 ? 'bg-primary' : 'bg-muted'}`} />
         </div>
       </header>
 
@@ -174,8 +206,8 @@ export default function LayananOnlinePage() {
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setEditProfile(true)}>Perbarui Profil</Button>
-                <Button className="flex-1" disabled={!namaOk || submit.isPending} onClick={() => isOffline ? submit.mutate() : setStep(2)}>
-                  {isOffline ? (submit.isPending ? 'Mendaftar…' : 'Daftar →') : 'Gunakan data ini →'}
+                <Button className="flex-1" disabled={!namaOk} onClick={() => setStep(2)}>
+                  {isOffline ? 'Lanjut →' : 'Gunakan data ini →'}
                 </Button>
               </div>
             </>
@@ -189,8 +221,8 @@ export default function LayananOnlinePage() {
                 {known && (
                   <Button variant="outline" className="flex-1" onClick={() => { setEditProfile(false); setGuest(null) }}>Batal</Button>
                 )}
-                <Button className="flex-1" disabled={!namaOk || submit.isPending} onClick={() => isOffline ? submit.mutate() : setStep(2)}>
-                  {isOffline ? (submit.isPending ? 'Mendaftar…' : 'Daftar →') : 'Lanjut →'}
+                <Button className="flex-1" disabled={!namaOk} onClick={() => setStep(2)}>
+                  Lanjut →
                 </Button>
               </div>
             </>
@@ -198,8 +230,22 @@ export default function LayananOnlinePage() {
         </section>
       )}
 
-      {/* ── Langkah 2 — Data yang Dibutuhkan ── */}
-      {step === 2 && (
+      {/* ── Langkah 2 — Pilih Layanan (offline) ── */}
+      {step === 2 && isOffline && (
+        <section className="space-y-4">
+          <h2 className="font-semibold">B. Pilih Layanan</h2>
+          <ServiceSaranaSelector value={svcValue} onChange={setSvcValue} />
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>← Kembali</Button>
+            <Button className="flex-1" disabled={!serviceOk || submit.isPending} onClick={() => submit.mutate()}>
+              {submit.isPending ? 'Mendaftar…' : 'Daftar'}
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {/* ── Langkah 2 — Data yang Dibutuhkan (data / lainnya) ── */}
+      {step === 2 && !isOffline && (
         <section className="space-y-4">
           <h2 className="font-semibold">B. Data yang Dibutuhkan</h2>
           <PermintaanDataForm rows={rows} onChange={setRows} />

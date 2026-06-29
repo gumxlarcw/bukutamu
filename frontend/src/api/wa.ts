@@ -8,7 +8,7 @@ export const waApi = {
       headers: { 'X-Kiosk-Token': token },
     }),
   submitSession: (sessionId: number, token: string, payload: WaIntakePayload) =>
-    apiClient.post<ApiResponse<{ id_kunjungan: number; ticket: string }>>(
+    apiClient.post<ApiResponse<{ id_kunjungan: number; ticket: string; nomor_antrian: string | null }>>(
       `/api/wa/session/${sessionId}`, payload, { headers: { 'X-Kiosk-Token': token } },
     ),
   getEvalToken: (id: number, token: string) =>
