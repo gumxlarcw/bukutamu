@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import type { GuestFormData } from '@/types/guest'
 import type { WaPermintaanRow } from '@/types/wa'
+import { JAM_LAYANAN } from '@/types/wa'
 
 /** Efek angka/teks "scramble" seperti tiket antrian kiosk. */
 function CountUp({ text }: { text: string }) {
@@ -66,7 +67,7 @@ function SuccessTicket({ ticket, offline = false }: { ticket: string; offline?: 
           </p>
         )}
         <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-          {offline ? 'Jam layanan' : 'Akan diproses pada jam operasional layanan'}<br />Senin–Jumat, 08.00–15.30 WIT.
+          {offline ? 'Jam layanan' : 'Akan diproses pada jam operasional layanan'}<br />{JAM_LAYANAN}.
         </p>
         <div className="mt-4 text-[11px] text-gray-400 border-t border-dashed border-gray-300 pt-3">
           Simpan / screenshot tiket ini sebagai bukti permintaan Anda.

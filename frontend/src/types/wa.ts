@@ -1,5 +1,7 @@
 import type { GuestFormData } from '@/types/guest'
 
+export const JAM_LAYANAN = 'Senin–Kamis 08.00–15.30 WIT, Jumat 08.00–16.00 WIT'
+
 export interface WaPermintaanRow {
   rincian_data: string
   wilayah_data: string

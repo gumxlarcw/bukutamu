@@ -911,14 +911,14 @@ class Wa extends Api_base {
 
             $g_nama = trim((string) ($input['nama'] ?? '')) ?: ($this->wa_known_name($sess->phone_norm) ?: 'Pemohon');
             if ($category === 'offline') {
-                $body = "Terdaftar ✅ untuk *Antrian Offline*.\nSaat tiba di kantor, di kiosk pilih *\"Sudah Daftar via WhatsApp\"*, masukkan nomor HP ini, lalu pindai wajah — Anda langsung masuk antrian.\nJam layanan: Sen–Jum 08.00–15.30 WIT.\n\n_Kalau ternyata Anda butuh data secara online, balas *1*._";
+                $body = "Terdaftar ✅ untuk *Antrian Offline*.\nSaat tiba di kantor, di kiosk pilih *\"Sudah Daftar via WhatsApp\"*, masukkan nomor HP ini, lalu pindai wajah — Anda langsung masuk antrian.\nJam layanan: " . $this->jam_layanan_text() . ".\n\n_Kalau ternyata Anda butuh data secara online, balas *1*._";
                 $this->wa_enqueue_user($sess->phone_raw, $sess->wa_chat_id, 'confirmation', $body);
                 $this->wa_notify_group_enqueue("🗓️ *Daftar Antrian Offline*\nNama: {$g_nama}\nNomor: {$sess->phone_norm}\nTiket: WA-{$id_kunjungan}\n" . $this->wa_public_base() . "/admin/layanan-online");
             } else {
                 // data: existing confirmation + "✅ Permintaan Data Online Masuk" ping.
                 $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n";
                 if ($recap !== '') $body .= "\nRingkasan permintaan Anda:{$recap}\n";
-                $body .= "\nKami akan memproses permintaan ini pada jam operasional layanan (Senin–Jumat 08.00–15.30 WIT).";
+                $body .= "\nKami akan memproses permintaan ini pada jam operasional layanan (" . $this->jam_layanan_text() . ").";
                 $this->db->insert('wa_outbox', ['phone_raw' => $sess->phone_raw, 'wa_chat_id' => $sess->wa_chat_id, 'msg_type' => 'confirmation', 'body' => $body, 'id_kunjungan' => $id_kunjungan, 'status' => 'pending']);
                 $g_inst = trim((string) ($input['nama_instansi'] ?? ''));
                 $g_body = "✅ *Permintaan Data Online Masuk*\nTiket: WA-{$id_kunjungan}\nNama: {$g_nama}" . ($g_inst !== '' ? " ({$g_inst})" : '') . "\nNomor: {$sess->phone_norm}\n";
@@ -1209,6 +1209,10 @@ class Wa extends Api_base {
     }
 
     // Pesan menu kategori (balasan angka) — dikirim ke pemohon sebelum form apa pun.
+    private function jam_layanan_text() {
+        return 'Senin–Kamis 08.00–15.30 WIT, Jumat 08.00–16.00 WIT';
+    }
+
     private function wa_menu_text() {
         return "Selamat datang di Layanan Online BPS Maluku Utara 👋\n\n"
              . "Silakan pilih layanan (balas dengan ANGKA):\n"
@@ -1269,7 +1273,7 @@ class Wa extends Api_base {
         $idk = (int) $this->db->insert_id();
         $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'submitted', 'category' => 'lainnya', 'id_kunjungan' => $idk, 'submitted_at' => date('Y-m-d H:i:s')]);
 
-        $body = "Baik 🙏 permintaan Anda sudah kami terima. Petugas kami akan membalas Anda di chat ini pada jam layanan (Sen–Jum 08.00–15.30 WIT).\n\n_Kalau ternyata Anda butuh data secara online, balas *1* untuk form Permintaan Data._";
+        $body = "Baik 🙏 permintaan Anda sudah kami terima. Petugas kami akan membalas Anda di chat ini pada jam layanan (" . $this->jam_layanan_text() . ").\n\n_Kalau ternyata Anda butuh data secara online, balas *1* untuk form Permintaan Data._";
         $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', $body);
         $g = $this->wa_known_name($sess->phone_norm) ?: 'Pemohon';
         $this->wa_notify_group_enqueue("💬 *Lainnya — minta ditangani*\nNama: {$g}\nNomor: {$sess->phone_norm}\nTiket: WA-{$idk}\n" . $this->wa_public_base() . "/admin/layanan-online");
