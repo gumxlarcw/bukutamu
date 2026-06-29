@@ -854,13 +854,15 @@ class Wa extends Api_base {
                 ]);
             } else {
                 $this->db->insert('tamdes_kunjungan', [
-                    'id_user'       => $id_user,
-                    'jenis_layanan' => json_encode($jenis_layanan),
-                    'sarana'        => json_encode($sarana),
-                    'date_visit'    => date('Y-m-d H:i:s'),
-                    'status'        => 'antri',
-                    'nomor_antrian' => ($category === 'offline') ? $this->generate_queue_number($jenis_layanan[0] ?? '') : null,
-                    'created_by'    => 'whatsapp',
+                    'id_user'          => $id_user,
+                    'jenis_layanan'    => json_encode($jenis_layanan),
+                    'sarana'           => json_encode($sarana),
+                    'layanan_lainnya'  => $input['layanan_lainnya'] ?? null,
+                    'sarana_lainnya'   => $input['sarana_lainnya'] ?? null,
+                    'date_visit'       => date('Y-m-d H:i:s'),
+                    'status'           => 'antri',
+                    'nomor_antrian'    => ($category === 'offline') ? $this->generate_queue_number($jenis_layanan[0] ?? '') : null,
+                    'created_by'       => 'whatsapp',
                 ]);
                 $id_kunjungan = (int) $this->db->insert_id();
                 if (!$id_kunjungan) { $this->db->query('UNLOCK TABLES'); $this->json_response(['success' => false, 'message' => 'Gagal membuat kunjungan'], 500); }

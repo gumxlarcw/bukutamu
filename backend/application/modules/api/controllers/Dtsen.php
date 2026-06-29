@@ -31,6 +31,7 @@ class Dtsen extends Api_base {
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where("DATE(k.date_visit)", $today)
             ->where("k.jenis_layanan LIKE", '%Konsultasi DTSEN%')
+            ->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE)
             ->order_by('k.date_visit', 'DESC')
             ->get()->result();
 
