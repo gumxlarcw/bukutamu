@@ -787,16 +787,17 @@ class Wa extends Api_base {
                 $this->json_response(['success' => false, 'message' => 'Nama wajib diisi'], 422);
             }
 
-            // SERVER-AUTHORITATIVE — never trust client for these (R8, D2/D3/D5).
             if ($category === 'offline') {
-                $jenis_layanan = ['Daftar Antrian Offline'];
-                $sarana        = [2]; // placeholder; di-overwrite saat wa_promote di kiosk
+                $jl_in = (isset($input['jenis_layanan']) && is_array($input['jenis_layanan'])) ? array_values($input['jenis_layanan']) : [];
+                if (!$jl_in) $this->json_response(['success' => false, 'message' => 'Silakan pilih layanan.'], 422);
+                $jenis_layanan = $jl_in;
+                $sarana        = (isset($input['sarana']) && is_array($input['sarana'])) ? array_map('intval', $input['sarana']) : [];
+                $this->validate_no_cross_layanan($jenis_layanan);          // reject cross-group / unknown
+                $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
             } else { // 'data'
                 $jenis_layanan = ['Konsultasi Statistik'];
                 $sarana        = [2];
             }
-            $this->validate_no_cross_layanan($jenis_layanan);
-            $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
 
             // Validasi tahun (boundary, sebelum LOCK → tidak ada kunjungan orphan bila ditolak):
             // format tahun wajar + tahun_akhir tidak boleh sebelum tahun_awal (cegah salah ketik
@@ -858,7 +859,7 @@ class Wa extends Api_base {
                     'sarana'        => json_encode($sarana),
                     'date_visit'    => date('Y-m-d H:i:s'),
                     'status'        => 'antri',
-                    'nomor_antrian' => null,
+                    'nomor_antrian' => ($category === 'offline') ? $this->generate_queue_number($jenis_layanan[0] ?? '') : null,
                     'created_by'    => 'whatsapp',
                 ]);
                 $id_kunjungan = (int) $this->db->insert_id();
@@ -911,9 +912,15 @@ class Wa extends Api_base {
 
             $g_nama = trim((string) ($input['nama'] ?? '')) ?: ($this->wa_known_name($sess->phone_norm) ?: 'Pemohon');
             if ($category === 'offline') {
-                $body = "Terdaftar ✅ untuk *Antrian Offline*.\nSaat tiba di kantor, di kiosk pilih *\"Sudah Daftar via WhatsApp\"*, masukkan nomor HP ini, lalu pindai wajah — Anda langsung masuk antrian.\nJam layanan: " . $this->jam_layanan_text() . ".\n\n_Kalau ternyata Anda butuh data secara online, balas *1*._";
+                $no  = $this->db->select('nomor_antrian')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan])->row()->nomor_antrian;
+                $svc = $jenis_layanan[0] ?? '';
+                $body = "✅ *Pendaftaran antrian diterima.*\n"
+                      . ($no ? "Nomor antrian: *{$no}* (berlaku hari ini)\n" : '')
+                      . "Layanan: {$svc}\n"
+                      . "Silakan datang ke Kantor BPS Provinsi Maluku Utara — bagian *Resepsionis* untuk mencetak tiket Anda.\n"
+                      . "Jam layanan: " . $this->jam_layanan_text() . ".";
                 $this->wa_enqueue_user($sess->phone_raw, $sess->wa_chat_id, 'confirmation', $body);
-                $this->wa_notify_group_enqueue("🗓️ *Daftar Antrian Offline*\nNama: {$g_nama}\nNomor: {$sess->phone_norm}\nTiket: WA-{$id_kunjungan}\n" . $this->wa_public_base() . "/admin/layanan-online");
+                $this->wa_notify_group_enqueue("🗓️ *Daftar Antrian Offline*\nNama: {$g_nama}" . ($no ? "\nNomor antrian: {$no}" : '') . "\nNomor: {$sess->phone_norm}\nTiket: WA-{$id_kunjungan}\n" . $this->wa_public_base() . "/admin/layanan-online");
             } else {
                 // data: existing confirmation + "✅ Permintaan Data Online Masuk" ping.
                 $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n";
