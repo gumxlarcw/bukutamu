@@ -400,15 +400,18 @@ class Kiosk extends Api_base {
         }
         $guest = $guests[0];
 
-        // Kunjungan WA terbaru milik tamu ini (yang masih bisa dilayani fisik).
+        // Kunjungan WA terbaru milik tamu ini yang masih bisa dilayani fisik. HANYA pra-daftar
+        // "Daftar Antrian Offline" (kategori #2) yang boleh check-in kiosk — permintaan data online
+        // (#1) & "Lainnya Online" (#3) diproses lewat WhatsApp, bukan antrian fisik.
         $visit = $this->db->select('id_kunjungan, status')
                           ->where('id_user', $guest->id_user)
                           ->where('created_by', 'whatsapp')
+                          ->like('jenis_layanan', 'Daftar Antrian Offline')
                           ->order_by('id_kunjungan', 'DESC')
                           ->limit(1)
                           ->get('tamdes_kunjungan')->row();
         if (!$visit) {
-            $this->json_response(['success' => false, 'message' => 'Tidak ada permintaan layanan online WhatsApp untuk nomor ini.'], 404);
+            $this->json_response(['success' => false, 'message' => 'Tidak ada pendaftaran antrian offline untuk nomor ini. Permintaan data online diproses & dibalas lewat WhatsApp.'], 404);
         }
         if (in_array($visit->status, ['selesai', 'evaluasi_selesai'], true)) {
             $this->json_response(['success' => false, 'message' => 'Permintaan Anda sudah selesai kami proses. Silakan daftar baru untuk permintaan lainnya.'], 409);
