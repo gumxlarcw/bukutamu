@@ -21,11 +21,13 @@ class Wa extends Api_base {
         $reply_to   = $wa_id !== '' ? $wa_id : $phone_raw; // never reconstruct — reply to what WA gave us
 
         // Active session for this phone? → continuation (bot stays silent; petugas handles
-        // the chat manually). "Active" = link sent but form not submitted AND still within the
-        // 48h link TTL (awaiting_form), OR submitted with a visit that is not yet 'selesai'.
-        // Once the visit is 'selesai', the session is expired, its link is past 48h, or its
-        // visit is deleted, the next message is a NEW request → mint a fresh link. The 48h
-        // bound is what lets an expired link recover: re-messaging gets a new link, not a stale one.
+        // the chat manually). Exception: awaiting_category sessions are actively routed
+        // by wa_handle_category_choice(). "Active" = visitor picking a category or link
+        // sent but form not submitted AND still within the 48h link TTL (awaiting_form),
+        // OR submitted with a visit that is not yet 'selesai'. Once the visit is 'selesai',
+        // the session is expired, its link is past 48h, or its visit is deleted, the next
+        // message is a NEW request → mint a fresh link. The 48h bound is what lets an
+        // expired link recover: re-messaging gets a new link, not a stale one.
         $open = $this->db->query(
             "SELECT s.id, s.state, s.phone_raw, s.phone_norm, s.category, s.id_kunjungan
              FROM wa_sessions s
@@ -1307,7 +1309,7 @@ class Wa extends Api_base {
             "SELECT s.id, s.wa_chat_id, s.id_kunjungan FROM wa_sessions s
              LEFT JOIN tamdes_kunjungan k ON k.id_kunjungan = s.id_kunjungan
              WHERE s.phone_norm = ?
-               AND ( (s.state = 'awaiting_form' AND s.created_at > (NOW() - INTERVAL 48 HOUR))
+               AND ( (s.state IN ('awaiting_category','awaiting_form') AND s.created_at > (NOW() - INTERVAL 48 HOUR))
                      OR (s.state = 'submitted' AND k.status IS NOT NULL AND k.status <> 'selesai') )
              ORDER BY s.id DESC LIMIT 1",
             [$phone_norm]
