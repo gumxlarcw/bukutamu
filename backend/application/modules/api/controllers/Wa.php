@@ -27,50 +27,45 @@ class Wa extends Api_base {
         // visit is deleted, the next message is a NEW request → mint a fresh link. The 48h
         // bound is what lets an expired link recover: re-messaging gets a new link, not a stale one.
         $open = $this->db->query(
-            "SELECT s.id, s.state FROM wa_sessions s
+            "SELECT s.id, s.state, s.phone_raw, s.phone_norm, s.category, s.id_kunjungan
+             FROM wa_sessions s
              LEFT JOIN tamdes_kunjungan k ON k.id_kunjungan = s.id_kunjungan
              WHERE s.phone_norm = ?
-               AND ( (s.state = 'awaiting_form' AND s.created_at > (NOW() - INTERVAL 48 HOUR))
+               AND ( (s.state IN ('awaiting_category','awaiting_form') AND s.created_at > (NOW() - INTERVAL 48 HOUR))
                      OR (s.state = 'submitted' AND k.status IS NOT NULL AND k.status <> 'selesai') )
              ORDER BY s.id DESC LIMIT 1",
             [$phone_norm]
         )->row();
         if ($open) {
             $this->db->where('id', $open->id)->update('wa_sessions', ['last_inbound_at' => date('Y-m-d H:i:s'), 'wa_chat_id' => $reply_to]);
+            $text = strtolower(trim((string) ($input['text'] ?? '')));
+
+            // Mitigasi: keyword global → kembali ke menu kapan saja.
+            if (in_array($text, ['menu', '0'], true)) {
+                $this->db->where('id', $open->id)->update('wa_sessions', ['state' => 'awaiting_category', 'category' => null]);
+                $this->wa_enqueue_user($open->phone_raw, $reply_to, 'menu', $this->wa_menu_text());
+                $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
+            }
+            // Sedang memilih kategori → proses pilihan.
+            if ($open->state === 'awaiting_category') {
+                $this->wa_handle_category_choice($open, $reply_to, $text);
+                $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
+            }
+            // awaiting_form / submitted lain → diam (petugas tangani live-chat).
             $this->json_response(['success' => true, 'data' => ['session_id' => (int) $open->id, 'new' => false], 'message' => 'OK']);
         }
 
-        // New session → mint link token (48h) → enqueue intake_link.
+        // Kontak baru → state awaiting_category, kirim MENU (belum kirim link form).
+        // Ping grup "Kontak Baru" DITUNDA sampai kategori dipilih (lihat parser) → kurangi noise.
         $this->db->insert('wa_sessions', [
             'phone_norm'      => $phone_norm,
             'phone_raw'       => $phone_raw,
             'wa_chat_id'      => $reply_to,
-            'state'           => 'awaiting_form',
+            'state'           => 'awaiting_category',
             'last_inbound_at' => date('Y-m-d H:i:s'),
         ]);
-        $sid   = (int) $this->db->insert_id();
-        $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
-        $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
-        $this->db->where('id', $sid)->update('wa_sessions', ['link_sent_at' => date('Y-m-d H:i:s')]);
-
-        $body = "Halo #SahabatData,\n\n"
-              . "Terima kasih telah menghubungi BPS Provinsi Maluku Utara. Pesan ini dikirim secara otomatis. "
-              . "Operator kami akan segera merespons pada jam operasional layanan: Senin s.d. Jumat pukul "
-              . "08.00–15.30 WIT (selain hari libur), sesuai dengan antrian.\n\n"
-              . "Untuk mempercepat layanan, mohon lengkapi formulir permintaan data Anda melalui tautan berikut "
-              . "agar permintaan dapat segera kami proses (tautan berlaku 48 jam):\n" . $link . "\n\n"
-              . "Terima kasih atas kepercayaan Anda menggunakan layanan kami.";
-        $this->db->insert('wa_outbox', ['phone_raw' => $phone_raw, 'wa_chat_id' => $reply_to, 'msg_type' => 'intake_link', 'body' => $body, 'status' => 'pending']);
-
-        // Heads-up ke grup petugas (kalau grup dikonfigurasi): tampilkan NOMOR + PESAN pertama.
-        $g_text = trim((string) ($input['text'] ?? ''));
-        $g_name = $this->wa_known_name($phone_norm);
-        $g_body = "🆕 *Layanan Online — Kontak Baru*\n"
-                . ($g_name ? "Nama: {$g_name}\n" : '')
-                . "Nomor: {$phone_norm}\n";
-        if ($g_text !== '') $g_body .= "Pesan: \"" . mb_substr($g_text, 0, 400) . "\"\n";
-        $g_body .= "Tautan formulir sudah dikirim otomatis. Pantau: " . $this->wa_public_base() . "/admin/layanan-online";
-        $this->wa_notify_group_enqueue($g_body);
+        $sid = (int) $this->db->insert_id();
+        $this->wa_enqueue_user($phone_raw, $reply_to, 'menu', $this->wa_menu_text());
 
         $this->json_response(['success' => true, 'data' => ['session_id' => $sid, 'new' => true], 'message' => 'OK']);
     }
@@ -1153,6 +1148,73 @@ class Wa extends Api_base {
     private function wa_operator_name($uid) {
         $u = $this->db->select('nama')->get_where('admin_users', ['id' => (int) $uid])->row();
         return $u ? $this->wa_strip_role_annot($u->nama) : 'Petugas';
+    }
+
+    // Pesan menu kategori (balasan angka) — dikirim ke pemohon sebelum form apa pun.
+    private function wa_menu_text() {
+        return "Selamat datang di Layanan Online BPS Maluku Utara 👋\n\n"
+             . "Silakan pilih layanan (balas dengan ANGKA):\n"
+             . "*1.* Permintaan Data / Konsultasi Statistik\n"
+             . "*2.* Daftar Antrian Offline (datang ke kantor)\n"
+             . "*3.* Lainnya";
+    }
+
+    // Enqueue pesan ke PEMOHON (bukan grup). msg_type harus valid ENUM wa_outbox.
+    private function wa_enqueue_user($phone_raw, $reply_to, $type, $body) {
+        $this->db->insert('wa_outbox', ['phone_raw' => $phone_raw, 'wa_chat_id' => $reply_to, 'msg_type' => $type, 'body' => $body, 'status' => 'pending']);
+    }
+
+    private function wa_handle_category_choice($sess, $reply_to, $text) {
+        $sid = (int) $sess->id;
+        if ($text === '1') {
+            $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'awaiting_form', 'category' => 'data', 'link_sent_at' => date('Y-m-d H:i:s')]);
+            $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
+            $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
+            $body  = "Baik 🙏 untuk *Permintaan Data / Konsultasi*. Mohon lengkapi formulir berikut (berlaku 48 jam):\n" . $link;
+            $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', $body);
+            return; // ping grup tetap saat submit (existing "Permintaan Data Online Masuk")
+        }
+        if ($text === '2') {
+            $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'awaiting_form', 'category' => 'offline', 'link_sent_at' => date('Y-m-d H:i:s')]);
+            $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
+            $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
+            $body  = "Baik 🙏 untuk *Daftar Antrian Offline*. Mohon lengkapi data diri Anda dulu (berlaku 48 jam):\n" . $link;
+            $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', $body);
+            return;
+        }
+        if ($text === '3') {
+            $this->wa_create_lainnya_visit($sess, $reply_to);
+            return;
+        }
+        // Tidak dikenali → ulangi menu.
+        $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'menu', "Mohon balas dengan angka *1*, *2*, atau *3*.\n\n" . $this->wa_menu_text());
+    }
+
+    private function wa_create_lainnya_visit($sess, $reply_to) {
+        $sid = (int) $sess->id;
+        // Guard TOCTOU: kalau sudah submitted (balasan ganda), jangan buat visit kedua.
+        $fresh = $this->db->select('state, id_kunjungan')->get_where('wa_sessions', ['id' => $sid])->row();
+        if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan) return;
+
+        $existing = $this->db->where('notel', $sess->phone_norm)->order_by('id_user', 'DESC')->limit(1)->get('tamdes_buku')->row();
+        if ($existing) {
+            $id_user = (int) $existing->id_user;
+        } else {
+            $max     = $this->db->select_max('id_user')->get('tamdes_buku')->row()->id_user;
+            $id_user = $max ? $max + 1 : 8200001;
+            $this->db->insert('tamdes_buku', ['id_user' => $id_user, 'nama' => ($this->wa_known_name($sess->phone_norm) ?: ''), 'notel' => $sess->phone_norm]);
+        }
+        $this->db->insert('tamdes_kunjungan', [
+            'id_user' => $id_user, 'jenis_layanan' => json_encode(['Lainnya Online']), 'sarana' => json_encode([2]),
+            'date_visit' => date('Y-m-d H:i:s'), 'status' => 'antri', 'nomor_antrian' => null, 'created_by' => 'whatsapp',
+        ]);
+        $idk = (int) $this->db->insert_id();
+        $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'submitted', 'category' => 'lainnya', 'id_kunjungan' => $idk, 'submitted_at' => date('Y-m-d H:i:s')]);
+
+        $body = "Baik 🙏 permintaan Anda sudah kami terima. Petugas kami akan membalas Anda di chat ini pada jam layanan (Sen–Jum 08.00–15.30 WIT).\n\n_Kalau ternyata Anda butuh data secara online, balas *1* untuk form Permintaan Data._";
+        $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', $body);
+        $g = $this->wa_known_name($sess->phone_norm) ?: 'Pemohon';
+        $this->wa_notify_group_enqueue("💬 *Lainnya — minta ditangani*\nNama: {$g}\nNomor: {$sess->phone_norm}\nTiket: WA-{$idk}\n" . $this->wa_public_base() . "/admin/layanan-online");
     }
 
     // Notif ke GRUP WhatsApp petugas. Group id (@g.us) dibaca dari push.php (wa_notify_group);
