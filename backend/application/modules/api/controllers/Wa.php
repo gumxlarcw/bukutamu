@@ -737,6 +737,7 @@ class Wa extends Api_base {
                 'session_id'  => $id,
                 'phone'       => $sess->phone_norm,
                 'state'       => $sess->state,
+                'category'    => $sess->category ?: 'data',
                 'guest'       => $guest,
                 'multi_match' => $multi,
             ], 'message' => 'OK']);
@@ -750,7 +751,8 @@ class Wa extends Api_base {
                 $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $sess->id_kunjungan, 'ticket' => 'WA-' . $sess->id_kunjungan], 'message' => 'Sudah dikirim']);
             }
 
-            $input = $this->get_json_input();
+            $input    = $this->get_json_input();
+            $category = ($sess && !empty($sess->category)) ? $sess->category : 'data';
 
             // Validasi wajib server-side — FE meng-disable tombol, tapi API bisa dipanggil
             // langsung. Tamu baru tanpa nama = data sampah; tolak di boundary.
@@ -759,8 +761,13 @@ class Wa extends Api_base {
             }
 
             // SERVER-AUTHORITATIVE — never trust client for these (R8, D2/D3/D5).
-            $jenis_layanan = ['Konsultasi Statistik'];
-            $sarana        = [2];
+            if ($category === 'offline') {
+                $jenis_layanan = ['Daftar Antrian Offline'];
+                $sarana        = [2]; // placeholder; di-overwrite saat wa_promote di kiosk
+            } else { // 'data'
+                $jenis_layanan = ['Konsultasi Statistik'];
+                $sarana        = [2];
+            }
             $this->validate_no_cross_layanan($jenis_layanan);
             $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
 
@@ -858,18 +865,23 @@ class Wa extends Api_base {
 
             $this->audit_system('create_wa', 'visit', $id_kunjungan, ['id_user' => $id_user, 'konsultasi_rows' => $inserted]);
 
-            $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n";
-            if ($recap !== '') $body .= "\nRingkasan permintaan Anda:{$recap}\n";
-            $body .= "\nKami akan memproses permintaan ini pada jam operasional layanan (Senin–Jumat 08.00–15.30 WIT).";
-            $this->db->insert('wa_outbox', ['phone_raw' => $sess->phone_raw, 'wa_chat_id' => $sess->wa_chat_id, 'msg_type' => 'confirmation', 'body' => $body, 'id_kunjungan' => $id_kunjungan, 'status' => 'pending']);
-
-            // Notif ke grup petugas: permintaan lengkap siap diproses (kalau grup dikonfigurasi).
-            $g_nama = trim((string) ($input['nama'] ?? '')) ?: 'Pemohon';
-            $g_inst = trim((string) ($input['nama_instansi'] ?? ''));
-            $g_body = "✅ *Permintaan Data Online Masuk*\nTiket: WA-{$id_kunjungan}\nNama: {$g_nama}" . ($g_inst !== '' ? " ({$g_inst})" : '') . "\nNomor: {$sess->phone_norm}\n";
-            if ($recap !== '') $g_body .= "Permintaan:{$recap}\n";
-            $g_body .= "Mohon diproses: " . $this->wa_public_base() . "/admin/layanan-online";
-            $this->wa_notify_group_enqueue($g_body);
+            $g_nama = trim((string) ($input['nama'] ?? '')) ?: ($this->wa_known_name($sess->phone_norm) ?: 'Pemohon');
+            if ($category === 'offline') {
+                $body = "Terdaftar ✅ untuk *Antrian Offline*.\nSaat tiba di kantor, di kiosk pilih *\"Sudah Daftar via WhatsApp\"*, masukkan nomor HP ini, lalu pindai wajah — Anda langsung masuk antrian.\nJam layanan: Sen–Jum 08.00–15.30 WIT.\n\n_Kalau ternyata Anda butuh data secara online, balas *1*._";
+                $this->wa_enqueue_user($sess->phone_raw, $sess->wa_chat_id, 'confirmation', $body);
+                $this->wa_notify_group_enqueue("🗓️ *Daftar Antrian Offline*\nNama: {$g_nama}\nNomor: {$sess->phone_norm}\nTiket: WA-{$id_kunjungan}\n" . $this->wa_public_base() . "/admin/layanan-online");
+            } else {
+                // data: existing confirmation + "✅ Permintaan Data Online Masuk" ping.
+                $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n";
+                if ($recap !== '') $body .= "\nRingkasan permintaan Anda:{$recap}\n";
+                $body .= "\nKami akan memproses permintaan ini pada jam operasional layanan (Senin–Jumat 08.00–15.30 WIT).";
+                $this->db->insert('wa_outbox', ['phone_raw' => $sess->phone_raw, 'wa_chat_id' => $sess->wa_chat_id, 'msg_type' => 'confirmation', 'body' => $body, 'id_kunjungan' => $id_kunjungan, 'status' => 'pending']);
+                $g_inst = trim((string) ($input['nama_instansi'] ?? ''));
+                $g_body = "✅ *Permintaan Data Online Masuk*\nTiket: WA-{$id_kunjungan}\nNama: {$g_nama}" . ($g_inst !== '' ? " ({$g_inst})" : '') . "\nNomor: {$sess->phone_norm}\n";
+                if ($recap !== '') $g_body .= "Permintaan:{$recap}\n";
+                $g_body .= "Mohon diproses: " . $this->wa_public_base() . "/admin/layanan-online";
+                $this->wa_notify_group_enqueue($g_body);
+            }
 
             $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan], 'message' => 'Permintaan terkirim']);
         }
@@ -975,8 +987,8 @@ class Wa extends Api_base {
     private function wa_dispatch_scan() {
         $now = date('Y-m-d H:i:s');
 
-        // 1. Expire stale sessions (>48h awaiting_form).
-        $this->db->where('state', 'awaiting_form')
+        // 1. Expire stale sessions (>48h awaiting_form or awaiting_category).
+        $this->db->where_in('state', ['awaiting_form', 'awaiting_category'])
                  ->where('created_at <', date('Y-m-d H:i:s', time() - 48 * 3600))
                  ->update('wa_sessions', ['state' => 'expired']);
 
