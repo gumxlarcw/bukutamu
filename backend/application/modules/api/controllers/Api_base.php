@@ -532,8 +532,9 @@ class Api_base extends CI_Controller {
             : strtoupper(substr($jenis_layanan, 0, 1));
         $today  = date('Y-m-d');
 
+        $svc   = $this->db->escape('"' . $jenis_layanan . '"');
         $count = $this->db->where('DATE(date_visit)', $today)
-                          ->where('jenis_layanan', $jenis_layanan)
+                          ->where("JSON_CONTAINS(jenis_layanan, $svc)", null, false)
                           ->count_all_results('tamdes_kunjungan');
 
         $number = $count + 1;
