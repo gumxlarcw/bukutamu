@@ -526,10 +526,20 @@ class Api_base extends CI_Controller {
             return null;
         }
 
-        // Override prefix khusus: DTSEN → "D" (membedakan dari "K" Konsultasi Statistik di TV)
-        $prefix = strtolower($jenis_layanan) === 'konsultasi dtsen'
-            ? 'D'
-            : strtoupper(substr($jenis_layanan, 0, 1));
+        // Prefix antrian per layanan — cocokkan dgn kontrak yang sudah dipublikasi di
+        // AboutPage ("P, K, R, J grup SKD; D DTSEN"). Pakai map eksplisit, BUKAN huruf
+        // pertama: Perpustakaan & "Penjualan Produk Statistik" sama-sama "P" → tabrakan
+        // nomor antrian (mis. dua pengunjung sama-sama pegang "P001"). trim() menjaga dari
+        // nilai legacy berspasi/tab. Layanan di luar map → fallback huruf pertama (perilaku lama).
+        $prefix_map = [
+            'perpustakaan'                   => 'P',
+            'konsultasi statistik'           => 'K',
+            'rekomendasi kegiatan statistik' => 'R',
+            'penjualan produk statistik'     => 'J',
+            'konsultasi dtsen'               => 'D',
+        ];
+        $key    = strtolower(trim($jenis_layanan));
+        $prefix = $prefix_map[$key] ?? strtoupper(substr($jenis_layanan, 0, 1));
         $today  = date('Y-m-d');
 
         $svc   = $this->db->escape('"' . $jenis_layanan . '"');
