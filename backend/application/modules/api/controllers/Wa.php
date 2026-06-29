@@ -151,6 +151,7 @@ class Wa extends Api_base {
         $csent = (isset($input['chat_sent']) && is_array($input['chat_sent'])) ? $input['chat_sent'] : [];
         $bids  = (isset($input['backfill_ids']) && is_array($input['backfill_ids'])) ? array_map('intval', $input['backfill_ids']) : [];
         $bfail = (isset($input['backfill_fail']) && is_array($input['backfill_fail'])) ? array_map('intval', $input['backfill_fail']) : [];
+        $ofail = (isset($input['outbox_fail']) && is_array($input['outbox_fail'])) ? array_map('intval', $input['outbox_fail']) : [];
         $acks  = (isset($input['ack_states']) && is_array($input['ack_states'])) ? $input['ack_states'] : [];
         $reacts = (isset($input['reactions']) && is_array($input['reactions'])) ? $input['reactions'] : [];
         if ($ids)  $this->db->where_in('id', $ids)->update('wa_outbox', ['status' => 'sent', 'sent_at' => date('Y-m-d H:i:s')]);
@@ -170,6 +171,15 @@ class Wa extends Api_base {
         if ($bfail) {
             $this->db->where_in('id', $bfail)->set('attempts', 'attempts+1', false)->update('wa_backfill');
             $this->db->where_in('id', $bfail)->where('attempts >=', 4)->update('wa_backfill', ['status' => 'done']);
+        }
+        // Outbox GAGAL kirim (connector menyerah setelah MAX_SEND_ATTEMPTS) → naikkan attempts &
+        // tandai 'failed' setelah N kali. Tanpa ini baris tetap 'pending' selamanya → terkirim BASI
+        // saat connector restart (failCount in-memory connector ter-reset). Lihat memo wa_outbox_stale_delivery.
+        if ($ofail) {
+            $max = (int) ($this->push_config('wa_outbox_max_attempts') ?: 5);
+            $this->db->where_in('id', $ofail)->set('attempts', 'attempts+1', false)->update('wa_outbox');
+            $this->db->where_in('id', $ofail)->where('status', 'pending')->where('attempts >=', $max)
+                     ->update('wa_outbox', ['status' => 'failed']);
         }
         // Status pengiriman WhatsApp (delivered/read) → naikkan `ack` pesan keluar (jangan turunkan).
         foreach ($acks as $a) {
@@ -972,6 +982,23 @@ class Wa extends Api_base {
         $this->db->where('state', 'awaiting_form')
                  ->where('created_at <', date('Y-m-d H:i:s', time() - 48 * 3600))
                  ->update('wa_sessions', ['state' => 'expired']);
+
+        // 1b. Expire stale group_notify (petugas ping). Sebuah "✅ Permintaan Data Online Masuk" yang
+        //     telat berhari-hari = bising (sumber kebenaran ada di /admin/layanan-online), dan baris
+        //     'pending' yang macet akan terkirim BASI saat connector restart. TTL configurable; default 6 jam.
+        //     Hanya group_notify: confirmation/eval_link/thankyou punya dependensi hilir (dedup ledger,
+        //     gerbang evaluasi) → jangan di-age-cap di sini. Lihat memo wa_outbox_stale_delivery.
+        $g_ttl = (int) ($this->push_config('wa_outbox_group_ttl_secs') ?: 21600);
+        $this->db->where('status', 'pending')->where('msg_type', 'group_notify')
+                 ->where('created_at <', date('Y-m-d H:i:s', time() - $g_ttl))
+                 ->update('wa_outbox', ['status' => 'failed']);
+        $expired = $this->db->affected_rows();
+        if ($expired > 0) {
+            // Deteksi (anti-senyap): kalau ini berulang, akar masalahnya connector sering down/zombie
+            // saat permintaan masuk (insiden 23–29 Jun) — bukan gejala outbox. Jejak queryable di audit log.
+            log_message('error', "wa_outbox: expired {$expired} stale group_notify (TTL {$g_ttl}s)");
+            $this->audit_system('wa_outbox_expire', 'wa_outbox', 0, ['count' => $expired, 'ttl_secs' => $g_ttl]);
+        }
 
         // 2. Enqueue eval_link for WA SKD visits newly menunggu_evaluasi (ledger-dedup).
         $need_eval = $this->db->query(

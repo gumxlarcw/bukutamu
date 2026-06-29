@@ -152,6 +152,7 @@ client.on('ready', () => {
   if (readyWatchdog) { clearTimeout(readyWatchdog); readyWatchdog = null; } // sehat → batalkan watchdog
   ready = true;
   linkedNumber = client.info?.wid?.user || null;
+  failCount.clear(); // reconnect/recovery → beri baris yang sempat menyerah satu kesempatan kirim ulang (fresh, bukan basi)
   log('WA client ready; nomor=' + linkedNumber);
   pushQrState({ qr: null, ready: true, number: linkedNumber });
   // Recovery: setiap reconnect, minta backfill semua sesi aktif → tangkap pesan yang
@@ -346,6 +347,7 @@ async function tick() {
     const sentOutbox = []; // wa_outbox ids (templated)
     const chatSent = [];   // [{id, wa_msg_id}] live chat — simpan WA id agar backfill/recovery tak menggandakan
     const failedChat = []; // wa_messages ids yang menyerah → tandai 'failed'
+    const failedOutbox = []; // wa_outbox ids yang menyerah → backend bump attempts/failed (cegah stuck-pending → terkirim basi)
     const BATCH = cfg.sendBatch || 6; // batasi kirim per tick → command (logout) tetap responsif + pacing terjaga
     let processed = 0;
     for (const m of messages) {
@@ -381,6 +383,7 @@ async function tick() {
         if (n >= MAX_SEND_ATTEMPTS) {
           log('giving up on', key, 'after', n, 'attempts');
           if (m.kind === 'chat') failedChat.push(m.id);
+          else failedOutbox.push(m.id); // outbox: lapor ke backend → bump attempts / tandai failed (anti stale)
         }
       }
     }
@@ -484,16 +487,16 @@ async function tick() {
     for (const [wa_msg_id, ack] of ackStates) ackArr.push({ wa_msg_id, ack });
     const reactArr = [];
     for (const [wa_msg_id, emoji] of reactionBuf) reactArr.push({ wa_msg_id, emoji });
-    if (sentOutbox.length || chatSent.length || backfillDone.length || backfillFailed.length || ackArr.length || reactArr.length) {
+    if (sentOutbox.length || chatSent.length || backfillDone.length || backfillFailed.length || failedOutbox.length || ackArr.length || reactArr.length) {
       try {
         await bfetch(ACK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
-          body: JSON.stringify({ ids: sentOutbox, chat_sent: chatSent, backfill_ids: backfillDone, backfill_fail: backfillFailed, ack_states: ackArr, reactions: reactArr }),
+          body: JSON.stringify({ ids: sentOutbox, chat_sent: chatSent, backfill_ids: backfillDone, backfill_fail: backfillFailed, outbox_fail: failedOutbox, ack_states: ackArr, reactions: reactArr }),
         });
         for (const a of ackArr) if (ackStates.get(a.wa_msg_id) === a.ack) ackStates.delete(a.wa_msg_id);
         for (const r of reactArr) if (reactionBuf.get(r.wa_msg_id) === r.emoji) reactionBuf.delete(r.wa_msg_id);
-        log('acked outbox=' + sentOutbox.length + ' chat=' + chatSent.length + ' backfill=' + backfillDone.length + ' bf_fail=' + backfillFailed.length + ' ack=' + ackArr.length + ' react=' + reactArr.length);
+        log('acked outbox=' + sentOutbox.length + ' chat=' + chatSent.length + ' backfill=' + backfillDone.length + ' bf_fail=' + backfillFailed.length + ' ob_fail=' + failedOutbox.length + ' ack=' + ackArr.length + ' react=' + reactArr.length);
       } catch (e) {
         log('ack POST gagal — buffer dipertahankan, retry tick berikutnya', e.message); // jangan hapus → cegah hilang
       }
