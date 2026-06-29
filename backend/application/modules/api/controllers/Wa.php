@@ -817,6 +817,14 @@ class Wa extends Api_base {
             if (!empty($sess->id_kunjungan)) {
                 // Konversi visit lama (#2/#3) → data: re-label + lanjut isi rows di bawah (tidak duplikat).
                 $id_kunjungan = (int) $sess->id_kunjungan;
+                // Re-check DI DALAM lock (TOCTOU): kalau visit keburu di-check-in kiosk (created_by='wa_kiosk')
+                // atau sudah selesai antara "balas 1" dan submit, JANGAN timpa antrian fisiknya — kembalikan
+                // tiket apa adanya (pemohon sudah dilayani langsung).
+                $cur = $this->db->select('created_by, status')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan])->row();
+                if (!$cur || $cur->created_by !== 'whatsapp' || in_array($cur->status, ['selesai', 'evaluasi_selesai'], true)) {
+                    $this->db->query('UNLOCK TABLES');
+                    $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan], 'message' => 'Sudah diproses']);
+                }
                 $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
                     'jenis_layanan' => json_encode($jenis_layanan), 'sarana' => json_encode($sarana),
                     'status' => 'antri', 'created_by' => 'whatsapp', 'date_visit' => date('Y-m-d H:i:s'),
