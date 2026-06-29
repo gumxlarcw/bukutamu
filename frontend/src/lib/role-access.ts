@@ -10,12 +10,15 @@ const SKD_SERVICES = [
 
 // Layanan PST di luar SKD — tetap ditangani petugas_pst & pakai panggilan TV,
 // tapi tidak memicu evaluasi SKD (langsung selesai setelah finalisasi).
-const DTSEN_SERVICES = ['Konsultasi DTSEN'] as const
+// 'Lainnya Online' = WA category #3: PST handles via chat, finishes to 'selesai' (no eval).
+const DTSEN_SERVICES = ['Konsultasi DTSEN', 'Lainnya Online'] as const
 
 // Semua layanan yang ditangani petugas_pst (role-wise).
 const PST_SERVICES = [...SKD_SERVICES, ...DTSEN_SERVICES] as const
 
-const RESEPSIONIS_SERVICES = ['Lainnya', 'Keperluan Pimpinan'] as const
+// 'Daftar Antrian Offline' = WA category #2: front-office pre-registration.
+// Label is overwritten with the real service at kiosk promotion (created_by='wa_kiosk').
+const RESEPSIONIS_SERVICES = ['Lainnya', 'Keperluan Pimpinan', 'Daftar Antrian Offline'] as const
 
 const BYPASS_ROLES: UserRole[] = ['superadmin', 'admin', 'operator']
 

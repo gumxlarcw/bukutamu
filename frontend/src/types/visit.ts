@@ -160,6 +160,8 @@ export const SERVICE_OPTIONS = [
   'Keperluan Pimpinan',
   'Lainnya',
   'Konsultasi DTSEN',
+  'Daftar Antrian Offline',
+  'Lainnya Online',
 ] as const
 
 export interface DashboardStats {
