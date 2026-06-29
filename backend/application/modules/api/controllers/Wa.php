@@ -153,6 +153,10 @@ class Wa extends Api_base {
         $sid  = (int) $sid;
         $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+        // Hanya alihkan sesi Antrian Offline / Lainnya — JANGAN reset sesi data yang sedang diproses.
+        if (!in_array($sess->category, ['offline', 'lainnya'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Hanya untuk sesi Antrian Offline / Lainnya.'], 409);
+        }
         $this->wa_switch_to_data($sess, ($sess->wa_chat_id ?: $sess->phone_raw));
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Diproses — tautan form Permintaan Data dikirim ke pemohon (kecuali bila kunjungan sudah dilayani langsung).']);
     }
