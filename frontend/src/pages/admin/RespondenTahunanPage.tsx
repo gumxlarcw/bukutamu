@@ -201,7 +201,11 @@ export default function RespondenTahunanPage() {
       const indIds = Object.keys(indikator_labels).map(Number).sort((a, b) => a - b)
       const rows = visits.map((v) => {
         const base: Record<string, unknown> = {
+          id_kunjungan: v.id_kunjungan,
+          id_user: v.id_user,
           tanggal: v.date_visit,
+          tgl_registrasi: v.tgldatang ?? '',
+          nomor_antrian: v.nomor_antrian ?? '',
           nama: v.nama,
           nama_instansi: v.nama_instansi ?? '',
           email: v.email ?? '',
@@ -221,13 +225,20 @@ export default function RespondenTahunanPage() {
           layanan_lainnya: v.layanan_lainnya ?? '',
           sarana: parseSarana(v.sarana).map(saranaLabel).join('; '),
           sarana_lainnya: v.sarana_lainnya ?? '',
+          hasil_konsultasi: v.hasil_konsultasi ?? '',
+          durasi_detik: v.durasi_detik ?? '',
           rating: v.rating_pengunjung ?? '',
+          pengaduan: v.pengaduan ?? '',
         }
         indIds.forEach((id) => { base[`ind_${id}`] = v.indikator?.[String(id)] ?? '' })
         return base
       })
       const cols = [
+        { key: 'id_kunjungan', label: 'ID Kunjungan' },
+        { key: 'id_user', label: 'ID Responden' },
         { key: 'tanggal', label: 'Tanggal Kunjungan' },
+        { key: 'tgl_registrasi', label: 'Tanggal Registrasi' },
+        { key: 'nomor_antrian', label: 'No. Antrian' },
         { key: 'nama', label: 'Nama' },
         { key: 'nama_instansi', label: 'Instansi' },
         { key: 'email', label: 'Email' },
@@ -247,8 +258,11 @@ export default function RespondenTahunanPage() {
         { key: 'layanan_lainnya', label: 'Layanan Lainnya' },
         { key: 'sarana', label: 'Sarana' },
         { key: 'sarana_lainnya', label: 'Sarana Lainnya' },
+        { key: 'hasil_konsultasi', label: 'Hasil Konsultasi' },
+        { key: 'durasi_detik', label: 'Durasi (detik)' },
         { key: 'rating', label: 'Rating Keseluruhan' },
         ...indIds.map((id) => ({ key: `ind_${id}`, label: `${id}. ${indikator_labels[String(id)] ?? `Indikator ${id}`}` })),
+        { key: 'pengaduan', label: 'Pengaduan/Saran' },
       ]
       exportCsv(`responden-skd-kunjungan-${tahun}${triwulan ? `-tw${triwulan}` : ''}`, rows, cols)
     })

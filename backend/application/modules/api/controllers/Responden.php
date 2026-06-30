@@ -81,11 +81,11 @@ class Responden extends Api_base {
         $year     = (int) ($this->input->get('tahun') ?: date('Y'));
         $triwulan = $this->input->get('triwulan');
 
-        $this->db->select("k.id_kunjungan, k.id_user, k.date_visit,
-                k.jenis_layanan, k.layanan_lainnya, k.sarana, k.sarana_lainnya, k.rating_pengunjung,
-                b.nama, b.email, b.notel, b.jeniskelamin, b.umur, b.disabilitas, b.jenis_disabilitas,
+        $this->db->select("k.id_kunjungan, k.id_user, k.date_visit, k.nomor_antrian, k.durasi_detik,
+                k.jenis_layanan, k.layanan_lainnya, k.sarana, k.sarana_lainnya, k.hasil_konsultasi, k.rating_pengunjung,
+                b.tgldatang, b.nama, b.email, b.notel, b.jeniskelamin, b.umur, b.disabilitas, b.jenis_disabilitas,
                 b.pendidikan, b.pekerjaan, b.pekerjaan_lainnya, b.kategori_instansi, b.kategori_lainnya,
-                b.nama_instansi, b.pemanfaatan, b.pemanfaatan_lainnya")
+                b.nama_instansi, b.pemanfaatan, b.pemanfaatan_lainnya, b.pengaduan")
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('YEAR(k.date_visit)', $year)

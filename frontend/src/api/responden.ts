@@ -71,6 +71,11 @@ export interface RespondenVisitRow {
   sarana: string | null
   sarana_lainnya: string | null
   rating_pengunjung?: number | string | null
+  nomor_antrian?: string | null
+  durasi_detik?: number | string | null
+  hasil_konsultasi?: string | null
+  pengaduan?: string | null
+  tgldatang?: string | null
   indikator: Record<string, number | string>
 }
 
