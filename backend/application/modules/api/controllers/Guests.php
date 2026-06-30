@@ -67,7 +67,8 @@ class Guests extends Api_base {
                 'id_user' => $new_id,
                 'nama' => $input['nama'] ?? '',
                 'email' => $input['email'] ?? '',
-                'notel' => $input['notel'] ?? '',
+                // Canonical phone key (parity with kiosk/WA write-time normalization).
+                'notel' => $this->normalize_phone($input['notel'] ?? ''),
                 'jeniskelamin' => $input['jeniskelamin'] ?? '',
                 'pendidikan' => $input['pendidikan'] ?? '',
                 'pekerjaan' => $input['pekerjaan'] ?? '',
@@ -108,6 +109,11 @@ class Guests extends Api_base {
                         'kategori_lainnya', 'nama_instansi', 'pemanfaatan',
                         'pemanfaatan_lainnya', 'pengaduan'];
             $data = array_intersect_key($input, array_flip($allowed));
+            // Keep notel on the canonical phone key so an edit can't desync it from the
+            // 0XXXX form written by kiosk/WA (parity with write-time normalization).
+            if (array_key_exists('notel', $data)) {
+                $data['notel'] = $this->normalize_phone($data['notel']);
+            }
             if (empty($data)) {
                 $this->json_response(['success' => false, 'message' => 'Tidak ada field valid untuk diupdate'], 400);
             }

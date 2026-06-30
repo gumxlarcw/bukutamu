@@ -66,12 +66,24 @@ class Kiosk extends Api_base {
         $this->validate_no_cross_layanan($input['jenis_layanan'] ?? null);
         $this->validate_sarana_for_layanan($input['jenis_layanan'] ?? null, $input['sarana'] ?? []);
 
-        // Prevent double-submit: check if same nama+notel registered in last 30 seconds
-        $recent = $this->db->where('nama', $input['nama'] ?? '')
-                           ->where('notel', $input['notel'] ?? '')
-                           ->where('tgldatang', date('Y-m-d'))
-                           ->order_by('id_user', 'DESC')
-                           ->get('tamdes_buku')->row();
+        // Phone = cross-channel identity key. Canonicalize ONCE (mirror Wa::session) and
+        // reuse the SAME value for the double-tap guard, the reuse lookup, and the stored
+        // notel column. normalize_phone('') === '' -> treated as "no phone".
+        $phone_norm = $this->normalize_phone($input['notel'] ?? '');
+
+        // Prevent double-submit: same nama + canonical phone registered today -> return
+        // existing visit. Canonical compare so the guard keeps firing after a reuse bumps
+        // a returning guest's tgldatang to today. Only when a phone is present: with an
+        // empty phone the predicate degenerates to nama+''+today and would merge two
+        // different phoneless same-name visitors onto one visit (a phoneless double-tap
+        // instead gets a recoverable duplicate).
+        $recent = ($phone_norm !== '')
+            ? $this->db->where('nama', $input['nama'] ?? '')
+                       ->where('notel', $phone_norm)
+                       ->where('tgldatang', date('Y-m-d'))
+                       ->order_by('id_user', 'DESC')
+                       ->get('tamdes_buku')->row()
+            : null;
         if ($recent) {
             // Already registered today — return existing visit
             $existing_visit = $this->db->where('id_user', $recent->id_user)
@@ -86,56 +98,126 @@ class Kiosk extends Api_base {
             }
         }
 
-        // Generate id_user with table lock to prevent race condition
-        $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE');
-        $max    = $this->db->select_max('id_user')->get('tamdes_buku')->row()->id_user;
-        $new_id = $max ? $max + 1 : 8200001;
-
-        // Handle photo: base64 decode if provided
+        // Handle photo: base64 decode if provided (before the lock so both the
+        // reuse-enroll and the new-guest insert can use it; less time under lock).
         $foto = null;
         if (!empty($input['foto'])) {
             // Strip data URI prefix if present
-            $b64 = preg_replace('/^data:image\/\w+;base64,/', '', $input['foto']);
+            $b64  = preg_replace('/^data:image\/\w+;base64,/', '', $input['foto']);
             $foto = base64_decode($b64);
         }
 
-        $guest_data = [
-            'id_user'              => $new_id,
-            'nama'                 => $input['nama'] ?? '',
-            'email'                => $input['email'] ?? '',
-            'notel'                => $input['notel'] ?? '',
-            'jeniskelamin'         => $input['jeniskelamin'] ?? '',
-            'umur'                 => !empty($input['umur']) ? (int)$input['umur'] : null,
-            'disabilitas'          => !empty($input['disabilitas']) ? (int)$input['disabilitas'] : null,
-            'jenis_disabilitas'    => !empty($input['jenis_disabilitas']) ? (int)$input['jenis_disabilitas'] : null,
-            'pendidikan'           => $input['pendidikan'] ?? '',
-            'pekerjaan'            => $input['pekerjaan'] ?? '',
-            'pekerjaan_lainnya'    => $input['pekerjaan_lainnya'] ?? null,
-            'kategori_instansi'    => $input['kategori_instansi'] ?? '',
-            'kategori_lainnya'     => $input['kategori_lainnya'] ?? null,
-            'nama_instansi'        => $input['nama_instansi'] ?? '',
-            'pemanfaatan'          => $input['pemanfaatan'] ?? '',
-            'pemanfaatan_lainnya'  => $input['pemanfaatan_lainnya'] ?? null,
-            'pengaduan'            => $input['pengaduan'] ?? '',
-            'foto'                 => $foto,
-            'face_descriptor'      => isset($input['face_descriptor']) ? json_encode($input['face_descriptor']) : null,
-            'tgldatang'            => date('Y-m-d'),
-            'biometric_consent'    => !empty($input['biometric_consent']) ? 1 : 0,
-            'consent_timestamp'    => !empty($input['consent_timestamp']) ? date('Y-m-d H:i:s', strtotime($input['consent_timestamp'])) : null,
-            'registered_via'       => 'kiosk',
-        ];
+        // Lock guest/visit tables: the cross-channel reuse decision AND the id_user
+        // allocation must both be TOCTOU-safe under concurrent first-time check-ins
+        // (mirror Wa::session lock set + order). The reuse SELECT runs INSIDE the lock on
+        // the already WRITE-locked tamdes_buku — never reference a table outside this set.
+        $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE');
 
-        $this->db->insert('tamdes_buku', $guest_data);
-        if ($this->db->affected_rows() < 1) {
-            // First insert silently failed (NOT NULL violation, charset issue, etc.) —
-            // surface a real 500 instead of letting the FE redirect to /kiosk/ticket/0.
-            $err = $this->db->error();
-            $this->db->query('UNLOCK TABLES');
-            log_message('error', 'Kiosk::register tamdes_buku insert failed: ' . print_r($err, true));
-            $this->json_response([
-                'success' => false,
-                'message' => 'Gagal mendaftarkan tamu (database error). Silakan coba lagi atau hubungi petugas.',
-            ], 500);
+        // ── Cross-channel reuse (phone = unique identity key) ───────────────────
+        // A person already in tamdes_buku (from WhatsApp, or a prior offline/admin
+        // registration) must be REUSED, not duplicated. We only reach register() because
+        // face recognition did NOT match an enrolled face, so reuse is tightly gated:
+        //   • phone non-empty (never look up on '' — it would match every blank notel),
+        //   • EXACTLY ONE guest holds that number (unambiguous identity; a shared/reused
+        //     number -> new guest, mirror the WA prefill/wa_lookup multi-match guard),
+        //   • that guest has NO face on file. A face already enrolled means a different/
+        //     changed face just failed to match -> treat as a different person -> new
+        //     guest; never blind-overwrite a stored biometric/consent.
+        // Additive only: the new visit points at an existing id_user; no guest row is
+        // merged or deleted, so a mistake is recoverable by repointing one FK.
+        $id_user = null;
+        if ($phone_norm !== '') {
+            $cands = $this->db->select('id_user, nama, email, jeniskelamin, umur, disabilitas, jenis_disabilitas, pendidikan, pekerjaan, pekerjaan_lainnya, kategori_instansi, kategori_lainnya, nama_instansi, pemanfaatan, pemanfaatan_lainnya, pengaduan, face_descriptor')
+                              ->where('notel', $phone_norm)
+                              ->order_by('id_user', 'DESC')
+                              ->limit(2)
+                              ->get('tamdes_buku')->result();
+            // Reuse needs an unverified TYPED phone to also agree on identity: require a
+            // non-empty, case-insensitive nama match. Phone alone is not proof of ownership
+            // at a kiosk (shared/mistyped/reassigned numbers), and a face is being enrolled
+            // here — a name mismatch falls through to a NEW guest (safe: a recoverable
+            // duplicate, never a wrong-person biometric merge). On WhatsApp the phone is
+            // proven by the inbound message, which is why that side can key on phone alone.
+            $typed_nama = trim((string) ($input['nama'] ?? ''));
+            if (count($cands) === 1
+                && trim((string) $cands[0]->face_descriptor) === ''
+                && $typed_nama !== ''
+                && mb_strtolower($typed_nama) === mb_strtolower(trim((string) $cands[0]->nama))) {
+                // REUSE: enroll the onsite face onto the empty slot; fill-empties-only on
+                // demographics (never clobber a non-empty field; never touch nama/notel).
+                // tgldatang -> today so the same-day double-tap guard fires on a repeat.
+                $cand    = $cands[0];
+                $id_user = (int) $cand->id_user;
+
+                $reuse = ['tgldatang' => date('Y-m-d')];
+                if (isset($input['face_descriptor'])) {
+                    $reuse['face_descriptor']   = json_encode($input['face_descriptor']);
+                    $reuse['biometric_consent'] = !empty($input['biometric_consent']) ? 1 : 0;
+                    $reuse['consent_timestamp'] = !empty($input['consent_timestamp']) ? date('Y-m-d H:i:s', strtotime($input['consent_timestamp'])) : date('Y-m-d H:i:s');
+                    if ($foto !== null) $reuse['foto'] = $foto;
+                }
+                $fill       = ['email', 'jeniskelamin', 'umur', 'disabilitas', 'jenis_disabilitas', 'pendidikan', 'pekerjaan', 'pekerjaan_lainnya', 'kategori_instansi', 'kategori_lainnya', 'nama_instansi', 'pemanfaatan', 'pemanfaatan_lainnya', 'pengaduan'];
+                $int_fields = ['umur', 'disabilitas', 'jenis_disabilitas'];
+                foreach ($fill as $f) {
+                    $cur = $cand->$f ?? null;
+                    $new = $input[$f] ?? null;
+                    if (($cur === null || $cur === '' || $cur === 0 || $cur === '0') && $new !== null && $new !== '') {
+                        $reuse[$f] = in_array($f, $int_fields, true) ? (int) $new : $new;
+                    }
+                }
+                $ok = $this->db->where('id_user', $id_user)->update('tamdes_buku', $reuse);
+                if ($ok === false) {
+                    $err = $this->db->error();
+                    $this->db->query('UNLOCK TABLES');
+                    log_message('error', 'Kiosk::register reuse update failed (id_user=' . $id_user . '): ' . print_r($err, true));
+                    $this->json_response(['success' => false, 'message' => 'Gagal memperbarui data tamu (database error). Silakan coba lagi atau hubungi petugas.'], 500);
+                }
+            }
+        }
+
+        // ── New guest (no reuse) ────────────────────────────────────────────────
+        if ($id_user === null) {
+            $max     = $this->db->select_max('id_user')->get('tamdes_buku')->row()->id_user;
+            $id_user = $max ? $max + 1 : 8200001;
+
+            $guest_data = [
+                'id_user'              => $id_user,
+                'nama'                 => $input['nama'] ?? '',
+                'email'                => $input['email'] ?? '',
+                'notel'                => $phone_norm,
+                'jeniskelamin'         => $input['jeniskelamin'] ?? '',
+                'umur'                 => !empty($input['umur']) ? (int)$input['umur'] : null,
+                'disabilitas'          => !empty($input['disabilitas']) ? (int)$input['disabilitas'] : null,
+                'jenis_disabilitas'    => !empty($input['jenis_disabilitas']) ? (int)$input['jenis_disabilitas'] : null,
+                'pendidikan'           => $input['pendidikan'] ?? '',
+                'pekerjaan'            => $input['pekerjaan'] ?? '',
+                'pekerjaan_lainnya'    => $input['pekerjaan_lainnya'] ?? null,
+                'kategori_instansi'    => $input['kategori_instansi'] ?? '',
+                'kategori_lainnya'     => $input['kategori_lainnya'] ?? null,
+                'nama_instansi'        => $input['nama_instansi'] ?? '',
+                'pemanfaatan'          => $input['pemanfaatan'] ?? '',
+                'pemanfaatan_lainnya'  => $input['pemanfaatan_lainnya'] ?? null,
+                'pengaduan'            => $input['pengaduan'] ?? '',
+                'foto'                 => $foto,
+                'face_descriptor'      => isset($input['face_descriptor']) ? json_encode($input['face_descriptor']) : null,
+                'tgldatang'            => date('Y-m-d'),
+                'biometric_consent'    => !empty($input['biometric_consent']) ? 1 : 0,
+                'consent_timestamp'    => !empty($input['consent_timestamp']) ? date('Y-m-d H:i:s', strtotime($input['consent_timestamp'])) : null,
+                'registered_via'       => 'kiosk',
+            ];
+
+            $this->db->insert('tamdes_buku', $guest_data);
+            if ($this->db->affected_rows() < 1) {
+                // First insert silently failed (NOT NULL violation, charset issue, etc.) —
+                // surface a real 500 instead of letting the FE redirect to /kiosk/ticket/0.
+                $err = $this->db->error();
+                $this->db->query('UNLOCK TABLES');
+                log_message('error', 'Kiosk::register tamdes_buku insert failed: ' . print_r($err, true));
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Gagal mendaftarkan tamu (database error). Silakan coba lagi atau hubungi petugas.',
+                ], 500);
+            }
         }
 
         // Insert visit — jenis_layanan & sarana stored as JSON arrays
@@ -147,7 +229,7 @@ class Kiosk extends Api_base {
         $sarana = is_array($sarana_raw) ? json_encode($sarana_raw) : $sarana_raw;
 
         $visit_data = [
-            'id_user'            => $new_id,
+            'id_user'            => $id_user,
             'jenis_layanan'      => $jenis_layanan,
             'layanan_lainnya'    => $input['layanan_lainnya'] ?? null,
             'sarana'             => $sarana,
@@ -177,7 +259,7 @@ class Kiosk extends Api_base {
 
         $this->json_response([
             'success'      => true,
-            'data'         => ['id_kunjungan' => $id_kunjungan, 'id_user' => $new_id, 'nomor_antrian' => $nomor_antrian],
+            'data'         => ['id_kunjungan' => $id_kunjungan, 'id_user' => $id_user, 'nomor_antrian' => $nomor_antrian],
             'message'      => 'Pendaftaran berhasil',
         ], 201);
     }
@@ -360,6 +442,12 @@ class Kiosk extends Api_base {
             if (array_key_exists($field, $input)) {
                 $update[$field] = $input[$field];
             }
+        }
+
+        // Keep notel canonical if the guest completes their phone here (parity with
+        // write-time normalization; update is keyed by id_user so no reuse concern).
+        if (array_key_exists('notel', $update)) {
+            $update['notel'] = $this->normalize_phone($update['notel']);
         }
 
         if (empty($update)) {

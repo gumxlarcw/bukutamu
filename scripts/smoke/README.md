@@ -48,6 +48,7 @@ Because they mutate live data, **do not run during a busy service window.**
 | `smoke_kiosk.sh` | Kiosk WA check-in happy paths + the pre-arrival call-queue **exclusion invariant** (`created_by='whatsapp'` not callable until promoted) — #2 keeps number, #1/#3 → Resepsionis, sarana_lainnya parity. | 22 |
 | `smoke_prefix.sh` | Queue-number **prefix uniqueness** — `Perpustakaan`→`P` vs `Penjualan Produk Statistik`→`J` (no collision), sequential per-service. | 10 |
 | `smoke_flows.sh` | Broad sweep — category-gate routing & mis-category mitigation, daily-reset numbering, all submit token/validation failures (`401/403/422/400`), TOCTOU double-submit, multi-match, and kiosk edge cases incl. **stale-day regeneration** (`409/422`). | 54 |
+| `smoke_register_link.sh` | Offline `Kiosk::register` **phone-as-unique-id** cross-channel linking — reuse a faceless WhatsApp guest by normalized phone, and the safety gates that must **refuse** reuse: faced match, multi-match, empty phone, and **name mismatch** (unverified typed phone must also agree on name). No WhatsApp side-effects. | 18 |
 
 ## Running
 
@@ -56,6 +57,7 @@ cd /var/www/html/bukutamu
 bash scripts/smoke/smoke_kiosk.sh
 bash scripts/smoke/smoke_prefix.sh
 bash scripts/smoke/smoke_flows.sh
+bash scripts/smoke/smoke_register_link.sh
 ```
 
 Each prints `PASS:` / `FAIL:` per assertion and a final
