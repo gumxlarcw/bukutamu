@@ -46,7 +46,7 @@ class Deliveries extends Api_base
         ]);
         $this->delivery_model->set_short_code($id);
 
-        // Task 5 hooks the verifier notification here:  $this->_notify_verifier($id);
+        $this->_notify_verifier($id);
 
         $this->audit('delivery_create', 'delivery', $id);
         return $this->json_response(['success' => true, 'data' => $this->delivery_model->get($id), 'message' => 'OK'], 201);
@@ -139,7 +139,7 @@ class Deliveries extends Api_base
         }
         $this->delivery_model->update($id, $upd);
 
-        // Task 5: $this->_notify_verifier($id);
+        $this->_notify_verifier($id);
 
         $this->audit('delivery_resubmit', 'delivery', $id, ['revisi_count' => $upd['revisi_count']]);
         return $this->json_response(['success' => true, 'data' => $this->delivery_model->get($id), 'message' => 'Pengiriman diperbaiki & dikirim ulang untuk verifikasi']);
@@ -230,6 +230,72 @@ class Deliveries extends Api_base
     }
 
     // ── private helpers ─────────────────────────────────────────────────────
+
+    // Enqueue a formal verification-request message to the active verifier via wa_outbox.
+    // Sets verif_outbox_id on the delivery so the WA reply handler (Task 6) can correlate.
+    // Fails silently (error log only) when no active verifier with a phone number exists.
+    private function _notify_verifier(int $id): void
+    {
+        $this->load->model('delivery_model');
+        $v = $this->delivery_model->active_verifier();
+        if (!$v || !$v->notel) {
+            log_message('error', "delivery {$id}: no active verifier notel");
+            return;
+        }
+        $d = $this->delivery_model->with_context($id);
+        if (!$d) {
+            log_message('error', "delivery {$id}: context not found for verifier notification");
+            return;
+        }
+
+        // Build formal verifier message (no emoji, minimal whitespace).
+        $pemohon_line = ($d->pemohon_nama ? trim((string) $d->pemohon_nama) : '-');
+        if ($d->instansi) {
+            $pemohon_line .= ' (' . $d->instansi . ')';
+        }
+
+        $parts = [];
+        $parts[] = "Permohonan Verifikasi Data [{$d->short_code}]";
+        $parts[] = '';
+        $parts[] = 'Pemohon : ' . $pemohon_line;
+        if ($d->nomor_antrian) {
+            $parts[] = 'Antrian : ' . $d->nomor_antrian;
+        }
+        if ($d->rincian_data) {
+            $data_line = 'Data    : ' . $d->rincian_data;
+            if ($d->wilayah_data) {
+                $data_line .= ' (' . $d->wilayah_data . ')';
+            }
+            $parts[] = $data_line;
+        }
+        $parts[] = '';
+        $parts[] = 'Disiapkan operator:';
+        if ($d->link_url) {
+            $parts[] = '- Tautan : ' . $d->link_url;
+        }
+        if ($d->media_name) {
+            $parts[] = '- Berkas : ' . $d->media_name . ' (tinjau di panel verifikasi)';
+        }
+        if ($d->note_operator) {
+            $parts[] = '- Catatan: ' . $d->note_operator;
+        }
+        $parts[] = '';
+        $parts[] = 'Balas untuk memberi keputusan:';
+        $parts[] = '1 = Setuju (kirim ke pemohon)';
+        $parts[] = '2 = Revisi disertai catatan (mis. "2 tahun 2023 belum ada")';
+        $parts[] = '3 = Setuju dengan tambahan catatan';
+        $body = implode("\n", $parts);
+
+        $this->db->insert('wa_outbox', [
+            'phone_raw'    => $v->notel,
+            'wa_chat_id'   => $v->notel,
+            'msg_type'     => 'verif_request',
+            'body'         => $body,
+            'id_kunjungan' => (int) $d->id_kunjungan,
+            'status'       => 'pending',
+        ]);
+        $this->delivery_model->update($id, ['verif_outbox_id' => (int) $this->db->insert_id()]);
+    }
 
     private function _list()
     {

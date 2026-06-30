@@ -24,6 +24,16 @@ class Delivery_model extends CI_Model
         return (bool) $this->db->where('id', $id)->update('data_deliveries', $data);
     }
 
+    // Return the first active verifier with a phone number, ordered by id ASC.
+    // Phase 1 assumes a single verifier; multi-verifier routing is future (spec §13).
+    public function active_verifier()
+    {
+        return $this->db->select('id, notel')->from('admin_users')
+            ->where('role', 'verifikator')->where('active', 1)
+            ->where('notel IS NOT NULL', null, false)
+            ->order_by('id', 'ASC')->limit(1)->get()->row();
+    }
+
     // Oldest pending first — used by the verifier queue AND the WA FIFO mapping.
     public function list_filtered(array $f, int $page, int $limit): array
     {
@@ -52,11 +62,16 @@ class Delivery_model extends CI_Model
 
     // Resolve the customer's WA reply address from the latest session of a visit.
     // Mirrors Wa::wa_latest_session (order by id DESC, limit 1) but keyed on id_kunjungan.
+    // Also returns pemohon_nama (guest nama) via tamdes_kunjungan → tamdes_buku for the
+    // formal delivery caption; LEFT JOINs so a missing guest row never drops the address.
     public function customer_addr(int $id_kunjungan)
     {
-        return $this->db->select('phone_norm, wa_chat_id')
-            ->from('wa_sessions')->where('id_kunjungan', $id_kunjungan)
-            ->order_by('id', 'DESC')->limit(1)->get()->row();
+        return $this->db->select('s.phone_norm, s.wa_chat_id, b.nama AS pemohon_nama')
+            ->from('wa_sessions s')
+            ->join('tamdes_kunjungan k', 'k.id_kunjungan = s.id_kunjungan', 'left')
+            ->join('tamdes_buku b',      'b.id_user = k.id_user',            'left')
+            ->where('s.id_kunjungan', $id_kunjungan)
+            ->order_by('s.id', 'DESC')->limit(1)->get()->row();
     }
 
     // Returns the new row id on success, or FALSE if the insert failed. Mirrors
@@ -168,13 +183,31 @@ class Delivery_model extends CI_Model
             return false;
         }
 
-        $caption = (string) $d->note_operator;
+        // Formal customer delivery caption (user-approved template).
+        // {nama} = pemohon_nama from customer_addr; fall back to 'Bapak/Ibu' if absent.
+        // Optional lines (note_operator, link_url, verif catatan) are fully omitted when
+        // empty — no doubled blank lines.
+        $nama_display = ($addr->pemohon_nama && trim((string) $addr->pemohon_nama) !== '')
+            ? trim((string) $addr->pemohon_nama) : 'Bapak/Ibu';
+
+        $caption_lines = [];
+        $caption_lines[] = "Yth. {$nama_display},";
+        $caption_lines[] = '';
+        $caption_lines[] = 'Berikut data yang Bapak/Ibu minta:';
+        if ($d->note_operator && trim((string) $d->note_operator) !== '') {
+            $caption_lines[] = trim((string) $d->note_operator);
+        }
         if ($d->link_url) {
-            $caption = trim($caption . "\n" . $d->link_url);
+            $caption_lines[] = $d->link_url;
         }
+        $caption_lines[] = '';
         if ($d->verif_decision === 'setuju_catatan' && $d->verif_note) {
-            $caption = trim($caption . "\nCatatan: " . $d->verif_note);
+            $caption_lines[] = 'Catatan: ' . $d->verif_note;
+            $caption_lines[] = '';
         }
+        $caption_lines[] = 'Terima kasih telah menggunakan layanan';
+        $caption_lines[] = 'PST BPS Maluku Utara.';
+        $caption = implode("\n", $caption_lines);
 
         $base = [
             'phone_norm'   => $addr->phone_norm,
