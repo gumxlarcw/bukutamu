@@ -17,14 +17,54 @@ import {
 } from '@/types/guest'
 import { guestsApi, type GuestVisit } from '@/api/guests'
 import { respondenApi, type RespondenRow } from '@/api/responden'
+import { evaluationsApi } from '@/api/evaluations'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { exportCsv } from '@/lib/export-csv'
 
 const TW_LABELS: Record<string, string> = { '1': 'TW I (Jan–Mar)', '2': 'TW II (Apr–Jun)', '3': 'TW III (Jul–Sep)', '4': 'TW IV (Okt–Des)' }
 
+// 4 core SKD services that make a respondent eligible for SKD/SKM evaluation.
+const SKD_SERVICES = [
+  'Perpustakaan',
+  'Konsultasi Statistik',
+  'Rekomendasi Kegiatan Statistik',
+  'Penjualan Produk Statistik',
+] as const
+
+function isSkdEligible(jenis_layanan: string | null): boolean {
+  const services = parseLayanan(jenis_layanan)
+  return services.some(s => (SKD_SERVICES as readonly string[]).includes(s))
+}
+
 function formatDate(d: string) {
   try { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }
   catch { return d }
+}
+
+/** Score badge: green >=8, yellow 5-7, red <=4 */
+function ScoreBadge({ score }: { score: number }) {
+  const color =
+    score >= 8 ? 'bg-green-100 text-green-700' :
+    score >= 5 ? 'bg-yellow-100 text-yellow-700' :
+    'bg-red-100 text-red-700'
+  return (
+    <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold shrink-0 ${color}`}>
+      {score}
+    </span>
+  )
+}
+
+/** Mini eligibility badge for table rows and detail header */
+function EligibilityBadge({ eligible }: { eligible: boolean }) {
+  return eligible ? (
+    <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-semibold whitespace-nowrap">
+      Eligible SKD
+    </span>
+  ) : (
+    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[10px] font-semibold whitespace-nowrap">
+      Non-Eligible
+    </span>
+  )
 }
 
 export default function RespondenTahunanPage() {
@@ -55,6 +95,24 @@ export default function RespondenTahunanPage() {
     enabled: !!viewRow,
   })
 
+  // Latest visit that has an evaluation (rating_pengunjung set) — for per-indicator detail.
+  // viewVisits is ordered date DESC from the backend, so find() returns the most recent one.
+  const latestEvaluatedVisitId =
+    viewVisits
+      ? (viewVisits.find((v: GuestVisit) => v.rating_pengunjung !== null)?.id_kunjungan ?? null)
+      : null
+
+  const { data: evalDetail, isLoading: evalLoading } = useQuery({
+    queryKey: ['eval-results-responden', latestEvaluatedVisitId],
+    queryFn: () => evaluationsApi.getResults(latestEvaluatedVisitId!).then(r => r.data.data),
+    enabled: latestEvaluatedVisitId !== null,
+  })
+
+  // Total evaluated visits count (for "N kunjungan dievaluasi" note)
+  const evaluatedVisitCount = viewVisits
+    ? viewVisits.filter((v: GuestVisit) => v.rating_pengunjung !== null).length
+    : 0
+
   const { data, isLoading } = useQuery({
     queryKey: ['responden-tahunan', { tahun, triwulan, skd: skdFilter, q: search, page, limit }],
     queryFn: () => respondenApi.list({
@@ -80,6 +138,7 @@ export default function RespondenTahunanPage() {
       exportCsv(`responden-${tahun}${triwulan ? `-tw${triwulan}` : ''}${skdFilter ? '-skd' : ''}`, d.map((row: RespondenRow) => ({
         id_user: row.id_user,
         nama: row.nama,
+        eligible_skd: isSkdEligible(row.jenis_layanan) ? 'Ya' : 'Tidak',
         email: row.email ?? '',
         telepon: row.notel ?? '',
         jenis_kelamin: row.jeniskelamin ?? '',
@@ -109,7 +168,7 @@ export default function RespondenTahunanPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="admin-h1">Responden Tahunan</h1>
-          <p className="admin-subtitle">Akumulasi layanan & sarana per pengunjung</p>
+          <p className="admin-subtitle">Akumulasi layanan &amp; sarana per pengunjung — eligible maupun non-eligible</p>
         </div>
         <Button variant="outline" onClick={handleExport}>
           <Download className="w-4 h-4 mr-2" />
@@ -132,6 +191,13 @@ export default function RespondenTahunanPage() {
             <div>
               <p className="text-lg font-bold">{summary.skd_eligible}</p>
               <p className="text-xs text-muted-foreground">Eligible SKD/SKM{triwulan ? ` ${TW_LABELS[triwulan]}` : ''}</p>
+            </div>
+          </div>
+          <div className="admin-card flex items-center gap-3 px-4 py-3">
+            <Users className="w-5 h-5 text-gray-400" />
+            <div>
+              <p className="text-lg font-bold">{summary.total_users - summary.skd_eligible}</p>
+              <p className="text-xs text-muted-foreground">Non-Eligible{triwulan ? ` ${TW_LABELS[triwulan]}` : ''}</p>
             </div>
           </div>
         </div>
@@ -173,13 +239,13 @@ export default function RespondenTahunanPage() {
               : 'bg-background text-muted-foreground border-input hover:bg-muted/50'
           }`}
         >
-          {skdFilter ? '✓ ' : ''}Eligible SKD/SKM
+          {skdFilter ? '✓ ' : ''}Eligible SKD/SKM saja
         </button>
       </div>
 
       {skdFilter && (
         <div className="text-xs text-muted-foreground bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-          Menampilkan responden dengan layanan PST (selain Keperluan Pimpinan & Lainnya){triwulan ? ` pada ${TW_LABELS[triwulan]}` : ''} tahun {tahun}.
+          Menampilkan responden dengan layanan PST (selain Keperluan Pimpinan &amp; Lainnya){triwulan ? ` pada ${TW_LABELS[triwulan]}` : ''} tahun {tahun}.
         </div>
       )}
 
@@ -196,9 +262,10 @@ export default function RespondenTahunanPage() {
                 <th className="px-4 py-2 text-left w-10">No</th>
                 <th className="px-4 py-2 text-left">Nama</th>
                 <th className="px-4 py-2 text-left">Instansi</th>
+                <th className="px-4 py-2 text-left">Status</th>
                 <th className="px-4 py-2 text-left">Layanan</th>
                 <th className="px-4 py-2 text-left">Sarana</th>
-                <th className="px-4 py-2 text-left">Kunjungan</th>
+                <th className="px-4 py-2 text-center">Kunjungan</th>
                 <th className="px-4 py-2 text-left">Terakhir</th>
                 <th className="px-4 py-2 text-right">Aksi</th>
               </tr>
@@ -209,6 +276,9 @@ export default function RespondenTahunanPage() {
                   <td className="px-4 py-2.5 text-muted-foreground">{(page - 1) * limit + idx + 1}</td>
                   <td className="px-4 py-2.5 font-medium">{r.nama}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{r.nama_instansi}</td>
+                  <td className="px-4 py-2.5">
+                    <EligibilityBadge eligible={isSkdEligible(r.jenis_layanan)} />
+                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {parseLayanan(r.jenis_layanan).map((l, i) => (
@@ -264,13 +334,13 @@ export default function RespondenTahunanPage() {
 
       {/* View detail dialog */}
       <Dialog open={!!viewRow} onOpenChange={open => !open && setViewRow(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Responden</DialogTitle>
           </DialogHeader>
           {viewRow && (
             <div className="space-y-4 py-2">
-              {/* Photo + name */}
+              {/* Photo + name + eligibility */}
               <div className="flex items-center gap-4">
                 <img
                   src={`/api/guests/${viewRow.id_user}/photo`}
@@ -281,6 +351,9 @@ export default function RespondenTahunanPage() {
                 <div>
                   <p className="text-lg font-bold">{viewRow.nama}</p>
                   <p className="text-sm text-muted-foreground">{viewRow.nama_instansi}</p>
+                  <div className="mt-1">
+                    <EligibilityBadge eligible={isSkdEligible(viewRow.jenis_layanan)} />
+                  </div>
                 </div>
               </div>
 
@@ -337,6 +410,62 @@ export default function RespondenTahunanPage() {
                 </div>
               </div>
 
+              {/* Per-indicator evaluation — latest evaluated visit */}
+              <div className="border-t pt-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                  Evaluasi per Indikator (Kondisi Terakhir)
+                </p>
+                {evalLoading && latestEvaluatedVisitId !== null ? (
+                  <div className="space-y-1.5">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-7 rounded" />
+                    ))}
+                  </div>
+                ) : evalDetail && evalDetail.details && evalDetail.details.length > 0 ? (
+                  <>
+                    <p className="text-[11px] text-muted-foreground mb-2">
+                      {evaluatedVisitCount > 1
+                        ? `${evaluatedVisitCount} kunjungan dievaluasi — menampilkan evaluasi terbaru. `
+                        : ''}
+                      Rating keseluruhan:{' '}
+                      <strong>{evalDetail.rating_pengunjung ?? '-'}/10</strong>
+                    </p>
+                    <div className="space-y-1">
+                      {evalDetail.details
+                        .slice()
+                        .sort((a, b) => a.indikator_id - b.indikator_id)
+                        .map(detail => {
+                          const label =
+                            evalDetail.indikator?.[String(detail.indikator_id)] ??
+                            `Indikator ${detail.indikator_id}`
+                          return (
+                            <div key={detail.id} className="flex items-start gap-2 text-xs py-0.5">
+                              <span className="text-muted-foreground shrink-0 w-5 text-right pt-0.5">
+                                {detail.indikator_id}.
+                              </span>
+                              <span
+                                className="flex-1 text-muted-foreground leading-relaxed"
+                                title={label}
+                              >
+                                {label}
+                              </span>
+                              <ScoreBadge score={Number(detail.kepuasan)} />
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </>
+                ) : latestEvaluatedVisitId === null ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    Belum ada evaluasi untuk responden ini.
+                    {!isSkdEligible(viewRow.jenis_layanan) &&
+                      ' (Layanan yang digunakan tidak memerlukan evaluasi SKD.)'}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">Data evaluasi tidak tersedia.</p>
+                )}
+              </div>
+
               {/* Visit history */}
               {viewVisits && viewVisits.length > 0 && (
                 <div className="border-t pt-3">
@@ -355,10 +484,20 @@ export default function RespondenTahunanPage() {
                             <span key={i} className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px]">{l}</span>
                           ))}
                         </div>
-                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${v.status === 'selesai' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        <span
+                          className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            v.status === 'selesai' || v.status === 'evaluasi_selesai'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
                           {v.status}
                         </span>
-                        {v.rating_pengunjung && <span className="text-amber-600 font-bold">★{v.rating_pengunjung}</span>}
+                        {v.rating_pengunjung !== null && (
+                          <span className="text-amber-600 font-bold shrink-0">
+                            {'★'}{v.rating_pengunjung}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -41,10 +41,23 @@ export interface EvaluationSubmission {
   kualitas_per_konsultasi?: Record<number, number>
 }
 
+/** One row from tamdes_evaluasi_detail — kepentingan is deprecated (always NULL now). */
+export interface EvaluationDetailRow {
+  id: number
+  id_kunjungan: number
+  indikator_id: number
+  kepentingan: number | null
+  kepuasan: number
+}
+
+/**
+ * Actual shape returned by GET /api/evaluations/:id/results.
+ * `indikator` is a Record<indikator_id_as_string, label>.
+ */
 export interface EvaluationResult {
-  visit_id: number
-  guest_nama: string
-  indicators: EvaluationIndicator[]
-  overall_score: number
-  submitted_at: string
+  rating_pengunjung: number | null
+  status: string
+  durasi_detik: number | null
+  details: EvaluationDetailRow[]
+  indikator: Record<string, string>
 }
