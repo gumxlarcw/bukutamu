@@ -50,6 +50,7 @@ Because they mutate live data, **do not run during a busy service window.**
 | `smoke_flows.sh` | Broad sweep — category-gate routing & mis-category mitigation, daily-reset numbering, all submit token/validation failures (`401/403/422/400`), TOCTOU double-submit, multi-match, and kiosk edge cases incl. **stale-day regeneration** (`409/422`). | 54 |
 | `smoke_register_link.sh` | Offline `Kiosk::register` **phone-as-unique-id** cross-channel linking — reuse a faceless WhatsApp guest by normalized phone, and the safety gates that must **refuse** reuse: faced match, multi-match, empty phone, and **name mismatch** (unverified typed phone must also agree on name); plus promote-in-place of an open WA visit. No WhatsApp side-effects. | 23 |
 | `smoke_e2e_lifecycle.sh` | **Auth-gated visit lifecycle / security invariants** — SKD finalization gate (cannot reach `selesai` without `menunggu_evaluasi`), role gate, form gates, DTSEN direct-finish, endpoint parity, tablet evaluation gate, admin delete cascade + audit, guest-delete 409. Mints short-lived **test JWT/kiosk tokens** from the git-ignored `.env` (localhost only); skips the live TV `/call`. Needs `mintjwt.php` + `mintkiosk.php` (same dir). | 29 |
+| `smoke_journeys.sh` | **Real end-to-end JOURNEYS** chaining visitor + operator actions start→finish: J1 walk-in SKD (register→PST queue→finalize→tablet eval→selesai), J2 walk-in DTSEN (→selesai, no eval), J3 WA #2 cross-channel (WA register→hidden→kiosk check-in→queue→eval→selesai), J4 WA #1 data (inbox→take-over→proses→eval→manual close), J5 WA #3 lainnya (inbox→take-over→proses), J6 returning visitor (face→kiosk visit→queue). Also mints test tokens from `.env`; fake WA group; full cleanup. | 35 |
 
 ## Running
 
@@ -60,6 +61,7 @@ bash scripts/smoke/smoke_prefix.sh
 bash scripts/smoke/smoke_flows.sh
 bash scripts/smoke/smoke_register_link.sh
 bash scripts/smoke/smoke_e2e_lifecycle.sh   # mints test tokens from .env (see note below)
+bash scripts/smoke/smoke_journeys.sh        # full visitor+operator journeys (mints tokens too)
 ```
 
 Each prints `PASS:` / `FAIL:` per assertion and a final
