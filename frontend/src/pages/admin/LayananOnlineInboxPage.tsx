@@ -249,6 +249,22 @@ function WaConnectPanel() {
   )
 }
 
+// Badge kategori sesi WA agar operator langsung tahu jenis permintaan — termasuk yang SUDAH
+// mengisi link: #1 Online (dilayani lewat chat), #2 Antrian (datang ke kantor), #3 Lainnya.
+function categoryBadge(category: string | null) {
+  const map: Record<string, { label: string; cls: string }> = {
+    data:    { label: '#1 Online',  cls: 'bg-emerald-100 text-emerald-700' },
+    offline: { label: '#2 Antrian', cls: 'bg-blue-100 text-blue-700' },
+    lainnya: { label: '#3 Lainnya', cls: 'bg-violet-100 text-violet-700' },
+  }
+  const m = category ? map[category] : null
+  return (
+    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${m ? m.cls : 'bg-gray-100 text-gray-600'}`}>
+      {m ? m.label : 'WhatsApp'}
+    </span>
+  )
+}
+
 export default function LayananOnlineInboxPage() {
   // Popup chat aktif (tumpukan; dedupe per nomor).
   const [chats, setChats] = useState<{ phone: string; nama: string | null }[]>([])
@@ -410,6 +426,7 @@ export default function LayananOnlineInboxPage() {
                   )}
                 </div>
 
+                {categoryBadge(r.category)}
                 {pending ? (
                   <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Menunggu Form</span>
                 ) : (
