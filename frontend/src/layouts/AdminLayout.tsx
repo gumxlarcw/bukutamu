@@ -93,6 +93,24 @@ export function AdminLayout() {
           background: var(--admin-primary-light) !important;
           font-weight: 600;
         }
+        /* Nav scrolls horizontally when items don't fit (narrow/shrunk window);
+           hide the scrollbar so it stays clean. */
+        .admin-nav-scroll {
+          scrollbar-width: none;
+        }
+        .admin-nav-scroll::-webkit-scrollbar {
+          display: none;
+        }
+        /* Tighter gutters on small screens so the nav has room before it scrolls. */
+        @media (max-width: 640px) {
+          .admin-topnav-inner {
+            padding: 0 12px;
+            gap: 8px;
+          }
+          .admin-content {
+            padding: 20px 14px;
+          }
+        }
 
         /* ── Content area ── */
         .admin-content {

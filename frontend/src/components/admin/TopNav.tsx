@@ -110,8 +110,9 @@ export function TopNav() {
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex items-center gap-1">
+        {/* Navigation — flex-1 + min-w-0 lets it shrink; overflow-x-auto scrolls the
+            items horizontally on narrow viewports instead of overflowing the header. */}
+        <nav className="admin-nav-scroll flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
           {visibleItems.map((item) => {
             const Icon = item.icon
             return (
