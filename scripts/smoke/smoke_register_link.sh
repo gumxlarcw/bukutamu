@@ -73,6 +73,18 @@ REG '' 'Tanpa HP 0888399057mark' >/dev/null
 REG '' 'Tanpa HP 0888399057mark' >/dev/null
 ok "R10 phoneless same-name -> 2 separate guests" "2" "$(Q "SELECT COUNT(*) FROM tamdes_buku WHERE nama='Tanpa HP 0888399057mark'")"
 
+echo "===== R11: WA guest WITH open whatsapp visit + form path -> PROMOTE in place (no dangling) ====="
+W11=$(mkguest 0888399058 NULL 'Promote User' 'whatsapp')
+Q "INSERT INTO tamdes_kunjungan (id_user,jenis_layanan,sarana,date_visit,status,nomor_antrian,created_by) VALUES ($W11,'[\"Konsultasi Statistik\"]','[2]',NOW(),'antri','K900','whatsapp')"
+WV=$(Q "SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user=$W11 AND created_by='whatsapp' ORDER BY id_kunjungan DESC LIMIT 1")
+B=$(REG 62888399058 'Promote User')
+RIDK=$(echo "$B" | grep -oP '"id_kunjungan":"?\K[0-9]+')
+ok "R11 promoted SAME visit (response id == WA visit id)" "$WV" "$RIDK"
+ok "R11 still ONE visit for guest (no dangling dup)" "1" "$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE id_user=$W11")"
+ok "R11 visit now wa_kiosk (left inbox, joined queue)" "wa_kiosk" "$(Q "SELECT created_by FROM tamdes_kunjungan WHERE id_kunjungan=$WV")"
+ok "R11 NO whatsapp visit left for guest (inbox clean)" "0" "$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE id_user=$W11 AND created_by='whatsapp'")"
+ok "R11 fresh kiosk queue number (K-prefix, not the old K900)" "K-yes" "K-$([ "$(Q "SELECT LEFT(nomor_antrian,1) FROM tamdes_kunjungan WHERE id_kunjungan=$WV")" = "K" ] && [ "$(Q "SELECT nomor_antrian FROM tamdes_kunjungan WHERE id_kunjungan=$WV")" != "K900" ] && echo yes || echo no)"
+
 echo "===== CLEANUP ====="
 TIDS=$(Q "SELECT id_user FROM tamdes_buku WHERE notel LIKE '0888399%' OR nama LIKE '%0888399%mark%'" | tr '\n' ',' | sed 's/,$//')
 if [ -n "$TIDS" ]; then

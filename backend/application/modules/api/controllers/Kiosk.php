@@ -85,8 +85,11 @@ class Kiosk extends Api_base {
                        ->get('tamdes_buku')->row()
             : null;
         if ($recent) {
-            // Already registered today — return existing visit
+            // Already has a PHYSICAL visit today (honest double-tap) — return it. Exclude
+            // 'whatsapp' inbox visits: a WA registrant who came today must fall through to
+            // the reuse/promote path below (convert their inbox visit), not get it back as-is.
             $existing_visit = $this->db->where('id_user', $recent->id_user)
+                                       ->where_not_in('created_by', ['whatsapp'])
                                        ->order_by('id_kunjungan', 'DESC')
                                        ->get('tamdes_kunjungan')->row();
             if ($existing_visit) {
@@ -126,6 +129,7 @@ class Kiosk extends Api_base {
         // Additive only: the new visit points at an existing id_user; no guest row is
         // merged or deleted, so a mistake is recoverable by repointing one FK.
         $id_user = null;
+        $promote_idk = null;  // open WhatsApp visit to promote in place (no dangling inbox row)
         if ($phone_norm !== '') {
             $cands = $this->db->select('id_user, nama, email, jeniskelamin, umur, disabilitas, jenis_disabilitas, pendidikan, pekerjaan, pekerjaan_lainnya, kategori_instansi, kategori_lainnya, nama_instansi, pemanfaatan, pemanfaatan_lainnya, pengaduan, face_descriptor')
                               ->where('notel', $phone_norm)
@@ -172,6 +176,18 @@ class Kiosk extends Api_base {
                     log_message('error', 'Kiosk::register reuse update failed (id_user=' . $id_user . '): ' . print_r($err, true));
                     $this->json_response(['success' => false, 'message' => 'Gagal memperbarui data tamu (database error). Silakan coba lagi atau hubungi petugas.'], 500);
                 }
+
+                // If this WA guest still has an OPEN WhatsApp visit (they used the form
+                // instead of the "Sudah Daftar via WhatsApp" button), promote THAT visit in
+                // place below instead of inserting a second one — otherwise the original
+                // dangles in the Layanan Online inbox.
+                $wa_open = $this->db->select('id_kunjungan')
+                                    ->where('id_user', $id_user)
+                                    ->where('created_by', 'whatsapp')
+                                    ->where_not_in('status', ['selesai', 'evaluasi_selesai'])
+                                    ->order_by('id_kunjungan', 'DESC')->limit(1)
+                                    ->get('tamdes_kunjungan')->row();
+                if ($wa_open) $promote_idk = (int) $wa_open->id_kunjungan;
             }
         }
 
@@ -229,7 +245,6 @@ class Kiosk extends Api_base {
         $sarana = is_array($sarana_raw) ? json_encode($sarana_raw) : $sarana_raw;
 
         $visit_data = [
-            'id_user'            => $id_user,
             'jenis_layanan'      => $jenis_layanan,
             'layanan_lainnya'    => $input['layanan_lainnya'] ?? null,
             'sarana'             => $sarana,
@@ -237,22 +252,33 @@ class Kiosk extends Api_base {
             'date_visit'         => date('Y-m-d H:i:s'),
             'status'             => 'antri',
             'nomor_antrian'      => $nomor_antrian,
-            'created_by'         => 'kiosk',
         ];
 
-        $this->db->insert('tamdes_kunjungan', $visit_data);
-        $id_kunjungan = $this->db->insert_id();
-        if (!$id_kunjungan || $this->db->affected_rows() < 1) {
-            // tamdes_kunjungan.id_kunjungan is AUTO_INCREMENT — insert_id()=0 means
-            // the INSERT failed (FK constraint, etc.). FE would otherwise navigate
-            // to /kiosk/ticket/0 and 404 silently while showing "Pendaftaran berhasil".
-            $err = $this->db->error();
-            $this->db->query('UNLOCK TABLES');
-            log_message('error', 'Kiosk::register tamdes_kunjungan insert failed: ' . print_r($err, true));
-            $this->json_response([
-                'success' => false,
-                'message' => 'Gagal membuat kunjungan (database error). Silakan coba lagi atau hubungi petugas.',
-            ], 500);
+        if ($promote_idk) {
+            // Promote the reused guest's open WhatsApp visit IN PLACE: re-label with the
+            // kiosk-picked service + fresh queue number and flip created_by 'whatsapp' ->
+            // 'wa_kiosk' so it leaves the online inbox and joins the physical queue — one
+            // visit, nothing dangling (same provenance marker as Kiosk::wa_promote).
+            $visit_data['created_by'] = 'wa_kiosk';
+            $this->db->where('id_kunjungan', $promote_idk)->update('tamdes_kunjungan', $visit_data);
+            $id_kunjungan = $promote_idk;
+        } else {
+            $visit_data['id_user']    = $id_user;
+            $visit_data['created_by'] = 'kiosk';
+            $this->db->insert('tamdes_kunjungan', $visit_data);
+            $id_kunjungan = $this->db->insert_id();
+            if (!$id_kunjungan || $this->db->affected_rows() < 1) {
+                // tamdes_kunjungan.id_kunjungan is AUTO_INCREMENT — insert_id()=0 means
+                // the INSERT failed (FK constraint, etc.). FE would otherwise navigate
+                // to /kiosk/ticket/0 and 404 silently while showing "Pendaftaran berhasil".
+                $err = $this->db->error();
+                $this->db->query('UNLOCK TABLES');
+                log_message('error', 'Kiosk::register tamdes_kunjungan insert failed: ' . print_r($err, true));
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Gagal membuat kunjungan (database error). Silakan coba lagi atau hubungi petugas.',
+                ], 500);
+            }
         }
 
         $this->db->query('UNLOCK TABLES');
