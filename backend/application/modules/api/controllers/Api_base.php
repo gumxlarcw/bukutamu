@@ -590,8 +590,14 @@ class Api_base extends CI_Controller {
      */
     protected function normalize_phone($raw) {
         $d = preg_replace('/\D/', '', (string) $raw); // strip @c.us, +, spaces, dashes
-        $d = ltrim($d, '0');                          // drop leading 0 / 00
-        if (strpos($d, '62') === 0) $d = substr($d, 2); // drop country code
+        if ($d === '') return '';
+        // Strip an international prefix ONLY when the number is not already in national
+        // 0-trunk form, so national "062X…" landlines (area codes 0620–0629) keep their
+        // area code. (The old order ltrim'd the leading 0 first, then mistook the "62X"
+        // area code for the country code → "0622345678" became "02345678".)
+        if (strpos($d, '00') === 0) $d = substr($d, 2);                               // 00 intl dialing prefix
+        if ($d !== '' && $d[0] !== '0' && strpos($d, '62') === 0) $d = substr($d, 2); // 62 country code (intl form)
+        $d = ltrim($d, '0');                          // drop national trunk 0(s)
         if ($d === '') return '';
         return '0' . $d;
     }
