@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Search, ChevronLeft, ChevronRight, Download, Users, ClipboardCheck, Eye, Clock } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Download, Users, ClipboardCheck, Eye, Clock } from 'lucide-react'
 import {
   PENDIDIKAN_OPTIONS,
   UMUR_OPTIONS,
@@ -67,6 +67,93 @@ function EligibilityBadge({ eligible }: { eligible: boolean }) {
   )
 }
 
+/**
+ * One visit row in the history list. Evaluated visits (rating_pengunjung set)
+ * are expandable: clicking reveals that visit's full 16-indicator kepuasan scores.
+ * Each row owns its own react-query fetch keyed by id_kunjungan, so results are
+ * cached per visit and only fetched once the row is expanded.
+ */
+function VisitHistoryRow({ visit }: { visit: GuestVisit }) {
+  const [expanded, setExpanded] = useState(false)
+  const isEvaluated = visit.rating_pengunjung !== null
+
+  const { data: evalDetail, isLoading } = useQuery({
+    queryKey: ['eval-results-responden', visit.id_kunjungan],
+    queryFn: () => evaluationsApi.getResults(visit.id_kunjungan).then(r => r.data.data),
+    enabled: expanded && isEvaluated,
+  })
+
+  const isDone = visit.status === 'selesai' || visit.status === 'evaluasi_selesai'
+
+  return (
+    <div className="rounded-lg bg-muted/40 overflow-hidden">
+      <div
+        className={`flex items-center gap-2 text-xs p-2 ${isEvaluated ? 'cursor-pointer hover:bg-muted/60 transition-colors' : ''}`}
+        onClick={isEvaluated ? () => setExpanded(e => !e) : undefined}
+        role={isEvaluated ? 'button' : undefined}
+        tabIndex={isEvaluated ? 0 : undefined}
+        onKeyDown={isEvaluated ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(x => !x) } } : undefined}
+      >
+        {isEvaluated ? (
+          <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`} />
+        ) : (
+          <span className="w-3.5 shrink-0" />
+        )}
+        <span className="text-muted-foreground shrink-0">
+          {new Date(visit.date_visit).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+        </span>
+        <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+          {parseLayanan(visit.jenis_layanan).map((l, i) => (
+            <span key={i} className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px]">{l}</span>
+          ))}
+        </div>
+        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${isDone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+          {visit.status}
+        </span>
+        {isEvaluated && (
+          <span className="text-amber-600 font-bold shrink-0">
+            {'★'}{visit.rating_pengunjung}
+          </span>
+        )}
+      </div>
+
+      {expanded && isEvaluated && (
+        <div className="px-2 pb-2 border-t">
+          {isLoading ? (
+            <div className="space-y-1.5 pt-2">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 rounded" />)}
+            </div>
+          ) : evalDetail && evalDetail.details && evalDetail.details.length > 0 ? (
+            <>
+              <p className="text-[11px] text-muted-foreground pt-2 mb-1">
+                Rating keseluruhan: <strong>{evalDetail.rating_pengunjung ?? '-'}/10</strong>
+                {evalDetail.durasi_detik != null && ` · Durasi ${Math.round(evalDetail.durasi_detik / 60)} mnt`}
+              </p>
+              <div className="space-y-0.5">
+                {evalDetail.details
+                  .slice()
+                  .sort((a, b) => a.indikator_id - b.indikator_id)
+                  .map(detail => {
+                    const label = evalDetail.indikator?.[String(detail.indikator_id)] ?? `Indikator ${detail.indikator_id}`
+                    return (
+                      <div key={detail.id} className="flex items-start gap-2 text-[11px] py-0.5">
+                        <span className="text-muted-foreground shrink-0 w-5 text-right pt-0.5">{detail.indikator_id}.</span>
+                        <span className="flex-1 text-muted-foreground leading-relaxed" title={label}>{label}</span>
+                        <ScoreBadge score={Number(detail.kepuasan)} />
+                      </div>
+                    )
+                  })}
+              </div>
+            </>
+          ) : (
+            <p className="text-[11px] text-muted-foreground italic pt-2">Rincian indikator tidak tersedia untuk kunjungan ini.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function RespondenTahunanPage() {
   const currentYear = new Date().getFullYear().toString()
   const [tahun, setTahun] = useState(currentYear)
@@ -95,20 +182,8 @@ export default function RespondenTahunanPage() {
     enabled: !!viewRow,
   })
 
-  // Latest visit that has an evaluation (rating_pengunjung set) — for per-indicator detail.
-  // viewVisits is ordered date DESC from the backend, so find() returns the most recent one.
-  const latestEvaluatedVisitId =
-    viewVisits
-      ? (viewVisits.find((v: GuestVisit) => v.rating_pengunjung !== null)?.id_kunjungan ?? null)
-      : null
-
-  const { data: evalDetail, isLoading: evalLoading } = useQuery({
-    queryKey: ['eval-results-responden', latestEvaluatedVisitId],
-    queryFn: () => evaluationsApi.getResults(latestEvaluatedVisitId!).then(r => r.data.data),
-    enabled: latestEvaluatedVisitId !== null,
-  })
-
-  // Total evaluated visits count (for "N kunjungan dievaluasi" note)
+  // Count of evaluated visits (rating_pengunjung set) — surfaced as a header note
+  // so the user knows how many of the visit-history rows are expandable.
   const evaluatedVisitCount = viewVisits
     ? viewVisits.filter((v: GuestVisit) => v.rating_pengunjung !== null).length
     : 0
@@ -410,95 +485,23 @@ export default function RespondenTahunanPage() {
                 </div>
               </div>
 
-              {/* Per-indicator evaluation — latest evaluated visit */}
-              <div className="border-t pt-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                  Evaluasi per Indikator (Kondisi Terakhir)
-                </p>
-                {evalLoading && latestEvaluatedVisitId !== null ? (
-                  <div className="space-y-1.5">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="h-7 rounded" />
-                    ))}
-                  </div>
-                ) : evalDetail && evalDetail.details && evalDetail.details.length > 0 ? (
-                  <>
-                    <p className="text-[11px] text-muted-foreground mb-2">
-                      {evaluatedVisitCount > 1
-                        ? `${evaluatedVisitCount} kunjungan dievaluasi — menampilkan evaluasi terbaru. `
-                        : ''}
-                      Rating keseluruhan:{' '}
-                      <strong>{evalDetail.rating_pengunjung ?? '-'}/10</strong>
-                    </p>
-                    <div className="space-y-1">
-                      {evalDetail.details
-                        .slice()
-                        .sort((a, b) => a.indikator_id - b.indikator_id)
-                        .map(detail => {
-                          const label =
-                            evalDetail.indikator?.[String(detail.indikator_id)] ??
-                            `Indikator ${detail.indikator_id}`
-                          return (
-                            <div key={detail.id} className="flex items-start gap-2 text-xs py-0.5">
-                              <span className="text-muted-foreground shrink-0 w-5 text-right pt-0.5">
-                                {detail.indikator_id}.
-                              </span>
-                              <span
-                                className="flex-1 text-muted-foreground leading-relaxed"
-                                title={label}
-                              >
-                                {label}
-                              </span>
-                              <ScoreBadge score={Number(detail.kepuasan)} />
-                            </div>
-                          )
-                        })}
-                    </div>
-                  </>
-                ) : latestEvaluatedVisitId === null ? (
-                  <p className="text-xs text-muted-foreground italic">
-                    Belum ada evaluasi untuk responden ini.
-                    {!isSkdEligible(viewRow.jenis_layanan) &&
-                      ' (Layanan yang digunakan tidak memerlukan evaluasi SKD.)'}
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic">Data evaluasi tidak tersedia.</p>
-                )}
-              </div>
-
-              {/* Visit history */}
+              {/* Visit history — each evaluated visit expands to its 16-indikator scores */}
               {viewVisits && viewVisits.length > 0 && (
                 <div className="border-t pt-3">
-                  <p className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                  <p className="text-sm font-semibold flex items-center gap-1.5 mb-1">
                     <Clock className="w-4 h-4" />
                     Riwayat Kunjungan ({viewVisits.length})
                   </p>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5">
+                  <p className="text-[11px] text-muted-foreground mb-2">
+                    {evaluatedVisitCount > 0
+                      ? `${evaluatedVisitCount} kunjungan dievaluasi — klik untuk lihat skor per indikator (kondisi tiap kunjungan).`
+                      : isSkdEligible(viewRow.jenis_layanan)
+                        ? 'Belum ada kunjungan yang dievaluasi.'
+                        : 'Layanan yang digunakan tidak memerlukan evaluasi SKD.'}
+                  </p>
+                  <div className="max-h-72 overflow-y-auto space-y-1.5">
                     {viewVisits.map((v: GuestVisit) => (
-                      <div key={v.id_kunjungan} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/40">
-                        <span className="text-muted-foreground shrink-0">
-                          {new Date(v.date_visit).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </span>
-                        <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-                          {parseLayanan(v.jenis_layanan).map((l, i) => (
-                            <span key={i} className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px]">{l}</span>
-                          ))}
-                        </div>
-                        <span
-                          className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            v.status === 'selesai' || v.status === 'evaluasi_selesai'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {v.status}
-                        </span>
-                        {v.rating_pengunjung !== null && (
-                          <span className="text-amber-600 font-bold shrink-0">
-                            {'★'}{v.rating_pengunjung}
-                          </span>
-                        )}
-                      </div>
+                      <VisitHistoryRow key={v.id_kunjungan} visit={v} />
                     ))}
                   </div>
                 </div>
