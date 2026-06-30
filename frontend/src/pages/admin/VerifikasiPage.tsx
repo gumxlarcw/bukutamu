@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { deliveriesApi } from '@/api/deliveries'
 import type { DataDeliveryDetail, DeliveryStatus, VerifDecision } from '@/types/delivery'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/url'
 import { FileText, Download, ExternalLink, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -149,13 +150,23 @@ function DeliveryCard({
         {/* Deliverable: link or file (mirrors ChatPopup.tsx image/document display) */}
         {(item.link_url || fileUrl) && (
           <div className="flex flex-wrap items-start gap-2">
-            {item.link_url && (
-              <a href={item.link_url} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors hover:opacity-80"
-                style={{ color: 'var(--admin-primary)', borderColor: 'color-mix(in srgb, var(--admin-primary) 30%, transparent)', background: 'var(--admin-primary-light)' }}>
-                <ExternalLink className="w-3.5 h-3.5" /> Buka Tautan
-              </a>
-            )}
+            {item.link_url && (() => {
+              const href = safeHref(item.link_url)
+              return href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors hover:opacity-80"
+                  style={{ color: 'var(--admin-primary)', borderColor: 'color-mix(in srgb, var(--admin-primary) 30%, transparent)', background: 'var(--admin-primary-light)' }}>
+                  <ExternalLink className="w-3.5 h-3.5" /> Buka Tautan
+                </a>
+              ) : (
+                // Unsafe scheme (e.g. javascript:) — show as inert text so verifier can still read and reject it
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border"
+                  style={{ color: 'var(--admin-text-muted)', borderColor: 'var(--admin-border)', background: 'var(--admin-primary-light)' }}>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-40" />
+                  <span className="break-all">{item.link_url}</span>
+                </span>
+              )
+            })()}
             {fileUrl && isImage && (
               <a href={fileUrl} target="_blank" rel="noreferrer" className="block">
                 <img src={fileUrl} alt={item.media_name || 'file'} className="rounded-lg max-h-40 max-w-xs object-cover" loading="lazy" />
