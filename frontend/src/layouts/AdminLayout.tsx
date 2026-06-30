@@ -1,10 +1,22 @@
 import { Navigate, Outlet } from 'react-router-dom'
+import { useState } from 'react'
+import { Menu } from 'lucide-react'
 import { useAuth } from '@/providers/AuthProvider'
-import { TopNav } from '@/components/admin/TopNav'
+import { cn } from '@/lib/utils'
+import { Sidebar } from '@/components/admin/Sidebar'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
 export function AdminLayout() {
   const { user, isLoading } = useAuth()
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('admin-sidebar-collapsed') === '1' } catch { return false }
+  })
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const toggleCollapse = () => setCollapsed((c) => {
+    const next = !c
+    try { localStorage.setItem('admin-sidebar-collapsed', next ? '1' : '0') } catch { /* ignore */ }
+    return next
+  })
 
   if (isLoading) return <LoadingSpinner className="min-h-screen" />
   if (!user) return <Navigate to="/login" replace />
@@ -52,30 +64,110 @@ export function AdminLayout() {
           z-index: 0;
         }
 
-        /* ── Top Navigation ── */
-        .admin-topnav {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(255, 255, 255, 0.88);
+        /* ── Sidebar ── */
+        .admin-sidebar {
+          position: fixed;
+          top: 0; left: 0; bottom: 0;
+          width: 240px;
+          display: flex;
+          flex-direction: column;
+          background: rgba(255, 255, 255, 0.92);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
-          border-bottom: 1px solid var(--admin-border);
+          border-right: 1px solid var(--admin-border);
+          z-index: 50;
+          transition: width 0.2s ease, transform 0.25s ease;
         }
-        .admin-topnav-inner {
-          width: 100%;
-          padding: 8px 32px;
-          min-height: 56px;
+        .admin-shell.is-collapsed .admin-sidebar { width: 74px; }
+
+        .admin-sidebar-brand {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 12px;
+          gap: 10px;
+          padding: 12px 14px;
+          min-height: 57px;
+          border-bottom: 1px solid var(--admin-border);
         }
+        .admin-sidebar-brand .brand-logo {
+          height: 30px; width: auto; object-fit: contain; flex-shrink: 0;
+        }
+        .admin-side-toggle {
+          margin-left: auto;
+          flex-shrink: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          color: var(--admin-text-muted);
+          border: none;
+          background: transparent;
+          cursor: pointer;
+          transition: all 0.18s ease;
+        }
+        .admin-side-toggle:hover { background: rgba(42, 32, 22, 0.06); color: var(--admin-text); }
+
+        .admin-sidebar-nav {
+          flex: 1;
+          overflow-y: auto;
+          overflow-x: hidden;
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .admin-sidebar-actions {
+          border-top: 1px solid var(--admin-border);
+          padding: 8px 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+        .admin-side-actionrow { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+        .admin-side-user { padding: 2px 11px 4px; min-width: 0; }
+
+        .admin-side-item {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 9px 11px;
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--admin-text-muted);
+          white-space: nowrap;
+          text-decoration: none;
+          transition: all 0.18s ease;
+          width: 100%;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          text-align: left;
+        }
+        .admin-side-item:hover { color: var(--admin-text); background: rgba(42, 32, 22, 0.05); }
+        .admin-side-active {
+          color: var(--admin-primary) !important;
+          background: var(--admin-primary-light) !important;
+          font-weight: 600;
+        }
+
+        /* Collapsed (desktop icon rail) */
+        .admin-shell.is-collapsed .admin-side-label,
+        .admin-shell.is-collapsed .admin-sidebar-brand .brand-text,
+        .admin-shell.is-collapsed .admin-sidebar-brand .brand-logo,
+        .admin-shell.is-collapsed .admin-side-user { display: none; }
+        .admin-shell.is-collapsed .admin-sidebar-brand { justify-content: center; padding: 12px 0; }
+        .admin-shell.is-collapsed .admin-side-toggle { margin-left: 0; }
+        .admin-shell.is-collapsed .admin-side-item { justify-content: center; gap: 0; padding: 9px 0; }
+        .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: column; gap: 2px; }
+
+        /* Reused by NotificationBell / Enable / Install buttons */
         .admin-nav-item {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 7px 13px;
+          padding: 7px 11px;
           border-radius: 10px;
           font-size: 13px;
           font-weight: 500;
@@ -84,24 +176,77 @@ export function AdminLayout() {
           white-space: nowrap;
           text-decoration: none;
         }
-        .admin-nav-item:hover {
-          color: var(--admin-text);
-          background: rgba(42, 32, 22, 0.05);
-        }
+        .admin-nav-item:hover { color: var(--admin-text); background: rgba(42, 32, 22, 0.05); }
         .admin-nav-active {
           color: var(--admin-primary) !important;
           background: var(--admin-primary-light) !important;
           font-weight: 600;
         }
-        /* Tighter gutters on small screens; the nav wraps so all menu items stay visible. */
-        @media (max-width: 640px) {
-          .admin-topnav-inner {
+
+        /* ── Main column (offset by the sidebar) ── */
+        .admin-main {
+          min-width: 0;
+          margin-left: 240px;
+          transition: margin-left 0.2s ease;
+        }
+        .admin-shell.is-collapsed .admin-main { margin-left: 74px; }
+
+        /* ── Mobile: off-canvas drawer + hamburger ── */
+        .admin-mobile-bar { display: none; }
+        .admin-mobile-hamburger {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px; height: 36px;
+          border-radius: 9px;
+          flex-shrink: 0;
+          border: 1px solid var(--admin-border-strong);
+          background: var(--admin-surface);
+          color: var(--admin-text);
+          cursor: pointer;
+        }
+        .admin-backdrop { display: none; }
+
+        @media (max-width: 768px) {
+          .admin-sidebar { transform: translateX(-100%); width: 252px; box-shadow: var(--admin-shadow-lg); }
+          .admin-shell.is-collapsed .admin-sidebar { width: 252px; }
+          .admin-shell.mobile-open .admin-sidebar { transform: translateX(0); }
+          /* the drawer always shows labels even if the desktop pref is "collapsed" */
+          .admin-shell.is-collapsed .admin-side-label,
+          .admin-shell.is-collapsed .admin-sidebar-brand .brand-text,
+          .admin-shell.is-collapsed .admin-sidebar-brand .brand-logo,
+          .admin-shell.is-collapsed .admin-side-user { display: block; }
+          .admin-shell.is-collapsed .admin-sidebar-brand { justify-content: flex-start; padding: 12px 14px; }
+          .admin-shell.is-collapsed .admin-side-item { justify-content: flex-start; gap: 11px; padding: 9px 11px; }
+          .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: row; }
+          .admin-shell.is-collapsed .admin-side-toggle { margin-left: auto; }
+          .admin-main { margin-left: 0 !important; }
+          .admin-mobile-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: sticky;
+            top: 0;
+            z-index: 30;
             padding: 8px 12px;
-            gap: 8px;
+            min-height: 50px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--admin-border);
           }
-          .admin-content {
-            padding: 20px 14px;
+          .admin-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 45;
+            background: rgba(42, 32, 22, 0.4);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
           }
+          .admin-shell.mobile-open .admin-backdrop { opacity: 1; pointer-events: auto; }
+          .admin-content { padding: 20px 14px; }
         }
 
         /* ── Content area ── */
@@ -300,13 +445,27 @@ export function AdminLayout() {
         .admin-shell ::-webkit-scrollbar-thumb:hover { background: rgba(42,32,22,0.25); }
       `}</style>
 
-      <div className="admin-shell">
-        <TopNav />
-        <div className="admin-content">
-          <div className="admin-enter">
-            <Outlet />
+      <div className={cn('admin-shell', collapsed && 'is-collapsed', mobileOpen && 'mobile-open')}>
+        <Sidebar collapsed={collapsed} onToggle={toggleCollapse} onNavigate={() => setMobileOpen(false)} />
+        <div className="admin-backdrop" onClick={() => setMobileOpen(false)} />
+        <main className="admin-main">
+          <div className="admin-mobile-bar">
+            <button
+              type="button"
+              className="admin-mobile-hamburger"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Buka menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="text-sm font-bold text-[--admin-text]">Admin Buku Tamu 8200</span>
           </div>
-        </div>
+          <div className="admin-content">
+            <div className="admin-enter">
+              <Outlet />
+            </div>
+          </div>
+        </main>
       </div>
     </>
   )
