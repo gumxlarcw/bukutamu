@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Download, Users, ClipboardCheck, Eye, Clock } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Download, Users, ClipboardCheck, Eye, Clock } from 'lucide-react'
 import {
   PENDIDIKAN_OPTIONS,
   UMUR_OPTIONS,
@@ -68,10 +68,11 @@ function EligibilityBadge({ eligible }: { eligible: boolean }) {
 }
 
 /**
- * One visit row in the history list. Evaluated visits (rating_pengunjung set)
- * are expandable: clicking reveals that visit's full 16-indicator kepuasan scores.
- * Each row owns its own react-query fetch keyed by id_kunjungan, so results are
- * cached per visit and only fetched once the row is expanded.
+ * One visit row in the history list. Visits that were actually evaluated
+ * (rating_pengunjung set) get an explicit "Lihat Evaluasi" button; clicking it
+ * reveals that visit's full 16-indicator kepuasan scores. Visits without an
+ * evaluation show no button. Each row owns its own react-query fetch keyed by
+ * id_kunjungan, so results are cached per visit and only fetched once viewed.
  */
 function VisitHistoryRow({ visit }: { visit: GuestVisit }) {
   const [expanded, setExpanded] = useState(false)
@@ -87,18 +88,7 @@ function VisitHistoryRow({ visit }: { visit: GuestVisit }) {
 
   return (
     <div className="rounded-lg bg-muted/40 overflow-hidden">
-      <div
-        className={`flex items-center gap-2 text-xs p-2 ${isEvaluated ? 'cursor-pointer hover:bg-muted/60 transition-colors' : ''}`}
-        onClick={isEvaluated ? () => setExpanded(e => !e) : undefined}
-        role={isEvaluated ? 'button' : undefined}
-        tabIndex={isEvaluated ? 0 : undefined}
-        onKeyDown={isEvaluated ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(x => !x) } } : undefined}
-      >
-        {isEvaluated ? (
-          <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`} />
-        ) : (
-          <span className="w-3.5 shrink-0" />
-        )}
+      <div className="flex items-center gap-2 text-xs p-2">
         <span className="text-muted-foreground shrink-0">
           {new Date(visit.date_visit).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
         </span>
@@ -111,9 +101,20 @@ function VisitHistoryRow({ visit }: { visit: GuestVisit }) {
           {visit.status}
         </span>
         {isEvaluated && (
-          <span className="text-amber-600 font-bold shrink-0">
-            {'★'}{visit.rating_pengunjung}
-          </span>
+          <>
+            <span className="text-amber-600 font-bold shrink-0">
+              {'★'}{visit.rating_pengunjung}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 shrink-0"
+              onClick={() => setExpanded(e => !e)}
+            >
+              <Eye className="w-3.5 h-3.5 mr-1" />
+              {expanded ? 'Tutup' : 'Lihat Evaluasi'}
+            </Button>
+          </>
         )}
       </div>
 
@@ -494,7 +495,7 @@ export default function RespondenTahunanPage() {
                   </p>
                   <p className="text-[11px] text-muted-foreground mb-2">
                     {evaluatedVisitCount > 0
-                      ? `${evaluatedVisitCount} kunjungan dievaluasi — klik untuk lihat skor per indikator (kondisi tiap kunjungan).`
+                      ? `${evaluatedVisitCount} kunjungan dievaluasi — tekan "Lihat Evaluasi" untuk skor per indikator (kondisi tiap kunjungan).`
                       : isSkdEligible(viewRow.jenis_layanan)
                         ? 'Belum ada kunjungan yang dievaluasi.'
                         : 'Layanan yang digunakan tidak memerlukan evaluasi SKD.'}
