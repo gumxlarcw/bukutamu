@@ -62,7 +62,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/visits', label: 'Kunjungan', icon: FileText, minRole: 'operator' },
   { to: '/admin/manual-entry', label: 'Tambah Manual', icon: PlusCircle, minRole: 'operator', allowedRoles: MUTATION_ENTRY_ROLES },
   { to: '/admin/evaluations', label: 'Evaluasi', icon: Star, minRole: 'admin' },
-  { to: '/admin/responden', label: 'Responden Tahunan', icon: CalendarDays, minRole: 'admin' },
+  { to: '/admin/responden', label: 'Responden SKD', icon: CalendarDays, minRole: 'admin' },
   { to: '/admin/queue-stats', label: 'Analisis', icon: BarChart3, minRole: 'admin' },
   { to: '/admin/users', label: 'Users', icon: UserCog, minRole: 'superadmin' },
   { to: '/admin/audit', label: 'Audit', icon: Shield, minRole: 'admin' },
@@ -140,8 +140,11 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
       <div className="admin-sidebar-actions">
         <div className="admin-side-actionrow">
           <NotificationBell />
-          <EnableNotificationsButton />
-          <InstallPWAButton />
+          {/* Secondary actions — hidden in the collapsed rail (would overflow), shown when expanded/mobile. */}
+          <span className="admin-side-extra inline-flex items-center gap-1">
+            <EnableNotificationsButton />
+            <InstallPWAButton />
+          </span>
         </div>
         {user && (
           <div className="admin-side-user admin-side-label">

@@ -160,7 +160,8 @@ export function AdminLayout() {
         .admin-shell.is-collapsed .admin-sidebar-brand { justify-content: center; padding: 12px 0; }
         .admin-shell.is-collapsed .admin-side-toggle { margin-left: 0; }
         .admin-shell.is-collapsed .admin-side-item { justify-content: center; gap: 0; padding: 9px 0; }
-        .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: column; gap: 2px; }
+        .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: column; gap: 2px; align-items: center; }
+        .admin-shell.is-collapsed .admin-side-extra { display: none; }
 
         /* Reused by NotificationBell / Enable / Install buttons */
         .admin-nav-item {
@@ -218,7 +219,8 @@ export function AdminLayout() {
           .admin-shell.is-collapsed .admin-side-user { display: block; }
           .admin-shell.is-collapsed .admin-sidebar-brand { justify-content: flex-start; padding: 12px 14px; }
           .admin-shell.is-collapsed .admin-side-item { justify-content: flex-start; gap: 11px; padding: 9px 11px; }
-          .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: row; }
+          .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: row; align-items: center; }
+          .admin-shell.is-collapsed .admin-side-extra { display: inline-flex; }
           .admin-shell.is-collapsed .admin-side-toggle { margin-left: auto; }
           .admin-main { margin-left: 0 !important; }
           .admin-mobile-bar {

@@ -83,6 +83,7 @@ class Responden extends Api_base {
                 WHERE YEAR(k.date_visit) = {$year}
                 " . $this->_tw_clause($triwulan) . "
                 " . $this->_skd_clause($skd) . "
+                AND EXISTS (SELECT 1 FROM tamdes_evaluasi_detail ed WHERE ed.id_kunjungan = k.id_kunjungan)
                 GROUP BY k.id_user
             ) sub", false);
 
@@ -98,6 +99,7 @@ class Responden extends Api_base {
                     WHERE YEAR(k.date_visit) = {$year}
                     " . $this->_tw_clause($triwulan) . "
                     " . $this->_skd_clause($skd) . "
+                    AND EXISTS (SELECT 1 FROM tamdes_evaluasi_detail ed WHERE ed.id_kunjungan = k.id_kunjungan)
                     AND (b.nama LIKE '%" . $this->db->escape_like_str($q) . "%'
                          OR b.nama_instansi LIKE '%" . $this->db->escape_like_str($q) . "%')
                     GROUP BY k.id_user
@@ -141,6 +143,9 @@ class Responden extends Api_base {
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('YEAR(k.date_visit)', $year);
+
+            // Responden SKD = hanya yang sudah mengisi evaluasi (indikator kepuasan di akhir kunjungan).
+            $this->db->where('EXISTS (SELECT 1 FROM tamdes_evaluasi_detail ed WHERE ed.id_kunjungan = k.id_kunjungan)', null, false);
 
             if ($triwulan) {
                 $this->db->where('QUARTER(k.date_visit)', $triwulan);
