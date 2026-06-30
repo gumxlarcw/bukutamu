@@ -153,14 +153,30 @@ class Visits extends Api_base {
                 'id_user'       => $visit->id_user,
             ]);
 
-            // Cascade: 5 related tables yang FK ke id_kunjungan (owned-by-visit).
+            // Fetch data_deliveries media paths BEFORE row deletion so we can unlink
+            // files after all DB deletes succeed (paths are gone once rows are deleted).
+            $delivery_media = $this->db->select('media_path')
+                ->where('id_kunjungan', $id)
+                ->where('media_path IS NOT NULL')
+                ->get('data_deliveries')->result();
+
+            // Cascade: 6 related tables yang FK ke id_kunjungan (owned-by-visit).
             $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');
             $this->db->where('id_kunjungan', $id)->delete('dtsen_konsultasi');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
             $this->db->where('id_kunjungan', $id)->delete('wa_sessions');
             $this->db->where('id_kunjungan', $id)->delete('wa_outbox');
             $this->db->where('id_kunjungan', $id)->delete('wa_messages');
+            $this->db->where('id_kunjungan', $id)->delete('data_deliveries');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_kunjungan');
+
+            // Unlink deliverable files AFTER all DB deletes complete — best-effort,
+            // basename() prevents traversal, @unlink silences missing-file warnings.
+            $media_dir = FCPATH . 'assets/wa_media/';
+            foreach ($delivery_media as $row) {
+                $path = $media_dir . basename($row->media_path);
+                if (is_file($path)) @unlink($path);
+            }
 
             $this->json_response(['success' => true, 'data' => null, 'message' => 'Kunjungan berhasil dihapus']);
 
