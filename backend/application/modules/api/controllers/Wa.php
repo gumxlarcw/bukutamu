@@ -804,9 +804,16 @@ class Wa extends Api_base {
                 $sarana        = (isset($input['sarana']) && is_array($input['sarana'])) ? array_map('intval', $input['sarana']) : [];
                 $this->validate_no_cross_layanan($jenis_layanan);          // reject cross-group / unknown
                 $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
-            } else { // 'data'
-                $jenis_layanan = ['Konsultasi Statistik'];
-                $sarana        = [2];
+            } else { // 'data' — online: pilih layanan (4 inti) + sarana KHUSUS ONLINE (tanpa "datang langsung").
+                $jl_in = (isset($input['jenis_layanan']) && is_array($input['jenis_layanan'])) ? array_values($input['jenis_layanan']) : [];
+                $jenis_layanan = $jl_in ?: ['Konsultasi Statistik'];   // default utk pemanggil lama/tanpa pilihan
+                // Sarana online saja: buang kode 1 ("PST datang langsung"); default Aplikasi Chat (16) krn via WA.
+                $sarana = (isset($input['sarana']) && is_array($input['sarana']))
+                    ? array_values(array_filter(array_map('intval', $input['sarana']), function ($c) { return $c !== 1; }))
+                    : [];
+                if (!$sarana) $sarana = [16];
+                $this->validate_no_cross_layanan($jenis_layanan);
+                $this->validate_sarana_for_layanan($jenis_layanan, $sarana);
             }
 
             // Validasi tahun (boundary, sebelum LOCK → tidak ada kunjungan orphan bila ditolak):

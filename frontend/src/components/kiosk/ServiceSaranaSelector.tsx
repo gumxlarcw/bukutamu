@@ -17,15 +17,19 @@ export interface ServiceSaranaSelectorValue {
 interface Props {
   value: ServiceSaranaSelectorValue
   onChange: (v: ServiceSaranaSelectorValue) => void
+  /** WA online (#1): batasi sarana ke media online — buang "PST (datang langsung)" (kode 1). */
+  onlineOnly?: boolean
 }
 
-export function ServiceSaranaSelector({ value, onChange }: Props) {
+export function ServiceSaranaSelector({ value, onChange, onlineOnly = false }: Props) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['services'],
     queryFn: () => servicesApi.list().then(r => r.data.data),
   })
 
-  const allowedSaranaCodes = getAllowedSaranaCodes(value.jenis_layanan)
+  const allowedSaranaCodes = onlineOnly
+    ? getAllowedSaranaCodes(value.jenis_layanan).filter(c => c !== 1)
+    : getAllowedSaranaCodes(value.jenis_layanan)
 
   // Saat grup layanan berubah, buang sarana yang sudah dipilih tapi tidak valid lagi.
   useEffect(() => {

@@ -60,6 +60,14 @@ ING $PA6 halo; ING $PA6 2; ING $PA6 1
 ok  "A6 mis-cat switch -> data/awaiting_form" "awaiting_form|data" "$(Q "SELECT CONCAT(state,'|',category) FROM wa_sessions WHERE phone_norm='$NA6'")"
 okc "A6 switch link mentions beralih" "beralih" "$(LASTOUT $PA6)"
 
+echo; echo "########## GROUP A7: #1 online records picked jenis + ONLINE-only sarana ##########"
+PA7=62888399026; NA7=$(NORM $PA7); dat $PA7; SA7=$(SID $NA7); TA7=$(TOK $PA7)
+RA7=$(req POST /api/wa/session/$SA7 "$TA7" "{\"nama\":\"Uji Online\",\"jenis_layanan\":[\"Rekomendasi Kegiatan Statistik\"],\"sarana\":[1,16],\"permintaan\":[{\"rincian_data\":\"Rekomendasi kegiatan X\"}]}")
+IDK_A7=$(Q "SELECT id_kunjungan FROM wa_sessions WHERE phone_norm='$NA7'")
+ok  "A7 #1 records picked jenis (Rekomendasi)" '["Rekomendasi Kegiatan Statistik"]' "$(Q "SELECT jenis_layanan FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A7")"
+ok  "A7 #1 sarana ONLINE only (datang-langsung '1' dropped, [16] kept)" "[16]" "$(Q "SELECT sarana FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A7")"
+ok  "A7 #1 stays online: no queue number + created_by whatsapp" "|whatsapp" "$(Q "SELECT CONCAT(IFNULL(nomor_antrian,''),'|',created_by) FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A7")"
+
 echo; echo "########## GROUP B: queue number daily reset ##########"
 PB=62888399014; NB=$(NORM $PB)
 RC=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE DATE(date_visit)='$TODAY' AND JSON_CONTAINS(jenis_layanan,'\"Rekomendasi Kegiatan Statistik\"')")

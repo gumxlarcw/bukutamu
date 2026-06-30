@@ -177,7 +177,15 @@ export default function LayananOnlinePage() {
             sarana: svcValue.sarana,
             sarana_lainnya: svcValue.sarana_lainnya,
           }
-        : { ...effGuest, permintaan: rows, update_profile: editProfile }
+        : {
+            ...effGuest,
+            permintaan: rows,
+            update_profile: editProfile,
+            jenis_layanan: svcValue.jenis_layanan,
+            layanan_lainnya: svcValue.layanan_lainnya,
+            sarana: svcValue.sarana,
+            sarana_lainnya: svcValue.sarana_lainnya,
+          }
       return waApi.submitSession(Number(sessionId), token, payload).then(r => r.data.data)
     },
     onSuccess: (d) => {
@@ -198,9 +206,9 @@ export default function LayananOnlinePage() {
   if (prefill.state === 'submitted' || ticket) {
     // Service label: from the form just submitted (svcValue) or, on reopen, from the
     // visit the backend returns; non-offline shows its category label.
-    const successLayanan = isOffline
-      ? (svcValue.jenis_layanan.length ? svcValue.jenis_layanan.join(', ') : (prefill.jenis_layanan?.join(', ') || '—'))
-      : (prefill.category === 'lainnya' ? 'Lainnya' : 'Permintaan Data / Konsultasi')
+    const successLayanan = prefill.category === 'lainnya'
+      ? 'Lainnya'
+      : (svcValue.jenis_layanan.length ? svcValue.jenis_layanan.join(', ') : (prefill.jenis_layanan?.join(', ') || '—'))
     const successNama = (effGuest?.nama || prefill.guest?.nama || '—')
     return <SuccessTicket
       ticket={ticket ?? (prefill.id_kunjungan ? `WA-${prefill.id_kunjungan}` : `WA-${prefill.session_id}`)}
@@ -214,13 +222,14 @@ export default function LayananOnlinePage() {
   const permintaanOk = rows.some(r => r.rincian_data.trim() !== '')
   const yearsOk = permintaanRowsValid(rows)   // tahun_akhir ≥ tahun_awal & format wajar
   const serviceOk = svcValue.jenis_layanan.length > 0
+  const saranaOk = svcValue.sarana.length > 0
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-6">
       <header className="text-center space-y-2">
         <h1 className="text-lg font-bold">Layanan Data BPS Maluku Utara</h1>
         <p className="text-sm text-muted-foreground">
-          {`Langkah ${step} dari 2 — ${step === 1 ? 'Data Diri' : isOffline ? 'Pilih Layanan' : 'Data yang Dibutuhkan'}`}
+          {`Langkah ${step} dari 2 — ${step === 1 ? 'Data Diri' : isOffline ? 'Pilih Layanan' : 'Layanan & Permintaan Data'}`}
         </p>
         <div className="flex gap-1.5 justify-center">
           <span className={`h-1.5 w-12 rounded-full transition-colors ${step >= 1 ? 'bg-primary' : 'bg-muted'}`} />
@@ -282,14 +291,17 @@ export default function LayananOnlinePage() {
         </section>
       )}
 
-      {/* ── Langkah 2 — Data yang Dibutuhkan (data / lainnya) ── */}
+      {/* ── Langkah 2 — Pilih Layanan (online) + Data yang Dibutuhkan ── */}
       {step === 2 && !isOffline && (
         <section className="space-y-4">
-          <h2 className="font-semibold">B. Data yang Dibutuhkan</h2>
+          <h2 className="font-semibold">B. Pilih Layanan</h2>
+          {/* #1 online: pilih jenis layanan (4 inti) + sarana KHUSUS ONLINE (tanpa "datang langsung"). */}
+          <ServiceSaranaSelector value={svcValue} onChange={setSvcValue} onlineOnly />
+          <h2 className="font-semibold pt-2">C. Data yang Dibutuhkan</h2>
           <PermintaanDataForm rows={rows} onChange={setRows} />
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>← Kembali</Button>
-            <Button className="flex-1" disabled={!permintaanOk || !namaOk || !yearsOk || submit.isPending} onClick={() => submit.mutate()}>
+            <Button className="flex-1" disabled={!serviceOk || !saranaOk || !permintaanOk || !namaOk || !yearsOk || submit.isPending} onClick={() => submit.mutate()}>
               {submit.isPending ? 'Mengirim…' : 'Kirim Permintaan'}
             </Button>
           </div>
