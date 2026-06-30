@@ -44,9 +44,12 @@ okc "A2 invalid choice -> re-prompt" "Mohon balas dengan angka" "$(LASTOUT $PA)"
 ok  "A2 still awaiting_category" "awaiting_category" "$(Q "SELECT state FROM wa_sessions WHERE phone_norm='$NA'")"
 ING $PA 1
 ok  "A4 choose 1 -> awaiting_form/data" "awaiting_form|data" "$(Q "SELECT CONCAT(state,'|',category) FROM wa_sessions WHERE phone_norm='$NA'")"
-okc "A4 data intake link"    "Permintaan Data" "$(LASTOUT $PA)"
+okc "A4 data intake link (online framing)" "tanpa perlu datang" "$(LASTOUT $PA)"
+okc "A4 link offers back-to-menu (0)" "Balas *0*" "$(LASTOUT $PA)"
 ING $PA menu
 ok  "A3 'menu' keyword resets" "awaiting_category|" "$(Q "SELECT CONCAT(state,'|',IFNULL(category,'')) FROM wa_sessions WHERE phone_norm='$NA'")"
+ING $PA 1; ING $PA 0
+ok  "A3b '0' keyword resets to menu" "awaiting_category|" "$(Q "SELECT CONCAT(state,'|',IFNULL(category,'')) FROM wa_sessions WHERE phone_norm='$NA'")"
 
 PA5=62888399012; NA5=$(NORM $PA5)
 ING $PA5 halo; ING $PA5 3
@@ -54,6 +57,7 @@ IDK_A5=$(Q "SELECT id_kunjungan FROM wa_sessions WHERE phone_norm='$NA5'")
 ok  "A5 choose 3 -> lainnya visit, submitted" "submitted|lainnya" "$(Q "SELECT CONCAT(state,'|',category) FROM wa_sessions WHERE phone_norm='$NA5'")"
 ok  "A5 visit = Lainnya Online, null number, whatsapp" '["Lainnya Online"]||whatsapp' "$(Q "SELECT CONCAT(jenis_layanan,'|',IFNULL(nomor_antrian,''),'|',created_by) FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A5")"
 okc "A5 group ping 'minta ditangani'" "minta ditangani" "$(Q "SELECT body FROM wa_outbox WHERE wa_chat_id='$FG' ORDER BY id DESC LIMIT 1")"
+okc "A5 #3 confirmation formal + back-to-menu (0)" "Balas *0*" "$(LASTOUT $PA5)"
 
 PA6=62888399013; NA6=$(NORM $PA6)
 ING $PA6 halo; ING $PA6 2; ING $PA6 1

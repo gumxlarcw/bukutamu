@@ -947,10 +947,19 @@ class Wa extends Api_base {
                 $this->wa_enqueue_user($sess->phone_raw, $sess->wa_chat_id, 'confirmation', $body);
                 $this->wa_notify_group_enqueue("🗓️ *Daftar Antrian Offline*\nNama: {$g_nama}" . ($no ? "\nNomor antrian: {$no}" : '') . "\nNomor: {$sess->phone_norm}\nTiket: WA-{$id_kunjungan}\n" . $this->wa_public_base() . "/admin/layanan-online");
             } else {
-                // data: existing confirmation + "✅ Permintaan Data Online Masuk" ping.
-                $body = "Terima kasih, permintaan data Anda telah kami terima.\nNomor tiket: WA-{$id_kunjungan}.\n";
-                if ($recap !== '') $body .= "\nRingkasan permintaan Anda:{$recap}\n";
-                $body .= "\nKami akan memproses permintaan ini pada jam operasional layanan (" . $this->jam_layanan_text() . ").";
+                // data: formal receipt + "✅ Permintaan Data Online Masuk" ping.
+                $svc  = $jenis_layanan[0] ?? '';
+                $body = "✅ *PERMINTAAN LAYANAN ONLINE DITERIMA*\n"
+                      . "Badan Pusat Statistik Provinsi Maluku Utara\n\n"
+                      . "Berikut detail permintaan Anda:\n"
+                      . "• *Nomor Tiket:* WA-{$id_kunjungan}\n"
+                      . "• *Nama:* {$g_nama}\n"
+                      . ($svc !== '' ? "• *Layanan:* {$svc}\n" : '')
+                      . "• *Tanggal:* " . date('d-m-Y') . "\n";
+                if ($recap !== '') $body .= "\nRincian permintaan Anda:{$recap}\n";
+                $body .= "\nPermintaan Anda akan kami proses pada jam operasional layanan dan kami balas langsung di chat ini.\n\n"
+                       . "🕒 *Jam Layanan*\n" . $this->jam_layanan_text() . "\n\n"
+                       . "Terima kasih. 🙏";
                 $this->db->insert('wa_outbox', ['phone_raw' => $sess->phone_raw, 'wa_chat_id' => $sess->wa_chat_id, 'msg_type' => 'confirmation', 'body' => $body, 'id_kunjungan' => $id_kunjungan, 'status' => 'pending']);
                 $g_inst = trim((string) ($input['nama_instansi'] ?? ''));
                 $g_body = "✅ *Permintaan Data Online Masuk*\nTiket: WA-{$id_kunjungan}\nNama: {$g_nama}" . ($g_inst !== '' ? " ({$g_inst})" : '') . "\nNomor: {$sess->phone_norm}\n";
@@ -1281,7 +1290,16 @@ class Wa extends Api_base {
             $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'awaiting_form', 'category' => 'data', 'link_sent_at' => date('Y-m-d H:i:s')]);
             $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
             $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
-            $body  = "Baik 🙏 untuk *Permintaan Data / Konsultasi*. Mohon lengkapi formulir berikut (berlaku 48 jam):\n" . $link;
+            $body  = "Baik 🙏 untuk *Layanan Online* (diproses langsung lewat chat ini).\n\n"
+                   . "Buka tautan di bawah, lalu:\n"
+                   . "• isi *data diri* Anda\n"
+                   . "• *pilih layanan* yang dibutuhkan (Perpustakaan / Konsultasi Statistik / Rekomendasi Kegiatan Statistik / Penjualan Produk Statistik)\n"
+                   . "• *pilih sarana* yang Anda gunakan\n"
+                   . "• *tuliskan kebutuhan/permintaan* Anda\n\n"
+                   . "Permintaan Anda akan kami proses pada jam layanan dan kami balas langsung di chat ini — *tanpa perlu datang* ke kantor.\n"
+                   . "Jam layanan: " . $this->jam_layanan_text() . ".\n\n"
+                   . "⏱️ Tautan berlaku 48 jam:\n" . $link . "\n\n"
+                   . "_Salah pilih? Balas *0* untuk kembali ke menu._";
             $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', $body);
             return; // ping grup tetap saat submit (existing "Permintaan Data Online Masuk")
         }
@@ -1295,7 +1313,8 @@ class Wa extends Api_base {
                    . "• *pilih layanan* yang dibutuhkan (Perpustakaan / Konsultasi Statistik / Rekomendasi Kegiatan Statistik / Penjualan Produk Statistik)\n\n"
                    . "Setelah dikirim, Anda langsung mendapat *nomor antrian untuk hari ini*. Tinggal datang ke Kantor BPS Provinsi Maluku Utara, ke bagian *Resepsionis*, untuk dilayani.\n"
                    . "Jam layanan: " . $this->jam_layanan_text() . ".\n\n"
-                   . "⏱️ Tautan berlaku 48 jam:\n" . $link;
+                   . "⏱️ Tautan berlaku 48 jam:\n" . $link . "\n\n"
+                   . "_Salah pilih? Balas *0* untuk kembali ke menu._";
             $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', $body);
             return;
         }
@@ -1328,9 +1347,18 @@ class Wa extends Api_base {
         $idk = (int) $this->db->insert_id();
         $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'submitted', 'category' => 'lainnya', 'id_kunjungan' => $idk, 'submitted_at' => date('Y-m-d H:i:s')]);
 
-        $body = "Baik 🙏 permintaan Anda sudah kami terima. Petugas kami akan membalas Anda di chat ini pada jam layanan (" . $this->jam_layanan_text() . ").\n\n_Kalau ternyata Anda butuh data secara online, balas *1* untuk form Permintaan Data._";
+        $g    = $this->wa_known_name($sess->phone_norm) ?: 'Pemohon';
+        $body = "✅ *PERMINTAAN ANDA DITERIMA*\n"
+              . "Badan Pusat Statistik Provinsi Maluku Utara\n\n"
+              . "• *Nomor Tiket:* WA-{$idk}\n"
+              . "• *Nama:* {$g}\n"
+              . "• *Kategori:* Lainnya\n"
+              . "• *Tanggal:* " . date('d-m-Y') . "\n\n"
+              . "Petugas kami akan menindaklanjuti dan membalas Anda langsung di chat ini pada jam operasional layanan.\n\n"
+              . "🕒 *Jam Layanan*\n" . $this->jam_layanan_text() . "\n\n"
+              . "_Butuh layanan/data statistik secara online? Balas *0* untuk kembali ke menu, lalu pilih *1*._\n\n"
+              . "Terima kasih. 🙏";
         $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', $body);
-        $g = $this->wa_known_name($sess->phone_norm) ?: 'Pemohon';
         $this->wa_notify_group_enqueue("💬 *Lainnya — minta ditangani*\nNama: {$g}\nNomor: {$sess->phone_norm}\nTiket: WA-{$idk}\n" . $this->wa_public_base() . "/admin/layanan-online");
     }
 
