@@ -38,7 +38,49 @@ export interface QueueStats {
   gender_dist: QueueStatsGender[]
 }
 
+// ── CI3 numeric coercion at the boundary ────────────────────────────────────
+// CodeIgniter's mysqli driver returns raw `->result()`/`->row()` columns as
+// STRINGS ("4", "612.34"). The interfaces above declare them as `number`, so
+// every consumer that does `a + b`, `a > b`, or `===` on these would silently
+// break ('0'+'3'+'15' concatenates to '0315'; '9' > '100' is lexicographically
+// true). We coerce once here so the declared `number` types are honest and no
+// downstream card has to remember to wrap in Number(). See auto-memory
+// `ci3_numeric_strings_coercion`.
+const n = (v: unknown): number => (v == null ? 0 : Number(v))
+const nN = (v: unknown): number | null => (v == null ? null : Number(v))
+
+function normalizeQueueStats(d: QueueStats): QueueStats {
+  return {
+    ...d,
+    total_visits: n(d.total_visits),
+    distinct_visitors: n(d.distinct_visitors),
+    repeat_visitors: n(d.repeat_visitors),
+    avg_wait: d.avg_wait
+      ? {
+          avg_durasi: nN(d.avg_wait.avg_durasi),
+          min_durasi: nN(d.avg_wait.min_durasi),
+          max_durasi: nN(d.avg_wait.max_durasi),
+          total_selesai: nN(d.avg_wait.total_selesai),
+        }
+      : null,
+    hourly: (d.hourly ?? []).map((h) => ({ jam: n(h.jam), jumlah: n(h.jumlah) })),
+    daily: (d.daily ?? []).map((x) => ({ hari: x.hari, dow: n(x.dow), jumlah: n(x.jumlah) })),
+    monthly: (d.monthly ?? []).map((m) => ({ bulan: n(m.bulan), jumlah: n(m.jumlah), avg_durasi: nN(m.avg_durasi) })),
+    quarterly: (d.quarterly ?? []).map((q) => ({ triwulan: n(q.triwulan), jumlah: n(q.jumlah), selesai: n(q.selesai), avg_durasi: nN(q.avg_durasi) })),
+    services: (d.services ?? []).map((s) => ({ jenis_layanan: s.jenis_layanan, jumlah: n(s.jumlah) })),
+    statuses: (d.statuses ?? []).map((s) => ({ status: s.status, jumlah: n(s.jumlah) })),
+    sources: (d.sources ?? []).map((s) => ({ source: s.source, jumlah: n(s.jumlah) })),
+    sarana_dist: (d.sarana_dist ?? []).map((s) => ({ code: n(s.code), jumlah: n(s.jumlah) })),
+    top_instansi: (d.top_instansi ?? []).map((s) => ({ nama_instansi: s.nama_instansi, kategori_instansi: s.kategori_instansi, jumlah: n(s.jumlah) })),
+    kategori_instansi: (d.kategori_instansi ?? []).map((s) => ({ kategori_instansi: s.kategori_instansi, jumlah: n(s.jumlah) })),
+    gender_dist: (d.gender_dist ?? []).map((s) => ({ gender: s.gender, jumlah: n(s.jumlah) })),
+  }
+}
+
 export const queueStatsApi = {
   get: (params: { tahun?: string }) =>
-    apiClient.get<ApiResponse<QueueStats>>('/api/queue-stats', { params }),
+    apiClient.get<ApiResponse<QueueStats>>('/api/queue-stats', { params }).then((res) => {
+      if (res.data?.data) res.data.data = normalizeQueueStats(res.data.data)
+      return res
+    }),
 }

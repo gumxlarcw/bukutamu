@@ -5,7 +5,7 @@ import { Bell, AlertOctagon, AlertTriangle, Info } from 'lucide-react'
 import { notificationsApi, type AppNotification, type NotificationType } from '@/api/notifications'
 
 /**
- * Bell icon di TopNav. Polls /api/notifications setiap 30 detik.
+ * Bell icon di footer Sidebar admin. Polls /api/notifications setiap 30 detik.
  * Click bell → dropdown daftar notification. Click notification → navigate ke action_url.
  *
  * Design choices:
@@ -13,6 +13,10 @@ import { notificationsApi, type AppNotification, type NotificationType } from '@
  *   kalau perlu lebih responsif, atau dinaikkan ke 60s untuk hemat resource.
  * - Dropdown ditutup click-outside via document mousedown listener (Radix dropdown
  *   tidak dipakai supaya badge count + animation di trigger lebih leluasa).
+ * - Bell duduk di pojok KIRI-BAWAH sidebar, jadi panel dibuka ke ATAS + KANAN
+ *   (`bottom-full left-0`). Kalau pakai `right-0 top-full` (warisan layout TopNav lama)
+ *   panel tumbuh ke kiri-bawah & lolos dari viewport → user tak bisa klik isinya dan
+ *   click-outside langsung menutupnya.
  * - Tidak persist "read state" — semua notification ter-render sampai backend
  *   tidak return-nya lagi (akar masalahnya hilang). Konsisten dengan filosofi
  *   "notification = derived state" di backend.
@@ -72,7 +76,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-[360px] max-w-[calc(100vw-32px)] rounded-xl bg-white border border-[--admin-border-strong] shadow-xl overflow-hidden z-50">
+        <div className="absolute left-0 bottom-full mb-2 w-[360px] max-w-[calc(100vw-32px)] rounded-xl bg-white border border-[--admin-border-strong] shadow-xl overflow-hidden z-50">
           <div className="px-4 py-3 border-b border-[--admin-border] bg-[--admin-bg]">
             <p className="text-sm font-bold text-[--admin-text]">Notifikasi</p>
             <p className="text-[11px] text-[--admin-text-muted]">{count} item perlu perhatian</p>

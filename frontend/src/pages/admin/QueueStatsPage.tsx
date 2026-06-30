@@ -331,10 +331,10 @@ export default function QueueStatsPage() {
           {/* ── Insight strip ── */}
           {insights && (insights.peakHour || insights.peakDay || insights.peakMonth || insights.topService) && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              {insights.peakHour && <InsightChip icon={Sun} tone="orange" label="Jam Terpadat" value={`${String(insights.peakHour.jam).padStart(2, '0')}:00 — ${insights.peakHour.jumlah} kunjungan`} />}
-              {insights.peakDay && <InsightChip icon={CalendarDays} tone="blue" label="Hari Terpadat" value={`${HARI[insights.peakDay.dow] ?? insights.peakDay.hari} — ${insights.peakDay.jumlah}`} />}
-              {insights.peakMonth && <InsightChip icon={Sparkles} tone="purple" label="Bulan Terpadat" value={`${BULAN_LONG[insights.peakMonth.bulan]} — ${insights.peakMonth.jumlah}`} />}
-              {insights.topService && <InsightChip icon={Zap} tone="green" label="Layanan Terpopuler" value={`${(parseLayanan(insights.topService.jenis_layanan)[0] ?? insights.topService.jenis_layanan)} — ${insights.topService.jumlah}`} />}
+              {insights.peakHour && <InsightChip icon={Sun} tone="orange" label="Jam Terpadat" value={`${String(insights.peakHour.jam).padStart(2, '0')}:00 — ${insights.peakHour.jumlah.toLocaleString('id-ID')} kunjungan`} />}
+              {insights.peakDay && <InsightChip icon={CalendarDays} tone="blue" label="Hari Terpadat" value={`${HARI[insights.peakDay.dow] ?? insights.peakDay.hari} — ${insights.peakDay.jumlah.toLocaleString('id-ID')}`} />}
+              {insights.peakMonth && <InsightChip icon={Sparkles} tone="purple" label="Bulan Terpadat" value={`${BULAN_LONG[insights.peakMonth.bulan]} — ${insights.peakMonth.jumlah.toLocaleString('id-ID')}`} />}
+              {insights.topService && <InsightChip icon={Zap} tone="green" label="Layanan Terpopuler" value={`${(parseLayanan(insights.topService.jenis_layanan)[0] ?? insights.topService.jenis_layanan)} — ${insights.topService.jumlah.toLocaleString('id-ID')}`} />}
             </div>
           )}
 
@@ -405,6 +405,7 @@ export default function QueueStatsPage() {
                 {(data.statuses ?? []).sort((a, b) => b.jumlah - a.jumlah).map(s => {
                   const max = Math.max(...(data.statuses ?? []).map(x => x.jumlah), 1)
                   const tone = s.status === 'selesai' ? 'bg-emerald-500'
+                             : s.status === 'evaluasi_selesai' ? 'bg-teal-500'
                              : s.status === 'menunggu_evaluasi' ? 'bg-sky-500'
                              : s.status === 'proses' || s.status === 'diproses' ? 'bg-amber-500'
                              : s.status === 'antri' ? 'bg-orange-400'
@@ -523,7 +524,7 @@ export default function QueueStatsPage() {
                         <p className="text-sm font-medium truncate">{ins.nama_instansi}</p>
                         {ins.kategori_instansi && <p className="text-[11px] text-muted-foreground truncate">{ins.kategori_instansi}</p>}
                       </div>
-                      <span className="text-sm font-bold tabular-nums shrink-0">{ins.jumlah}</span>
+                      <span className="text-sm font-bold tabular-nums shrink-0">{ins.jumlah.toLocaleString('id-ID')}</span>
                     </div>
                   ))}
                 </div>
