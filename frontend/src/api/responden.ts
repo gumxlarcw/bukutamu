@@ -76,6 +76,16 @@ export interface RespondenVisitRow {
   hasil_konsultasi?: string | null
   pengaduan?: string | null
   tgldatang?: string | null
+  konsultasi?: Array<{
+    rincian_data: string | null
+    wilayah_data: string | null
+    tahun_awal: number | string | null
+    tahun_akhir: number | string | null
+    level_data: number | string | null
+    periode_data: number | string | null
+    status_data: number | string | null
+    kode_bidang_statistik: string | null
+  }>
   indikator: Record<string, number | string>
 }
 

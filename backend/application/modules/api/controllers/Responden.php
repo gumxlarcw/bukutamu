@@ -109,6 +109,19 @@ class Responden extends Api_base {
             $v->indikator = (object) (isset($by_visit[(int) $v->id_kunjungan]) ? $by_visit[(int) $v->id_kunjungan] : []);
         }
 
+        // Rincian data yang diminta (form proses) — bisa beberapa per kunjungan.
+        $konsul_by_visit = [];
+        if (!empty($ids)) {
+            $kp = $this->db->select('id_kunjungan, rincian_data, wilayah_data, tahun_awal, tahun_akhir, level_data, periode_data, status_data, kode_bidang_statistik')
+                ->where_in('id_kunjungan', $ids)->order_by('id', 'ASC')->get('konsultasi_pengunjung')->result();
+            foreach ($kp as $row) {
+                $konsul_by_visit[(int) $row->id_kunjungan][] = $row;
+            }
+        }
+        foreach ($visits as $v) {
+            $v->konsultasi = isset($konsul_by_visit[(int) $v->id_kunjungan]) ? $konsul_by_visit[(int) $v->id_kunjungan] : [];
+        }
+
         $this->json_response([
             'success' => true,
             'data'    => ['visits' => $visits, 'indikator_labels' => $this->indikator_list()],

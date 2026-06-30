@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { parseLayanan, parseSarana, saranaLabel } from '@/types/visit'
+import { parseLayanan, parseSarana, saranaLabel, LEVEL_DATA_OPTIONS, PERIODE_DATA_OPTIONS, STATUS_DATA_OPTIONS } from '@/types/visit'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -200,6 +200,7 @@ export default function RespondenTahunanPage() {
       const { visits, indikator_labels } = r.data.data
       const indIds = Object.keys(indikator_labels).map(Number).sort((a, b) => a - b)
       const rows = visits.map((v) => {
+        const ks = v.konsultasi ?? []
         const base: Record<string, unknown> = {
           id_kunjungan: v.id_kunjungan,
           id_user: v.id_user,
@@ -225,6 +226,13 @@ export default function RespondenTahunanPage() {
           layanan_lainnya: v.layanan_lainnya ?? '',
           sarana: parseSarana(v.sarana).map(saranaLabel).join('; '),
           sarana_lainnya: v.sarana_lainnya ?? '',
+          rincian_data: ks.map(k => k.rincian_data ?? '').join(' || '),
+          wilayah_data: ks.map(k => k.wilayah_data ?? '').join(' || '),
+          tahun_data: ks.map(k => k.tahun_awal ? (String(k.tahun_awal) === String(k.tahun_akhir) ? String(k.tahun_awal) : `${k.tahun_awal}-${k.tahun_akhir}`) : '').join(' || '),
+          level_data: ks.map(k => LEVEL_DATA_OPTIONS.find(o => o.value === Number(k.level_data))?.label ?? '').join(' || '),
+          periode_data: ks.map(k => PERIODE_DATA_OPTIONS.find(o => o.value === Number(k.periode_data))?.label ?? '').join(' || '),
+          status_data: ks.map(k => STATUS_DATA_OPTIONS.find(o => o.value === Number(k.status_data))?.label ?? '').join(' || '),
+          kode_bidang: ks.map(k => k.kode_bidang_statistik ?? '').join(' || '),
           hasil_konsultasi: v.hasil_konsultasi ?? '',
           durasi_detik: v.durasi_detik ?? '',
           rating: v.rating_pengunjung ?? '',
@@ -258,6 +266,13 @@ export default function RespondenTahunanPage() {
         { key: 'layanan_lainnya', label: 'Layanan Lainnya' },
         { key: 'sarana', label: 'Sarana' },
         { key: 'sarana_lainnya', label: 'Sarana Lainnya' },
+        { key: 'rincian_data', label: 'Rincian Data Diminta' },
+        { key: 'wilayah_data', label: 'Wilayah Data' },
+        { key: 'tahun_data', label: 'Tahun Data' },
+        { key: 'level_data', label: 'Level Data' },
+        { key: 'periode_data', label: 'Periode Data' },
+        { key: 'status_data', label: 'Status Data' },
+        { key: 'kode_bidang', label: 'Kode Bidang Statistik' },
         { key: 'hasil_konsultasi', label: 'Hasil Konsultasi' },
         { key: 'durasi_detik', label: 'Durasi (detik)' },
         { key: 'rating', label: 'Rating Keseluruhan' },
