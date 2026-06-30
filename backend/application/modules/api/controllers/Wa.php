@@ -761,12 +761,14 @@ class Wa extends Api_base {
             $guest = (count($matches) === 1) ? $matches[0] : null;
             $multi = count($matches) > 1;
             $this->json_response(['success' => true, 'data' => [
-                'session_id'  => $id,
-                'phone'       => $sess->phone_norm,
-                'state'       => $sess->state,
-                'category'    => $sess->category ?: 'data',
-                'guest'       => $guest,
-                'multi_match' => $multi,
+                'session_id'    => $id,
+                'phone'         => $sess->phone_norm,
+                'state'         => $sess->state,
+                'category'      => $sess->category ?: 'data',
+                'guest'         => $guest,
+                'multi_match'   => $multi,
+                'id_kunjungan'  => $sess->id_kunjungan ? (int) $sess->id_kunjungan : null,
+                'nomor_antrian' => $this->wa_visit_nomor($sess->id_kunjungan), // so reopen shows the queue number, not WA-{id}
             ], 'message' => 'OK']);
         }
 
@@ -775,7 +777,7 @@ class Wa extends Api_base {
 
             // Idempotent: already submitted → return existing ticket.
             if ($sess->state === 'submitted' && $sess->id_kunjungan) {
-                $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $sess->id_kunjungan, 'ticket' => 'WA-' . $sess->id_kunjungan], 'message' => 'Sudah dikirim']);
+                $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $sess->id_kunjungan, 'ticket' => 'WA-' . $sess->id_kunjungan, 'nomor_antrian' => $this->wa_visit_nomor($sess->id_kunjungan)], 'message' => 'Sudah dikirim']);
             }
 
             $input    = $this->get_json_input();
@@ -819,7 +821,7 @@ class Wa extends Api_base {
             $fresh = $this->db->get_where('wa_sessions', ['id' => $id])->row();
             if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan && $fresh->category === $category) {
                 $this->db->query('UNLOCK TABLES');
-                $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $fresh->id_kunjungan, 'ticket' => 'WA-' . $fresh->id_kunjungan], 'message' => 'Sudah dikirim']);
+                $this->json_response(['success' => true, 'data' => ['id_kunjungan' => (int) $fresh->id_kunjungan, 'ticket' => 'WA-' . $fresh->id_kunjungan, 'nomor_antrian' => $this->wa_visit_nomor($fresh->id_kunjungan)], 'message' => 'Sudah dikirim']);
             }
             $existing = $this->db->where('notel', $sess->phone_norm)->order_by('id_user', 'DESC')->limit(1)->get('tamdes_buku')->row();
             if ($existing) {
@@ -846,7 +848,7 @@ class Wa extends Api_base {
                 $cur = $this->db->select('created_by, status')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan])->row();
                 if (!$cur || $cur->created_by !== 'whatsapp' || in_array($cur->status, ['selesai', 'evaluasi_selesai'], true)) {
                     $this->db->query('UNLOCK TABLES');
-                    $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan], 'message' => 'Sudah diproses']);
+                    $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan, 'nomor_antrian' => $this->wa_visit_nomor($id_kunjungan)], 'message' => 'Sudah diproses']);
                 }
                 $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
                     'jenis_layanan' => json_encode($jenis_layanan), 'sarana' => json_encode($sarana),
@@ -936,7 +938,7 @@ class Wa extends Api_base {
                 $this->wa_notify_group_enqueue($g_body);
             }
 
-            $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan], 'message' => 'Permintaan terkirim']);
+            $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan, 'nomor_antrian' => $this->wa_visit_nomor($id_kunjungan)], 'message' => 'Permintaan terkirim']);
         }
 
         $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
@@ -1218,6 +1220,14 @@ class Wa extends Api_base {
     }
 
     // Pesan menu kategori (balasan angka) — dikirim ke pemohon sebelum form apa pun.
+    // nomor_antrian for a visit (null if none / not found) — surfaced in intake responses
+    // so the web success ticket shows the QUEUE NUMBER (e.g. "P002") for #2 offline, not WA-{id}.
+    private function wa_visit_nomor($idk) {
+        if (!$idk) return null;
+        $r = $this->db->select('nomor_antrian')->get_where('tamdes_kunjungan', ['id_kunjungan' => (int) $idk])->row();
+        return $r ? $r->nomor_antrian : null;
+    }
+
     private function jam_layanan_text() {
         return 'Senin–Kamis 08.00–15.30 WIT, Jumat 08.00–16.00 WIT';
     }

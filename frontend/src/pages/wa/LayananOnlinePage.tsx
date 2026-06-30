@@ -169,7 +169,10 @@ export default function LayananOnlinePage() {
   if (isLoading) return <LoadingSpinner className="min-h-screen" />
   if (isError || !prefill) return <p className="p-8 text-center">Tautan kedaluwarsa atau tidak valid. Silakan kirim pesan ulang ke WhatsApp layanan.</p>
   if (prefill.state === 'submitted' || ticket) {
-    return <SuccessTicket ticket={ticket ?? `WA-${prefill.session_id}`} offline={isOffline} nomorAntrian={nomorAntrian} />
+    return <SuccessTicket
+      ticket={ticket ?? (prefill.id_kunjungan ? `WA-${prefill.id_kunjungan}` : `WA-${prefill.session_id}`)}
+      offline={isOffline}
+      nomorAntrian={nomorAntrian ?? prefill.nomor_antrian ?? null} />
   }
 
   const namaOk = effGuest.nama.trim() !== ''

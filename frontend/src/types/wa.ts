@@ -36,6 +36,8 @@ export interface WaSessionPrefill {
   category?: WaCategory   // 'data' (full form) | 'offline' (Data Diri only) — backend defaults to 'data'
   guest: WaGuestMatch | null
   multi_match: boolean
+  id_kunjungan?: number | null    // present once submitted — for the WA-{id} ticket fallback
+  nomor_antrian?: string | null   // #2 offline queue number (e.g. "P002") — so reopen shows it, not WA-{id}
 }
 
 export interface WaIntakePayload extends Partial<GuestFormData> {

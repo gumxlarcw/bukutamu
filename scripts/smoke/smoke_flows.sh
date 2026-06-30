@@ -62,11 +62,12 @@ echo; echo "########## GROUP B: queue number daily reset ##########"
 PB=62888399014; NB=$(NORM $PB)
 RC=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE DATE(date_visit)='$TODAY' AND JSON_CONTAINS(jenis_layanan,'\"Rekomendasi Kegiatan Statistik\"')")
 off $PB; SB=$(SID $NB); TB=$(TOK $PB)
-req POST /api/wa/session/$SB "$TB" "{\"nama\":\"Uji B\",\"jenis_layanan\":[\"Rekomendasi Kegiatan Statistik\"],\"sarana\":[2],\"permintaan\":[]}" >/dev/null
+RB=$(req POST /api/wa/session/$SB "$TB" "{\"nama\":\"Uji B\",\"jenis_layanan\":[\"Rekomendasi Kegiatan Statistik\"],\"sarana\":[2],\"permintaan\":[]}")
 IDK_B=$(Q "SELECT id_kunjungan FROM wa_sessions WHERE phone_norm='$NB'")
 NOB=$(Q "SELECT nomor_antrian FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_B")
 okp "B1 Rekomendasi -> 'R' prefix" "R" "$NOB"
 ok  "B1 daily-reset sequence (today's R count+1)" "R$(printf '%03d' $((RC+1)))" "$NOB"
+okc "B1 submit RESPONSE carries nomor_antrian (web shows the queue number, not WA-id)" "\"nomor_antrian\":\"$NOB\"" "$(BB "$RB")"
 
 echo; echo "########## GROUP C: session submit validations ##########"
 PC=62888399015; NC=$(NORM $PC); dat $PC; SC=$(SID $NC); TC=$(TOK $PC)
