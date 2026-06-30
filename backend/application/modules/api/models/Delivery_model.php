@@ -34,6 +34,34 @@ class Delivery_model extends CI_Model
             ->order_by('id', 'ASC')->limit(1)->get()->row();
     }
 
+    // Raw notel strings of every active verifikator. The CALLER normalizes both sides
+    // (notel is stored as the admin typed it, e.g. 08…/+62…), so this returns the values
+    // verbatim — no SQL string-munging. Used by the WA reply fast-path to decide "is this
+    // sender a verifier?". Phase 1 is single-verifier; this still scans all of them.
+    public function verifier_notels(): array
+    {
+        $rows = $this->db->select('notel')->from('admin_users')
+            ->where('role', 'verifikator')->where('active', 1)
+            ->where('notel IS NOT NULL', null, false)->get()->result();
+        return array_map(function ($r) { return (string) $r->notel; }, $rows);
+    }
+
+    // Oldest pending verification first — the WA FIFO mapping (single-verifier Phase 1).
+    // Returns the row or null when nothing is waiting.
+    public function oldest_pending_for_verifier()
+    {
+        return $this->db->where('status', 'menunggu_verifikasi')
+            ->order_by('created_at', 'ASC')->limit(1)->get('data_deliveries')->row();
+    }
+
+    // A specific still-pending delivery by its short_code (e.g. 'V37'); null if it does not
+    // exist or is no longer 'menunggu_verifikasi' (already processed).
+    public function by_short_code(string $code)
+    {
+        return $this->db->where('short_code', $code)->where('status', 'menunggu_verifikasi')
+            ->limit(1)->get('data_deliveries')->row();
+    }
+
     // Oldest pending first — used by the verifier queue AND the WA FIFO mapping.
     public function list_filtered(array $f, int $page, int $limit): array
     {

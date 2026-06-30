@@ -20,6 +20,16 @@ class Wa extends Api_base {
         $phone_norm = $this->normalize_phone($phone_raw);
         $reply_to   = $wa_id !== '' ? $wa_id : $phone_raw; // never reconstruct — reply to what WA gave us
 
+        // ── Verifier fast-path: a verifikator replying 1/2/3 is NOT a customer. ──────────────
+        // Intercept BEFORE the intake state machine so a verifier never creates/advances a
+        // wa_session — their reply drives Deliveries verification, not the intake wizard.
+        // Non-verifier senders skip this entirely and fall through unchanged.
+        $this->load->model('delivery_model');
+        if ($this->_is_verifier_sender($phone_norm)) {
+            $this->_handle_verifier_reply($phone_norm, $reply_to, trim((string) ($input['text'] ?? '')));
+            $this->json_response(['success' => true, 'data' => ['verifier' => true], 'message' => 'OK']);
+        }
+
         // Active session for this phone? → continuation (bot stays silent; petugas handles
         // the chat manually). Exception: awaiting_category sessions are actively routed
         // by wa_handle_category_choice(). "Active" = visitor picking a category or link
@@ -75,6 +85,93 @@ class Wa extends Api_base {
         $this->wa_enqueue_user($phone_raw, $reply_to, 'menu', $this->wa_menu_text());
 
         $this->json_response(['success' => true, 'data' => ['session_id' => $sid, 'new' => true], 'message' => 'OK']);
+    }
+
+    /* ───────────────────────── verifier WA reply fast-path (data deliveries) ───────────────────────── */
+
+    // True when the inbound sender is an active verifikator. notel is stored as the admin
+    // typed it (08…/+62…), so normalize BOTH sides with the SAME helper ingest() used on the
+    // inbound phone before comparing — never a raw string compare. Caller loads delivery_model.
+    private function _is_verifier_sender($phone_norm) {
+        if ($phone_norm === '') return false;
+        foreach ($this->delivery_model->verifier_notels() as $notel) {
+            if ($this->normalize_phone($notel) === $phone_norm) return true;
+        }
+        return false;
+    }
+
+    // Parse a verifier reply and apply the decision through the SHARED Delivery_model::apply_decision
+    // (the exact transition the web verify() uses — never reimplemented here). Format:
+    //   [<short_code>] <1|2|3> [note]   e.g. "1", "2 kurang lengkap", "V37 3 sudah final".
+    // 1→setuju, 2→revisi, 3→setuju_catatan. No short code → FIFO oldest pending. Always replies
+    // to the verifier and RETURNS without touching the customer intake state machine.
+    private function _handle_verifier_reply($phone_norm, $reply_to, $text) {
+        $target = null;
+        $rest   = $text;
+        // Optional leading short code (e.g. "V37") → target that specific pending delivery.
+        if (preg_match('/^\s*(V\d+)\b\s*(.*)$/is', $text, $m)) {
+            $target = $this->delivery_model->by_short_code(strtoupper($m[1]));
+            $rest   = $m[2];
+        }
+        // Required leading decision digit 1|2|3; the remainder is the note.
+        if (!preg_match('/^\s*([123])\b\s*(.*)$/s', $rest, $m2)) {
+            $this->_verifier_say($phone_norm, $reply_to,
+                "Mohon balas dengan 1 (Setuju), 2 (Revisi), atau 3 (Setuju dengan catatan). Untuk meninjau berkas, buka panel verifikasi web.");
+            return;
+        }
+        $decision = ['1' => 'setuju', '2' => 'revisi', '3' => 'setuju_catatan'][$m2[1]];
+        $note     = trim($m2[2]);
+
+        // No short code given → FIFO map to the oldest pending verification.
+        if (!$target) $target = $this->delivery_model->oldest_pending_for_verifier();
+        if (!$target) {
+            $this->_verifier_say($phone_norm, $reply_to, "Tidak ada permohonan verifikasi yang menunggu.");
+            return;
+        }
+
+        // revisi / setuju_catatan MUST carry a note — never apply the decision without one.
+        if (($decision === 'revisi' || $decision === 'setuju_catatan') && $note === '') {
+            $this->_verifier_say($phone_norm, $reply_to,
+                "Untuk pilihan ini, mohon sertakan catatan. Contoh: \"2 tahun 2023 belum lengkap\".");
+            return;
+        }
+
+        $v   = $this->delivery_model->active_verifier();
+        $res = $this->delivery_model->apply_decision(
+            (int) $target->id, $decision, ($decision === 'setuju' ? null : $note), (int) $v->id
+        );
+
+        // Audit lives in the caller (the model is pure DB ops). Mirror the web verify(): only
+        // log applied decisions (ok=true covers 'terkirim' and the approved-but-unsent case).
+        if ($res['ok']) {
+            $this->audit('delivery_verify_wa_' . $decision, 'delivery', (int) $target->id, ['status' => $res['status']]);
+        }
+
+        $sc = $res['short_code'];
+        if ($res['ok'] && $res['status'] === 'terkirim') {
+            $reply = "✅ {$sc} disetujui dan dikirim ke pemohon.";
+        } elseif ($res['ok'] && $res['reason'] === 'send_failed') {
+            $reply = "✅ {$sc} disetujui, namun belum terkirim (alamat WhatsApp pemohon tidak ditemukan).";
+        } elseif ($res['ok'] && $res['status'] === 'revisi') {
+            $reply = "✏️ {$sc} dikembalikan ke operator untuk revisi.";
+        } elseif (!$res['ok'] && $res['reason'] === 'conflict') {
+            $reply = "⚠️ {$sc} sudah diproses sebelumnya.";
+        } else {
+            $reply = $res['message'];
+        }
+        $this->_verifier_say($phone_norm, $reply_to, $reply);
+    }
+
+    // Enqueue a bot reply to the verifier — the connector sends it next poll. Mirrors
+    // wa_enqueue_user but tagged msg_type='verif_request' (its own outbox category).
+    private function _verifier_say($phone_raw, $reply_to, $body) {
+        $this->db->insert('wa_outbox', [
+            'phone_raw'  => $phone_raw,
+            'wa_chat_id' => $reply_to,
+            'msg_type'   => 'verif_request',
+            'body'       => $body,
+            'status'     => 'pending',
+        ]);
     }
 
     // POST /api/wa/poll  → idempotent dispatch scan, then return pending outbox
