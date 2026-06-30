@@ -1249,13 +1249,18 @@ class Wa extends Api_base {
 
     private function wa_menu_text() {
         return "Selamat datang di Layanan Online BPS Maluku Utara 👋\n\n"
-             . "Silakan balas dengan *ANGKA* sesuai kebutuhan Anda:\n\n"
-             . "*1.* 📊 *Permintaan Data / Konsultasi Statistik*\n"
-             . "Untuk meminta data statistik atau berkonsultasi *secara online lewat chat ini* — _tanpa perlu datang_ ke kantor. Cocok bila Anda hanya butuh data/jawaban.\n\n"
-             . "*2.* 🏢 *Daftar Antrian Offline*\n"
-             . "Pilih ini jika Anda _akan datang langsung ke kantor BPS_. Anda akan mendapat *nomor antrian untuk hari ini*; tinggal datang ke bagian Resepsionis untuk dilayani.\n\n"
+             . "Kami melayani *4 layanan statistik*: Perpustakaan, Konsultasi Statistik, "
+             . "Rekomendasi Kegiatan Statistik, dan Penjualan Produk Statistik. Keempatnya bisa "
+             . "Anda akses dengan *2 cara* — silakan balas *ANGKA*:\n\n"
+             . "*1.* 📊 *Layanan Online (lewat chat ini)*\n"
+             . "Ajukan salah satu dari 4 layanan di atas *secara online*: isi formulir singkat lewat "
+             . "link (pilih layanan + tulis kebutuhan Anda), lalu petugas memproses & membalas di chat "
+             . "ini — *tanpa perlu datang* ke kantor.\n\n"
+             . "*2.* 🏢 *Daftar Antrian Offline (datang ke kantor)*\n"
+             . "Layanan yang *sama*, tetapi Anda *akan datang langsung ke kantor* BPS. Daftar di sini "
+             . "untuk mendapat *nomor antrian hari ini*, lalu cukup ke bagian *Resepsionis* untuk dilayani.\n\n"
              . "*3.* 💬 *Lainnya*\n"
-             . "Pertanyaan umum atau keperluan lain yang tidak termasuk pilihan 1 dan 2.\n\n"
+             . "Pertanyaan umum atau keperluan lain di luar 4 layanan di atas.\n\n"
              . "_Balas 1, 2, atau 3 untuk melanjutkan._";
     }
 
