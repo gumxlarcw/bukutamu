@@ -4,7 +4,7 @@ import type { DataDelivery, DataDeliveryDetail, VerifDecision } from '@/types/de
 
 export const deliveriesApi = {
   list: (params: { status?: string; id_kunjungan?: number; page?: number; limit?: number }) =>
-    apiClient.get<PaginatedResponse<DataDelivery>>('/api/deliveries', { params }),
+    apiClient.get<PaginatedResponse<DataDeliveryDetail>>('/api/deliveries', { params }),
   get: (id: number) =>
     apiClient.get<ApiResponse<DataDeliveryDetail>>(`/api/deliveries/${id}`),
   fileUrl: (id: number) => `/api/deliveries/${id}/file`,

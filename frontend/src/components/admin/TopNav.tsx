@@ -21,6 +21,7 @@ import {
   Info,
   MessageSquare,
   LogOut,
+  BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -73,6 +74,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/admin/users', label: 'Users', icon: UserCog, minRole: 'superadmin' },
   { to: '/admin/audit', label: 'Audit', icon: Shield, minRole: 'admin' },
   { to: '/admin/tentang', label: 'Tentang', icon: Info, minRole: 'operator' },
+  { to: '/admin/verifikasi', label: 'Verifikasi', icon: BadgeCheck, minRole: 'operator', allowedRoles: ['verifikator', 'admin', 'superadmin'] },
 ]
 
 export function TopNav() {
@@ -85,6 +87,8 @@ export function TopNav() {
   usePushNotifications(!!user)
 
   const visibleItems = NAV_ITEMS.filter(item => {
+    // verifikator sees ONLY items that explicitly list 'verifikator' in allowedRoles
+    if (userRole === 'verifikator') return item.allowedRoles?.includes('verifikator') ?? false
     if (item.allowedRoles && !item.allowedRoles.includes(userRole)) return false
     return userLevel >= ROLE_LEVEL[item.minRole]
   })
