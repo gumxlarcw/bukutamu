@@ -54,19 +54,6 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
-/** Mini eligibility badge for table rows and detail header */
-function EligibilityBadge({ eligible }: { eligible: boolean }) {
-  return eligible ? (
-    <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-semibold whitespace-nowrap">
-      Eligible SKD
-    </span>
-  ) : (
-    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[10px] font-semibold whitespace-nowrap">
-      Non-Eligible
-    </span>
-  )
-}
-
 /**
  * One visit row in the history list. Visits that were actually evaluated
  * (rating_pengunjung set) get an explicit "Lihat Evaluasi" button; clicking it
@@ -243,8 +230,8 @@ export default function RespondenTahunanPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="admin-h1">Responden Tahunan</h1>
-          <p className="admin-subtitle">Akumulasi layanan &amp; sarana per pengunjung — eligible maupun non-eligible</p>
+          <h1 className="admin-h1">Responden SKD</h1>
+          <p className="admin-subtitle">Responden yang telah mengisi evaluasi SKD/SKM (indikator kepuasan)</p>
         </div>
         <Button variant="outline" onClick={handleExport}>
           <Download className="w-4 h-4 mr-2" />
@@ -267,13 +254,6 @@ export default function RespondenTahunanPage() {
             <div>
               <p className="text-lg font-bold">{summary.skd_eligible}</p>
               <p className="text-xs text-muted-foreground">Eligible SKD/SKM{triwulan ? ` ${TW_LABELS[triwulan]}` : ''}</p>
-            </div>
-          </div>
-          <div className="admin-card flex items-center gap-3 px-4 py-3">
-            <Users className="w-5 h-5 text-gray-400" />
-            <div>
-              <p className="text-lg font-bold">{summary.total_users - summary.skd_eligible}</p>
-              <p className="text-xs text-muted-foreground">Non-Eligible{triwulan ? ` ${TW_LABELS[triwulan]}` : ''}</p>
             </div>
           </div>
         </div>
@@ -338,7 +318,6 @@ export default function RespondenTahunanPage() {
                 <th className="px-4 py-2 text-left w-10">No</th>
                 <th className="px-4 py-2 text-left">Nama</th>
                 <th className="px-4 py-2 text-left">Instansi</th>
-                <th className="px-4 py-2 text-left">Status</th>
                 <th className="px-4 py-2 text-left">Layanan</th>
                 <th className="px-4 py-2 text-left">Sarana</th>
                 <th className="px-4 py-2 text-center">Kunjungan</th>
@@ -352,9 +331,6 @@ export default function RespondenTahunanPage() {
                   <td className="px-4 py-2.5 text-muted-foreground">{(page - 1) * limit + idx + 1}</td>
                   <td className="px-4 py-2.5 font-medium">{r.nama}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{r.nama_instansi}</td>
-                  <td className="px-4 py-2.5">
-                    <EligibilityBadge eligible={isSkdEligible(r.jenis_layanan)} />
-                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {parseLayanan(r.jenis_layanan).map((l, i) => (
@@ -427,9 +403,6 @@ export default function RespondenTahunanPage() {
                 <div>
                   <p className="text-lg font-bold">{viewRow.nama}</p>
                   <p className="text-sm text-muted-foreground">{viewRow.nama_instansi}</p>
-                  <div className="mt-1">
-                    <EligibilityBadge eligible={isSkdEligible(viewRow.jenis_layanan)} />
-                  </div>
                 </div>
               </div>
 
