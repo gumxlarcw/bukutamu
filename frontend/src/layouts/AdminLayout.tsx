@@ -64,8 +64,8 @@ export function AdminLayout() {
         }
         .admin-topnav-inner {
           width: 100%;
-          padding: 0 32px;
-          height: 56px;
+          padding: 8px 32px;
+          min-height: 56px;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -93,18 +93,10 @@ export function AdminLayout() {
           background: var(--admin-primary-light) !important;
           font-weight: 600;
         }
-        /* Nav scrolls horizontally when items don't fit (narrow/shrunk window);
-           hide the scrollbar so it stays clean. */
-        .admin-nav-scroll {
-          scrollbar-width: none;
-        }
-        .admin-nav-scroll::-webkit-scrollbar {
-          display: none;
-        }
-        /* Tighter gutters on small screens so the nav has room before it scrolls. */
+        /* Tighter gutters on small screens; the nav wraps so all menu items stay visible. */
         @media (max-width: 640px) {
           .admin-topnav-inner {
-            padding: 0 12px;
+            padding: 8px 12px;
             gap: 8px;
           }
           .admin-content {
