@@ -1370,7 +1370,7 @@ class Wa extends Api_base {
         if (!empty($sess->id_kunjungan)) {
             $v = $this->db->select('created_by,status')->get_where('tamdes_kunjungan', ['id_kunjungan' => (int) $sess->id_kunjungan])->row();
             if ($v && ($v->created_by === 'wa_kiosk' || in_array($v->status, ['selesai', 'evaluasi_selesai'], true))) {
-                $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', "Mohon maaf, kunjungan Anda sudah diproses langsung sehingga tidak bisa dialihkan ke layanan online. Silakan mulai permintaan baru dengan membalas *menu*.");
+                $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation', "Mohon maaf 🙏 kunjungan Anda sudah diproses langsung sehingga tidak dapat dialihkan ke *Layanan Online*.\n\nUntuk mengajukan permintaan baru, balas *0* untuk membuka menu layanan.");
                 return;
             }
         }
@@ -1378,7 +1378,17 @@ class Wa extends Api_base {
         $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'awaiting_form', 'category' => 'data', 'link_sent_at' => date('Y-m-d H:i:s')]);
         $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
         $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
-        $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', "Baik 🙏 beralih ke *Permintaan Data*. Mohon lengkapi formulir berikut (berlaku 48 jam):\n" . $link);
+        $body = "Baik 🙏 beralih ke *Layanan Online* (diproses langsung lewat chat ini).\n\n"
+              . "Buka tautan di bawah, lalu:\n"
+              . "• isi *data diri* Anda\n"
+              . "• *pilih layanan* yang dibutuhkan (Perpustakaan / Konsultasi Statistik / Rekomendasi Kegiatan Statistik / Penjualan Produk Statistik)\n"
+              . "• *pilih sarana* yang Anda gunakan\n"
+              . "• *tuliskan kebutuhan/permintaan* Anda\n\n"
+              . "Permintaan Anda akan kami proses pada jam layanan dan kami balas langsung di chat ini — *tanpa perlu datang* ke kantor.\n"
+              . "Jam layanan: " . $this->jam_layanan_text() . ".\n\n"
+              . "⏱️ Tautan berlaku 48 jam:\n" . $link . "\n\n"
+              . "_Salah pilih? Balas *0* untuk kembali ke menu._";
+        $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', $body);
     }
 
     // Notif ke GRUP WhatsApp petugas. Group id (@g.us) dibaca dari push.php (wa_notify_group);
@@ -1402,8 +1412,10 @@ class Wa extends Api_base {
              WHERE k.id_kunjungan = ?", [$idk]
         )->row();
         if (!$info) return;
-        $body = "Terima kasih telah menggunakan layanan data BPS Provinsi Maluku Utara. "
-              . "Permintaan Anda telah selesai kami proses. "
+        $body = "✅ *PERMINTAAN ANDA SELESAI*\n"
+              . "Badan Pusat Statistik Provinsi Maluku Utara\n\n"
+              . "Permintaan Anda telah selesai kami proses. Terima kasih telah menggunakan layanan BPS Provinsi Maluku Utara. 🙏\n\n"
+              . "_Jika sewaktu-waktu membutuhkan layanan lagi, cukup balas pesan ini untuk memulai permintaan baru._\n\n"
               . "Salam hangat, semoga hari Anda menyenangkan 🙂";
         $this->db->insert('wa_outbox', [
             'phone_raw' => $info->notel, 'wa_chat_id' => ($info->wa_chat_id ?: $info->notel),
