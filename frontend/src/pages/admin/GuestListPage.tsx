@@ -101,7 +101,14 @@ export default function GuestListPage() {
       setDeleteId(null)
       queryClient.invalidateQueries({ queryKey: ['guests'] })
     },
-    onError: () => toast.error('Gagal menghapus tamu'),
+    // Surface the backend message (e.g. 409 "tamu masih punya N kunjungan, hapus
+    // kunjungannya dulu") so the operator knows the actionable reason, not just "gagal".
+    onError: (err: unknown) => {
+      const msg = (err && typeof err === 'object' && 'response' in err)
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : null
+      toast.error(msg || 'Gagal menghapus tamu')
+    },
   })
 
   const { data: visitHistory } = useQuery({

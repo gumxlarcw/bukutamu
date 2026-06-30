@@ -8,7 +8,7 @@
 // terbaru pada full-reload berikutnya. Lupa bump = user lihat versi lama meski
 // origin sudah update (bug 2026-06-02: form konsultasi tampak kosong saat dibuka
 // ulang karena SW menyajikan ConsultationFormPage chunk lama).
-const CACHE_NAME = 'admin-bukutamu-8200-v45';
+const CACHE_NAME = 'admin-bukutamu-8200-v46';
 const SHELL_PATHS = ['/admin', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -40,17 +40,24 @@ self.addEventListener('fetch', (event) => {
   // API calls: network-only (auth & realtime data jangan di-cache).
   if (url.pathname.startsWith('/api/')) return;
 
-  // Navigation: network-first, fallback ke cache /admin saat offline.
+  // Navigation: network-first, fallback ke cache /admin saat offline. Selalu kembalikan
+  // sebuah Response (jangan pernah undefined) supaya tidak muncul "network error page".
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() =>
-        caches.match(event.request).then((c) => c || caches.match('/admin'))
+        caches.match(event.request)
+          .then((c) => c || caches.match('/admin'))
+          .then((c) => c || new Response(
+            '<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui,sans-serif;text-align:center;padding:3rem;color:#444">Tidak ada koneksi ke server. Periksa jaringan, lalu muat ulang halaman.</body></html>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          ))
       )
     );
     return;
   }
 
-  // Static assets: cache-first.
+  // Static assets: cache-first. Catch network failures so a transient blip never becomes
+  // an uncaught rejection / broken response — fall back to cache if we have it.
   event.respondWith(
     caches.match(event.request).then(
       (cached) =>
@@ -58,10 +65,10 @@ self.addEventListener('fetch', (event) => {
         fetch(event.request).then((response) => {
           if (response.ok && response.type === 'basic') {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
           }
           return response;
-        })
+        }).catch(() => caches.match(event.request))
     )
   );
 });
