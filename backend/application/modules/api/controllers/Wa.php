@@ -855,7 +855,7 @@ class Wa extends Api_base {
             }
 
             if (!empty($sess->id_kunjungan)) {
-                // Konversi visit lama (#2/#3) → data: re-label + lanjut isi rows di bawah (tidak duplikat).
+                // Konversi visit lama (#2/#3) → kategori baru: re-label + lanjut isi rows di bawah (tidak duplikat).
                 $id_kunjungan = (int) $sess->id_kunjungan;
                 // Re-check DI DALAM lock (TOCTOU): kalau visit keburu di-check-in kiosk (created_by='wa_kiosk')
                 // atau sudah selesai antara "balas 1" dan submit, JANGAN timpa antrian fisiknya — kembalikan
@@ -865,9 +865,17 @@ class Wa extends Api_base {
                     $this->db->query('UNLOCK TABLES');
                     $this->json_response(['success' => true, 'data' => ['id_kunjungan' => $id_kunjungan, 'ticket' => 'WA-' . $id_kunjungan, 'nomor_antrian' => $this->wa_visit_nomor($id_kunjungan)], 'message' => 'Sudah diproses']);
                 }
+                // Konversi bisa MENGUBAH kategori (mis. #3 lainnya → menu → #2 offline). Set ulang nomor
+                // antrian sesuai kategori TUJUAN — offline butuh nomor, data/lainnya null. Tanpa ini, visit
+                // hasil konversi-ke-offline tetap NULL → tiket jatuh ke WA-{id}.
+                // PENTING: hitung nomor DULU, di LUAR rantai where()->update(). generate_queue_number()
+                // memanggil count_all_results() yang me-RESET query builder; kalau dipanggil di dalam array
+                // update, where('id_kunjungan') ikut terhapus → UPDATE SEMUA baris (insiden 2026-06-30).
+                $conv_no = ($category === 'offline') ? $this->generate_queue_number($jenis_layanan[0] ?? '') : null;
                 $this->db->where('id_kunjungan', $id_kunjungan)->update('tamdes_kunjungan', [
                     'jenis_layanan' => json_encode($jenis_layanan), 'sarana' => json_encode($sarana),
                     'status' => 'antri', 'created_by' => 'whatsapp', 'date_visit' => date('Y-m-d H:i:s'),
+                    'nomor_antrian' => $conv_no,
                 ]);
             } else {
                 $this->db->insert('tamdes_kunjungan', [

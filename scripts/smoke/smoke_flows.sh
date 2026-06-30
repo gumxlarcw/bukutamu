@@ -72,6 +72,18 @@ ok  "A7 #1 records picked jenis (Rekomendasi)" '["Rekomendasi Kegiatan Statistik
 ok  "A7 #1 sarana ONLINE only (datang-langsung '1' dropped, [16] kept)" "[16]" "$(Q "SELECT sarana FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A7")"
 ok  "A7 #1 stays online: no queue number + created_by whatsapp" "|whatsapp" "$(Q "SELECT CONCAT(IFNULL(nomor_antrian,''),'|',created_by) FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A7")"
 
+echo; echo "########## GROUP A8: #3 lainnya -> menu(0) -> #2 offline conversion keeps a REAL queue number ##########"
+PA8=62888399027; NA8=$(NORM $PA8)
+ING $PA8 halo; ING $PA8 3       # #3 lainnya -> visit created (null queue)
+ING $PA8 0                      # back to menu (session keeps id_kunjungan)
+ING $PA8 2                      # #2 offline
+SA8=$(SID $NA8); TA8=$(TOK $PA8)
+req POST /api/wa/session/$SA8 "$TA8" "{\"nama\":\"Uji Konversi\",\"jenis_layanan\":[\"Perpustakaan\"],\"sarana\":[1]}" >/dev/null
+IDK_A8=$(Q "SELECT id_kunjungan FROM wa_sessions WHERE phone_norm='$NA8'")
+ok  "A8 converted visit -> offline Perpustakaan/antri" '["Perpustakaan"]|antri' "$(Q "SELECT CONCAT(jenis_layanan,'|',status) FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A8")"
+okp "A8 conversion got a real 'P' queue number (not null/WA-id)" "P" "$(Q "SELECT IFNULL(nomor_antrian,'') FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A8")"
+okc "A8 offline confirmation shows Nomor Antrian" "Nomor Antrian:" "$(LASTOUT $PA8)"
+
 echo; echo "########## GROUP B: queue number daily reset ##########"
 PB=62888399014; NB=$(NORM $PB)
 RC=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE DATE(date_visit)='$TODAY' AND JSON_CONTAINS(jenis_layanan,'\"Rekomendasi Kegiatan Statistik\"')")
