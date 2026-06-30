@@ -88,6 +88,7 @@ $route['api/kiosk/wa-promote']               = 'api/kiosk/wa_promote';   // POST
 $route['api/deliveries']                 = 'api/deliveries/index';
 $route['api/deliveries/(:num)/file']     = 'api/deliveries/file/$1';
 $route['api/deliveries/(:num)/verify']   = 'api/deliveries/verify/$1';
+$route['api/deliveries/(:num)/resubmit'] = 'api/deliveries/resubmit/$1';
 $route['api/deliveries/(:num)']          = 'api/deliveries/detail/$1';
 
 // WhatsApp online data-request channel (api/wa/*)

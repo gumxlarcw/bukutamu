@@ -17,7 +17,7 @@ export const deliveriesApi = {
   verify: (id: number, decision: VerifDecision, note?: string) =>
     apiClient.put<ApiResponse<DataDelivery>>(`/api/deliveries/${id}/verify`, { decision, note }),
   resubmit: (id: number, fd: FormData) =>
-    apiClient.put<ApiResponse<DataDelivery>>(`/api/deliveries/${id}`, fd),
+    apiClient.post<ApiResponse<DataDelivery>>(`/api/deliveries/${id}/resubmit`, fd),
   cancel: (id: number) =>
     apiClient.delete<ApiResponse<null>>(`/api/deliveries/${id}`),
 }
