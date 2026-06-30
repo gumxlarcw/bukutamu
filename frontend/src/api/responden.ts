@@ -85,6 +85,8 @@ export interface RespondenVisitRow {
     periode_data: number | string | null
     status_data: number | string | null
     kode_bidang_statistik: string | null
+    digunakan_nasional: number | string | null
+    kualitas: number | string | null
   }>
   indikator: Record<string, number | string>
 }

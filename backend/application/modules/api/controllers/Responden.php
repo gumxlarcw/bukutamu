@@ -112,7 +112,7 @@ class Responden extends Api_base {
         // Rincian data yang diminta (form proses) — bisa beberapa per kunjungan.
         $konsul_by_visit = [];
         if (!empty($ids)) {
-            $kp = $this->db->select('id_kunjungan, rincian_data, wilayah_data, tahun_awal, tahun_akhir, level_data, periode_data, status_data, kode_bidang_statistik')
+            $kp = $this->db->select('id_kunjungan, rincian_data, wilayah_data, tahun_awal, tahun_akhir, level_data, periode_data, status_data, kode_bidang_statistik, digunakan_nasional, kualitas')
                 ->where_in('id_kunjungan', $ids)->order_by('id', 'ASC')->get('konsultasi_pengunjung')->result();
             foreach ($kp as $row) {
                 $konsul_by_visit[(int) $row->id_kunjungan][] = $row;
