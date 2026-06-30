@@ -134,7 +134,7 @@ class Notifications extends Api_base {
             $cnt = (int) $this->db->where('status', 'menunggu_verifikasi')->count_all_results('data_deliveries');
             if ($cnt > 0) {
                 $out[] = [
-                    'id'         => 'verif_pending',
+                    'id'         => 'verif-pending',
                     'type'       => 'info',
                     'title'      => 'Verifikasi data menunggu',
                     'message'    => "$cnt permintaan menunggu verifikasi",
@@ -150,7 +150,7 @@ class Notifications extends Api_base {
             $rev = (int) $this->db->where('status', 'revisi')->count_all_results('data_deliveries');
             if ($rev > 0) {
                 $out[] = [
-                    'id'         => 'delivery_revisi',
+                    'id'         => 'delivery-revisi',
                     'type'       => 'warning',
                     'title'      => 'Data perlu revisi',
                     'message'    => "$rev pengiriman dikembalikan verifikator",
