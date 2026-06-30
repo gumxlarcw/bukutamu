@@ -97,6 +97,29 @@ echo "===== C8: offline submit persists sarana_lainnya (parity fix) ====="
 IDK8=$(mk_offline $P8 $N8 "Konsultasi Statistik" 32 ",\"sarana_lainnya\":\"Zoom Meeting\"")
 ok "C8 sarana_lainnya stored" "Zoom Meeting" "$(Q "SELECT IFNULL(sarana_lainnya,'') FROM tamdes_kunjungan WHERE id_kunjungan=$IDK8")"
 
+echo "===== C9: biometric VERIFY (already-enrolled guest) — MATCH -> promote OK, template kept ====="
+PV=62888399041; NV=0888399041
+UV=$(Q "SELECT IFNULL(MAX(id_user),8200000)+1 FROM tamdes_buku")
+Q "INSERT INTO tamdes_buku (id_user,nama,notel,registered_via,tgldatang,face_descriptor,biometric_consent) VALUES ($UV,'Uji Verify','$NV','kiosk',CURDATE(),'[0.10,0.20,0.30]',1)"
+Q "INSERT INTO tamdes_kunjungan (id_user,jenis_layanan,sarana,date_visit,status,nomor_antrian,created_by) VALUES ($UV,JSON_ARRAY('Konsultasi Statistik'),JSON_ARRAY(2),NOW(),'antri','K700','whatsapp')"
+IDV=$(Q "SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user=$UV ORDER BY id_kunjungan DESC LIMIT 1")
+KTV=$(echo "$(LOOKUP $PV)" | grep -oP '"kiosk_token":"\K[^"]+')
+PRV=$(PROMOTE "$KTV" "{\"id_kunjungan\":$IDV,\"face_descriptor\":[0.10,0.20,0.30],\"biometric_consent\":1}")
+okc "C9 verify MATCH -> promote success" '"success":true' "$PRV"
+ok  "C9 template NOT overwritten (kept original)" "[0.10,0.20,0.30]" "$(Q "SELECT face_descriptor FROM tamdes_buku WHERE id_user=$UV")"
+ok  "C9 promoted to wa_kiosk" "wa_kiosk" "$(Q "SELECT created_by FROM tamdes_kunjungan WHERE id_kunjungan=$IDV")"
+
+echo "===== C10: biometric VERIFY — NO MATCH -> reject, NOT promoted (anti-impersonation) ====="
+PW=62888399042; NW=0888399042
+UW=$(Q "SELECT IFNULL(MAX(id_user),8200000)+1 FROM tamdes_buku")
+Q "INSERT INTO tamdes_buku (id_user,nama,notel,registered_via,tgldatang,face_descriptor,biometric_consent) VALUES ($UW,'Uji NoMatch','$NW','kiosk',CURDATE(),'[0.10,0.20,0.30]',1)"
+Q "INSERT INTO tamdes_kunjungan (id_user,jenis_layanan,sarana,date_visit,status,nomor_antrian,created_by) VALUES ($UW,JSON_ARRAY('Konsultasi Statistik'),JSON_ARRAY(2),NOW(),'antri','K701','whatsapp')"
+IDW=$(Q "SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user=$UW ORDER BY id_kunjungan DESC LIMIT 1")
+KTW=$(echo "$(LOOKUP $PW)" | grep -oP '"kiosk_token":"\K[^"]+')
+PRW=$(PROMOTE "$KTW" "{\"id_kunjungan\":$IDW,\"face_descriptor\":[0.90,0.90,0.90],\"biometric_consent\":1}")
+okc "C10 verify NO-MATCH -> rejected (tidak cocok)" "tidak cocok" "$PRW"
+ok  "C10 visit NOT promoted (still whatsapp)" "whatsapp" "$(Q "SELECT created_by FROM tamdes_kunjungan WHERE id_kunjungan=$IDW")"
+
 echo "===== CLEANUP ====="
 TIDS=$(Q "SELECT id_user FROM tamdes_buku WHERE notel LIKE '0888399%'" | tr '\n' ',' | sed 's/,$//')
 if [ -n "$TIDS" ]; then

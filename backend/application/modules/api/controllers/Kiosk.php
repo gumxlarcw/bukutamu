@@ -581,19 +581,42 @@ class Kiosk extends Api_base {
         }
         $id_user = (int) $visit->id_user;
 
-        // 1) Daftarkan wajah + consent ke tamu (tamu WA sebelumnya face_descriptor NULL).
-        $foto = null;
-        if (!empty($input['foto'])) {
-            $b64  = preg_replace('/^data:image\/\w+;base64,/', '', $input['foto']);
-            $foto = base64_decode($b64);
+        // 1) Biometrik (standar): VERIFIKASI 1:1 kalau tamu sudah punya template wajah, ENROLL
+        //    kalau belum. Nomor HP = klaim identitas; pindai wajah memastikan orangnya benar.
+        //    Euclidean distance + threshold 0.55, identik dengan kiosk (frontend/src/lib/
+        //    face-detection.ts). Pada verifikasi, template & consent lama TIDAK ditimpa.
+        $scan   = $input['face_descriptor'];
+        $g      = $this->db->select('face_descriptor')->where('id_user', $id_user)->get('tamdes_buku')->row();
+        $stored = $g ? json_decode((string) $g->face_descriptor, true) : null;
+
+        if (is_array($stored) && count($stored) > 0) {
+            // Sudah ada template → VERIFIKASI. Panjang deskriptor harus sama untuk dibandingkan.
+            if (count($stored) !== count($scan)) {
+                $this->db->query('UNLOCK TABLES');
+                $this->json_response(['success' => false, 'message' => 'Pemindaian wajah tidak valid. Coba lagi atau hubungi petugas.'], 422);
+            }
+            $sum = 0.0;
+            foreach ($scan as $i => $v) { $diff = (float) $v - (float) $stored[$i]; $sum += $diff * $diff; }
+            if (sqrt($sum) > 0.55) { // FACE_MATCH_THRESHOLD — sama dengan kiosk (lib/face-detection.ts)
+                $this->db->query('UNLOCK TABLES');
+                $this->json_response(['success' => false, 'message' => 'Wajah tidak cocok dengan data terdaftar atas nomor ini. Silakan hubungi petugas Resepsionis.'], 409);
+            }
+            // cocok → lanjut promosi; template & consent lama dipertahankan (tidak ditimpa).
+        } else {
+            // Belum ada template (pendaftar WA-online murni) → ENROLL: simpan wajah + consent.
+            $foto = null;
+            if (!empty($input['foto'])) {
+                $b64  = preg_replace('/^data:image\/\w+;base64,/', '', $input['foto']);
+                $foto = base64_decode($b64);
+            }
+            $guest_update = [
+                'face_descriptor'   => json_encode($scan),
+                'biometric_consent' => !empty($input['biometric_consent']) ? 1 : 0,
+                'consent_timestamp' => !empty($input['consent_timestamp']) ? date('Y-m-d H:i:s', strtotime($input['consent_timestamp'])) : date('Y-m-d H:i:s'),
+            ];
+            if ($foto !== null) $guest_update['foto'] = $foto;
+            $this->db->where('id_user', $id_user)->update('tamdes_buku', $guest_update);
         }
-        $guest_update = [
-            'face_descriptor'   => json_encode($input['face_descriptor']),
-            'biometric_consent' => !empty($input['biometric_consent']) ? 1 : 0,
-            'consent_timestamp' => !empty($input['consent_timestamp']) ? date('Y-m-d H:i:s', strtotime($input['consent_timestamp'])) : date('Y-m-d H:i:s'),
-        ];
-        if ($foto !== null) $guest_update['foto'] = $foto;
-        $this->db->where('id_user', $id_user)->update('tamdes_buku', $guest_update);
 
         // 2) Promosikan kunjungan: server memutuskan layanan berdasarkan data WA, bukan input kiosk.
         $today  = date('Y-m-d');
