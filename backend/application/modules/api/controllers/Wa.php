@@ -106,12 +106,16 @@ class Wa extends Api_base {
     // 1→setuju, 2→revisi, 3→setuju_catatan. No short code → FIFO oldest pending. Always replies
     // to the verifier and RETURNS without touching the customer intake state machine.
     private function _handle_verifier_reply($phone_norm, $reply_to, $text) {
-        $target = null;
-        $rest   = $text;
+        $target         = null;
+        $rest           = $text;
+        $has_short_code = false;
+        $code_typed     = '';
         // Optional leading short code (e.g. "V37") → target that specific pending delivery.
         if (preg_match('/^\s*(V\d+)\b\s*(.*)$/is', $text, $m)) {
-            $target = $this->delivery_model->by_short_code(strtoupper($m[1]));
-            $rest   = $m[2];
+            $has_short_code = true;
+            $code_typed     = strtoupper($m[1]);
+            $target         = $this->delivery_model->by_short_code($code_typed);
+            $rest           = $m[2];
         }
         // Required leading decision digit 1|2|3; the remainder is the note.
         if (!preg_match('/^\s*([123])\b\s*(.*)$/s', $rest, $m2)) {
@@ -122,6 +126,13 @@ class Wa extends Api_base {
         $decision = ['1' => 'setuju', '2' => 'revisi', '3' => 'setuju_catatan'][$m2[1]];
         $note     = trim($m2[2]);
 
+        // Short code was explicitly typed but didn't match any pending delivery → bail immediately.
+        // A typo must NOT release someone else's data via FIFO fallback.
+        if ($has_short_code && !$target) {
+            $this->_verifier_say($phone_norm, $reply_to,
+                "⚠️ Kode {$code_typed} tidak ditemukan atau sudah diproses. Mohon periksa kembali.");
+            return;
+        }
         // No short code given → FIFO map to the oldest pending verification.
         if (!$target) $target = $this->delivery_model->oldest_pending_for_verifier();
         if (!$target) {
@@ -144,7 +155,7 @@ class Wa extends Api_base {
         // Audit lives in the caller (the model is pure DB ops). Mirror the web verify(): only
         // log applied decisions (ok=true covers 'terkirim' and the approved-but-unsent case).
         if ($res['ok']) {
-            $this->audit('delivery_verify_wa_' . $decision, 'delivery', (int) $target->id, ['status' => $res['status']]);
+            $this->audit('delivery_verify_wa_' . $decision, 'delivery', (int) $target->id, ['status' => $res['status'], 'verifier_id' => (int) $v->id]);
         }
 
         $sc = $res['short_code'];
