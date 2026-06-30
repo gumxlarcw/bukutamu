@@ -933,11 +933,17 @@ class Wa extends Api_base {
             if ($category === 'offline') {
                 $no  = $this->db->select('nomor_antrian')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan])->row()->nomor_antrian;
                 $svc = $jenis_layanan[0] ?? '';
-                $body = "✅ *Pendaftaran antrian diterima.*\n"
-                      . ($no ? "Nomor antrian: *{$no}* (berlaku hari ini)\n" : '')
-                      . "Layanan: {$svc}\n"
-                      . "Silakan datang ke Kantor BPS Provinsi Maluku Utara — bagian *Resepsionis* untuk mencetak tiket Anda.\n"
-                      . "Jam layanan: " . $this->jam_layanan_text() . ".";
+                $body = "✅ *PENDAFTARAN ANTRIAN BERHASIL*\n"
+                      . "Badan Pusat Statistik Provinsi Maluku Utara\n\n"
+                      . "Berikut detail pendaftaran Anda:\n"
+                      . ($no ? "• *Nomor Antrian:* {$no}\n" : '')
+                      . "• *Nama:* {$g_nama}\n"
+                      . "• *Layanan:* {$svc}\n"
+                      . "• *Tanggal:* " . date('d-m-Y') . "\n"
+                      . "• *Berlaku:* hari ini\n\n"
+                      . "Mohon hadir di Kantor BPS Provinsi Maluku Utara, lalu langsung menuju bagian *Resepsionis* untuk mencetak tiket antrian Anda.\n\n"
+                      . "🕒 *Jam Layanan*\n" . $this->jam_layanan_text() . "\n\n"
+                      . "Terima kasih atas kunjungan Anda. 🙏";
                 $this->wa_enqueue_user($sess->phone_raw, $sess->wa_chat_id, 'confirmation', $body);
                 $this->wa_notify_group_enqueue("🗓️ *Daftar Antrian Offline*\nNama: {$g_nama}" . ($no ? "\nNomor antrian: {$no}" : '') . "\nNomor: {$sess->phone_norm}\nTiket: WA-{$id_kunjungan}\n" . $this->wa_public_base() . "/admin/layanan-online");
             } else {
