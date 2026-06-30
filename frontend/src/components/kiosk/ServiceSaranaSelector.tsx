@@ -19,9 +19,11 @@ interface Props {
   onChange: (v: ServiceSaranaSelectorValue) => void
   /** WA online (#1): batasi sarana ke media online — buang "PST (datang langsung)" (kode 1). */
   onlineOnly?: boolean
+  /** Centang sarana ini otomatis saat layanan dipilih & belum ada sarana (mis. 16=Aplikasi Chat). User tetap bisa tambah/ubah. */
+  defaultSarana?: number
 }
 
-export function ServiceSaranaSelector({ value, onChange, onlineOnly = false }: Props) {
+export function ServiceSaranaSelector({ value, onChange, onlineOnly = false, defaultSarana }: Props) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['services'],
     queryFn: () => servicesApi.list().then(r => r.data.data),
@@ -33,8 +35,13 @@ export function ServiceSaranaSelector({ value, onChange, onlineOnly = false }: P
 
   // Saat grup layanan berubah, buang sarana yang sudah dipilih tapi tidak valid lagi.
   useEffect(() => {
-    const prunedSarana = value.sarana.filter(v => allowedSaranaCodes.includes(v))
+    let prunedSarana = value.sarana.filter(v => allowedSaranaCodes.includes(v))
     const prunedSaranaLainnya = allowedSaranaCodes.includes(32) ? value.sarana_lainnya : ''
+    // Default-centang (mis. Aplikasi Chat utk #1) saat layanan baru dipilih & belum ada sarana.
+    // Hanya saat layanan berubah → tidak memaksa kembali kalau user sengaja meng-uncheck semua.
+    if (defaultSarana != null && prunedSarana.length === 0 && value.jenis_layanan.length > 0 && allowedSaranaCodes.includes(defaultSarana)) {
+      prunedSarana = [defaultSarana]
+    }
     if (
       prunedSarana.length !== value.sarana.length ||
       prunedSaranaLainnya !== value.sarana_lainnya

@@ -296,7 +296,7 @@ export default function LayananOnlinePage() {
         <section className="space-y-4">
           <h2 className="font-semibold">B. Pilih Layanan</h2>
           {/* #1 online: pilih jenis layanan (4 inti) + sarana KHUSUS ONLINE (tanpa "datang langsung"). */}
-          <ServiceSaranaSelector value={svcValue} onChange={setSvcValue} onlineOnly />
+          <ServiceSaranaSelector value={svcValue} onChange={setSvcValue} onlineOnly defaultSarana={16} />
           <h2 className="font-semibold pt-2">C. Data yang Dibutuhkan</h2>
           <PermintaanDataForm rows={rows} onChange={setRows} />
           <div className="flex gap-2">
