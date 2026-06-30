@@ -129,6 +129,38 @@ class Notifications extends Api_base {
             if ($row !== null) $out[] = $row;
         }
 
+        // Verifikator: data_deliveries menunggu diverifikasi.
+        if (in_array($role, ['verifikator', 'admin', 'superadmin'], true)) {
+            $cnt = (int) $this->db->where('status', 'menunggu_verifikasi')->count_all_results('data_deliveries');
+            if ($cnt > 0) {
+                $out[] = [
+                    'id'         => 'verif_pending',
+                    'type'       => 'info',
+                    'title'      => 'Verifikasi data menunggu',
+                    'message'    => "$cnt permintaan menunggu verifikasi",
+                    'action_url' => '/admin/verifikasi',
+                    'count'      => $cnt,
+                    'ts'         => time(),
+                ];
+            }
+        }
+
+        // Petugas PST: data_deliveries dikembalikan verifikator (revisi).
+        if (in_array($role, ['petugas_pst', 'admin', 'superadmin', 'operator'], true)) {
+            $rev = (int) $this->db->where('status', 'revisi')->count_all_results('data_deliveries');
+            if ($rev > 0) {
+                $out[] = [
+                    'id'         => 'delivery_revisi',
+                    'type'       => 'warning',
+                    'title'      => 'Data perlu revisi',
+                    'message'    => "$rev pengiriman dikembalikan verifikator",
+                    'action_url' => '/admin/layanan-online',
+                    'count'      => $rev,
+                    'ts'         => time(),
+                ];
+            }
+        }
+
         // Sort by ts DESC (terbaru di atas), lalu critical > warning > info dalam ts yang sama.
         $severity_order = ['critical' => 0, 'warning' => 1, 'info' => 2];
         usort($out, function($a, $b) use ($severity_order) {
