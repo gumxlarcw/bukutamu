@@ -1283,7 +1283,13 @@ class Wa extends Api_base {
             $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'awaiting_form', 'category' => 'offline', 'link_sent_at' => date('Y-m-d H:i:s')]);
             $token = $this->mint_kiosk_token('wa-intake', $sid, 48 * 3600);
             $link  = $this->wa_public_base() . '/layanan-online/' . $sid . '?t=' . rawurlencode($token);
-            $body  = "Baik 🙏 untuk *Daftar Antrian Offline*. Mohon lengkapi data diri Anda dulu (berlaku 48 jam):\n" . $link;
+            $body  = "Baik 🙏 untuk *Daftar Antrian Offline* (dilayani langsung di kantor).\n\n"
+                   . "Buka tautan di bawah, lalu:\n"
+                   . "• isi *data diri* Anda\n"
+                   . "• *pilih layanan* yang dibutuhkan (Perpustakaan / Konsultasi Statistik / Rekomendasi Kegiatan Statistik / Penjualan Produk Statistik)\n\n"
+                   . "Setelah dikirim, Anda langsung mendapat *nomor antrian untuk hari ini*. Tinggal datang ke Kantor BPS Provinsi Maluku Utara, ke bagian *Resepsionis*, untuk dilayani.\n"
+                   . "Jam layanan: " . $this->jam_layanan_text() . ".\n\n"
+                   . "⏱️ Tautan berlaku 48 jam:\n" . $link;
             $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'intake_link', $body);
             return;
         }
