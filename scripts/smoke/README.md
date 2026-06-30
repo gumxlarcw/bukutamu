@@ -48,7 +48,8 @@ Because they mutate live data, **do not run during a busy service window.**
 | `smoke_kiosk.sh` | Kiosk WA check-in happy paths + the pre-arrival call-queue **exclusion invariant** (`created_by='whatsapp'` not callable until promoted) — #2 keeps number, #1/#3 → Resepsionis, sarana_lainnya parity. | 22 |
 | `smoke_prefix.sh` | Queue-number **prefix uniqueness** — `Perpustakaan`→`P` vs `Penjualan Produk Statistik`→`J` (no collision), sequential per-service. | 10 |
 | `smoke_flows.sh` | Broad sweep — category-gate routing & mis-category mitigation, daily-reset numbering, all submit token/validation failures (`401/403/422/400`), TOCTOU double-submit, multi-match, and kiosk edge cases incl. **stale-day regeneration** (`409/422`). | 54 |
-| `smoke_register_link.sh` | Offline `Kiosk::register` **phone-as-unique-id** cross-channel linking — reuse a faceless WhatsApp guest by normalized phone, and the safety gates that must **refuse** reuse: faced match, multi-match, empty phone, and **name mismatch** (unverified typed phone must also agree on name). No WhatsApp side-effects. | 18 |
+| `smoke_register_link.sh` | Offline `Kiosk::register` **phone-as-unique-id** cross-channel linking — reuse a faceless WhatsApp guest by normalized phone, and the safety gates that must **refuse** reuse: faced match, multi-match, empty phone, and **name mismatch** (unverified typed phone must also agree on name); plus promote-in-place of an open WA visit. No WhatsApp side-effects. | 23 |
+| `smoke_e2e_lifecycle.sh` | **Auth-gated visit lifecycle / security invariants** — SKD finalization gate (cannot reach `selesai` without `menunggu_evaluasi`), role gate, form gates, DTSEN direct-finish, endpoint parity, tablet evaluation gate, admin delete cascade + audit, guest-delete 409. Mints short-lived **test JWT/kiosk tokens** from the git-ignored `.env` (localhost only); skips the live TV `/call`. Needs `mintjwt.php` + `mintkiosk.php` (same dir). | 29 |
 
 ## Running
 
@@ -58,9 +59,20 @@ bash scripts/smoke/smoke_kiosk.sh
 bash scripts/smoke/smoke_prefix.sh
 bash scripts/smoke/smoke_flows.sh
 bash scripts/smoke/smoke_register_link.sh
+bash scripts/smoke/smoke_e2e_lifecycle.sh   # mints test tokens from .env (see note below)
 ```
 
 Each prints `PASS:` / `FAIL:` per assertion and a final
 `===== … : N passed, M failed =====`. Expected: **0 failed** and all
 `residual … 0` lines green. A non-zero residual means cleanup didn't
 complete — investigate before re-running.
+
+## Note on the lifecycle suite's test tokens
+
+`smoke_e2e_lifecycle.sh` exercises **auth-gated** operator/admin endpoints, so it
+mints its own short-lived JWT (petugas_pst / superadmin) and kiosk (`eval-submit`)
+tokens via `mintjwt.php` / `mintkiosk.php`, which read `JWT_SECRET` from
+`backend/.env` (git-ignored). They are inert without that secret — anyone who can
+read `.env` already has root and could mint tokens regardless, so this adds no
+attack surface, but keep these helpers in mind as test-only. The tokens target
+`127.0.0.1` only and expire in minutes.
