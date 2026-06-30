@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, User, LayoutGrid, Clock } from 'lucide-react'
 import { waApi } from '@/api/wa'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
 import { ServiceSaranaSelector } from '@/components/kiosk/ServiceSaranaSelector'
@@ -33,10 +33,12 @@ function CountUp({ text }: { text: string }) {
   return <>{display || text}</>
 }
 
-/** Layar sukses bergaya tiket (meniru QueueTicket kiosk offline). */
-function SuccessTicket({ ticket, offline = false, nomorAntrian }: { ticket: string; offline?: boolean; nomorAntrian?: string | null }) {
-  const displayCode = offline && nomorAntrian ? nomorAntrian : ticket
-  const displayLabel = offline && nomorAntrian ? 'Nomor Antrian' : offline ? 'Kode Pendaftaran' : 'Nomor Tiket'
+/** Layar sukses bergaya tiket kiosk — nomor besar + detail Nama / Layanan / Tanggal. */
+function SuccessTicket({ ticket, offline = false, nomorAntrian, nama, layanan }: { ticket: string; offline?: boolean; nomorAntrian?: string | null; nama?: string | null; layanan?: string | null }) {
+  const hasNomor = !!(offline && nomorAntrian)
+  const displayCode = hasNomor ? (nomorAntrian as string) : ticket
+  const displayLabel = hasNomor ? 'Nomor Antrian' : offline ? 'Kode Pendaftaran' : 'Nomor Tiket'
+  const tanggal = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(160deg,#fff7ed,#ffe7cc)' }}>
@@ -48,8 +50,8 @@ function SuccessTicket({ ticket, offline = false, nomorAntrian }: { ticket: stri
       `}</style>
       <div className="wa-tk relative bg-white rounded-2xl shadow-2xl px-6 py-7 max-w-sm w-full text-center overflow-hidden">
         {/* notch tiket kiri/kanan */}
-        <span className="absolute -left-3 top-[46%] w-6 h-6 rounded-full" style={{ background: '#ffe7cc' }} />
-        <span className="absolute -right-3 top-[46%] w-6 h-6 rounded-full" style={{ background: '#ffe7cc' }} />
+        <span className="absolute -left-3 top-[44%] w-6 h-6 rounded-full" style={{ background: '#ffe7cc' }} />
+        <span className="absolute -right-3 top-[44%] w-6 h-6 rounded-full" style={{ background: '#ffe7cc' }} />
 
         <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 grid place-items-center mb-3">
           <CheckCircle2 className="w-8 h-8 text-emerald-600" />
@@ -59,16 +61,41 @@ function SuccessTicket({ ticket, offline = false, nomorAntrian }: { ticket: stri
 
         <div className="wa-tk-glow bg-orange-50 border-2 border-orange-200 rounded-xl py-4 px-3 mb-4">
           <p className="text-orange-600 text-[11px] font-semibold mb-1 uppercase tracking-wide">{displayLabel}</p>
-          <p className="text-5xl font-black text-orange-600 leading-none tracking-tight font-mono"><CountUp text={displayCode} /></p>
+          <p className={`${hasNomor ? 'text-5xl' : 'text-3xl'} font-black text-orange-600 leading-none tracking-tight font-mono`}><CountUp text={displayCode} /></p>
         </div>
 
-        {offline && nomorAntrian ? (
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Nomor antrian Anda: <b>{nomorAntrian}</b> (berlaku hari ini) — cetak tiket di Resepsionis.
+        {/* Detail tiket — meniru QueueTicket kiosk (Nama / Layanan / Tanggal) */}
+        <div className="flex gap-2 text-left mb-4">
+          <div className="flex items-start gap-1.5 flex-1 min-w-0">
+            <User className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] text-gray-500 font-medium uppercase">Nama</p>
+              <p className="font-semibold text-gray-800 text-xs break-words leading-snug">{nama || '—'}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-1.5 flex-1 min-w-0">
+            <LayoutGrid className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] text-gray-500 font-medium uppercase">Layanan</p>
+              <p className="font-semibold text-gray-800 text-xs break-words leading-snug">{layanan || '—'}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-1.5 flex-1 min-w-0">
+            <Clock className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] text-gray-500 font-medium uppercase">Tanggal</p>
+              <p className="font-semibold text-gray-800 text-[10px] break-words leading-snug">{tanggal}</p>
+            </div>
+          </div>
+        </div>
+
+        {hasNomor ? (
+          <p className="text-sm text-gray-700 leading-relaxed">
+            Nomor antrian Anda <b>berlaku hari ini</b>. Datang ke kantor BPS Maluku Utara, bagian <b>Resepsionis</b>, untuk mencetak tiket.
           </p>
         ) : offline ? (
           <p className="text-sm text-gray-600 leading-relaxed">
-            Pendaftaran Anda diterima. Datang ke kantor pada jam layanan dan langsung menuju meja Resepsionis.
+            Pendaftaran diterima. Datang ke kantor pada jam layanan dan langsung menuju meja <b>Resepsionis</b>.
           </p>
         ) : (
           <p className="text-sm text-gray-600 leading-relaxed">
@@ -79,7 +106,7 @@ function SuccessTicket({ ticket, offline = false, nomorAntrian }: { ticket: stri
           {offline ? 'Jam layanan' : 'Akan diproses pada jam operasional layanan'}<br />{JAM_LAYANAN}.
         </p>
         <div className="mt-4 text-[11px] text-gray-400 border-t border-dashed border-gray-300 pt-3">
-          Simpan / screenshot tiket ini sebagai bukti permintaan Anda.
+          Simpan / screenshot tiket ini sebagai bukti pendaftaran Anda.
         </div>
       </div>
     </div>
@@ -169,10 +196,18 @@ export default function LayananOnlinePage() {
   if (isLoading) return <LoadingSpinner className="min-h-screen" />
   if (isError || !prefill) return <p className="p-8 text-center">Tautan kedaluwarsa atau tidak valid. Silakan kirim pesan ulang ke WhatsApp layanan.</p>
   if (prefill.state === 'submitted' || ticket) {
+    // Service label: from the form just submitted (svcValue) or, on reopen, from the
+    // visit the backend returns; non-offline shows its category label.
+    const successLayanan = isOffline
+      ? (svcValue.jenis_layanan.length ? svcValue.jenis_layanan.join(', ') : (prefill.jenis_layanan?.join(', ') || '—'))
+      : (prefill.category === 'lainnya' ? 'Lainnya' : 'Permintaan Data / Konsultasi')
+    const successNama = (effGuest?.nama || prefill.guest?.nama || '—')
     return <SuccessTicket
       ticket={ticket ?? (prefill.id_kunjungan ? `WA-${prefill.id_kunjungan}` : `WA-${prefill.session_id}`)}
       offline={isOffline}
-      nomorAntrian={nomorAntrian ?? prefill.nomor_antrian ?? null} />
+      nomorAntrian={nomorAntrian ?? prefill.nomor_antrian ?? null}
+      nama={successNama}
+      layanan={successLayanan} />
   }
 
   const namaOk = effGuest.nama.trim() !== ''

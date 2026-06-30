@@ -38,6 +38,7 @@ export interface WaSessionPrefill {
   multi_match: boolean
   id_kunjungan?: number | null    // present once submitted — for the WA-{id} ticket fallback
   nomor_antrian?: string | null   // #2 offline queue number (e.g. "P002") — so reopen shows it, not WA-{id}
+  jenis_layanan?: string[] | null // the visit's service(s) — so the reopened ticket shows the layanan
 }
 
 export interface WaIntakePayload extends Partial<GuestFormData> {

@@ -760,6 +760,13 @@ class Wa extends Api_base {
                                 ->order_by('id_user', 'DESC')->get('tamdes_buku')->result();
             $guest = (count($matches) === 1) ? $matches[0] : null;
             $multi = count($matches) > 1;
+            // Visit details (if already submitted) so a reopened success ticket shows the
+            // queue number + service — like the kiosk ticket — not just WA-{id}.
+            $v_no = null; $v_jl = null;
+            if ($sess->id_kunjungan) {
+                $vrow = $this->db->select('nomor_antrian, jenis_layanan')->get_where('tamdes_kunjungan', ['id_kunjungan' => (int) $sess->id_kunjungan])->row();
+                if ($vrow) { $v_no = $vrow->nomor_antrian; $v_jl = json_decode($vrow->jenis_layanan, true); }
+            }
             $this->json_response(['success' => true, 'data' => [
                 'session_id'    => $id,
                 'phone'         => $sess->phone_norm,
@@ -768,7 +775,8 @@ class Wa extends Api_base {
                 'guest'         => $guest,
                 'multi_match'   => $multi,
                 'id_kunjungan'  => $sess->id_kunjungan ? (int) $sess->id_kunjungan : null,
-                'nomor_antrian' => $this->wa_visit_nomor($sess->id_kunjungan), // so reopen shows the queue number, not WA-{id}
+                'nomor_antrian' => $v_no,
+                'jenis_layanan' => is_array($v_jl) ? $v_jl : null,
             ], 'message' => 'OK']);
         }
 
