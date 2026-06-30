@@ -88,8 +88,90 @@ class Deliveries extends Api_base
             return $this->json_response(['success' => true, 'data' => null, 'message' => 'Pengiriman dibatalkan']);
         }
 
-        // PUT edit-resubmit lands in Task 4
+        if ($method === 'PUT') {
+            // Operator edit & resubmit of a returned (revisi) delivery.
+            $this->require_auth();
+            $this->require_role_in(['petugas_pst', 'operator', 'admin', 'superadmin']);
+
+            $this->load->model('delivery_model');
+            $row = $this->delivery_model->get($id);
+            if (!$row) {
+                return $this->json_response(['success' => false, 'message' => 'Tidak ditemukan'], 404);
+            }
+            if ($row->status !== 'revisi') {
+                return $this->json_response(['success' => false, 'message' => 'Hanya pengiriman berstatus revisi yang bisa diperbaiki & dikirim ulang'], 409);
+            }
+
+            $link_url = trim((string) $this->input->post('link_url'));
+            $note     = trim((string) $this->input->post('note'));
+            $media    = $this->_store_upload_if_present(); // null, or ['path','mime','name']; 422-bails on bad file
+
+            // Must still carry a deliverable: a link, a new file, or the pre-existing one.
+            $has_media = ($media !== null) || ($row->media_path !== null && $row->media_path !== '');
+            if ($link_url === '' && !$has_media) {
+                return $this->json_response(['success' => false, 'message' => 'Sertakan link atau file'], 422);
+            }
+
+            $upd = [
+                'link_url'       => $link_url === '' ? null : $link_url,
+                'note_operator'  => $note === '' ? null : $note,
+                'revisi_count'   => (int) $row->revisi_count + 1,
+                'status'         => 'menunggu_verifikasi',
+                'verif_decision' => null,
+                'verif_note'     => null,
+                'id_verifikator' => null,
+                'verified_at'    => null,
+            ];
+            if ($media !== null) {
+                $upd['media_path'] = $media['path'];
+                $upd['media_mime'] = $media['mime'];
+                $upd['media_name'] = $media['name'];
+            }
+            $this->delivery_model->update($id, $upd);
+
+            // Task 5: $this->_notify_verifier($id);
+
+            $this->audit('delivery_resubmit', 'delivery', $id, ['revisi_count' => $upd['revisi_count']]);
+            return $this->json_response(['success' => true, 'data' => $this->delivery_model->get($id), 'message' => 'Pengiriman diperbaiki & dikirim ulang untuk verifikasi']);
+        }
+
         return $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+    }
+
+    // PUT /api/deliveries/:id/verify  {decision, note?}
+    // Verifier decision → state machine in Delivery_model::apply_decision (shared with the
+    // WA reply path, Task 6). On approval the model materializes a customer wa_messages row;
+    // the WA connector (polls direction='out' AND status='pending') sends it. This method is
+    // a thin web wrapper: auth + parse + delegate + audit.
+    public function verify($id)
+    {
+        if ($this->input->method(true) !== 'PUT') {
+            return $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+        $this->require_auth();
+        $this->require_role_in(['verifikator', 'admin', 'superadmin']);
+
+        // PUT bodies are NOT in $this->input->post() — read the raw JSON body (mirror Visits::status).
+        $input    = $this->get_json_input();
+        $decision = (string) ($input['decision'] ?? '');
+        $note     = isset($input['note']) ? (string) $input['note'] : null;
+
+        if (!in_array($decision, ['setuju', 'revisi', 'setuju_catatan'], true)) {
+            return $this->json_response(['success' => false, 'message' => 'decision tidak valid'], 422);
+        }
+
+        $this->load->model('delivery_model');
+        $res = $this->delivery_model->apply_decision((int) $id, $decision, $note, (int) $this->current_user->id);
+
+        // Audit lives in the caller — the model is pure DB ops. Only log applied decisions.
+        if ($res['ok']) {
+            $this->audit('delivery_verify_' . $decision, 'delivery', (int) $id, ['status' => $res['status']]);
+        }
+
+        return $this->json_response(
+            ['success' => $res['ok'], 'data' => $this->delivery_model->get((int) $id), 'message' => $res['message']],
+            $res['ok'] ? 200 : 409
+        );
     }
 
     // GET /api/deliveries/:id/file → stream the stored file (auth required)

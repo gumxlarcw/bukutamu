@@ -49,4 +49,111 @@ class Delivery_model extends CI_Model
             ->where('d.id', $id);
         return $this->db->get()->row();
     }
+
+    // Resolve the customer's WA reply address from the latest session of a visit.
+    // Mirrors Wa::wa_latest_session (order by id DESC, limit 1) but keyed on id_kunjungan.
+    public function customer_addr(int $id_kunjungan)
+    {
+        return $this->db->select('phone_norm, wa_chat_id')
+            ->from('wa_sessions')->where('id_kunjungan', $id_kunjungan)
+            ->order_by('id', 'DESC')->limit(1)->get()->row();
+    }
+
+    public function insert_wa_message(array $row): int
+    {
+        $this->db->insert('wa_messages', $row);
+        return (int) $this->db->insert_id();
+    }
+
+    // Shared verification state machine — web (Deliveries::verify) AND the WA reply
+    // path (Task 6) both call this, so they can NEVER drift. PURE DB ops: the CALLER
+    // is responsible for auditing. Returns ['ok','status','message','short_code'].
+    public function apply_decision(int $id, string $decision, ?string $note, int $verifikator_id): array
+    {
+        $d = $this->get($id);
+        if (!$d) {
+            return ['ok' => false, 'status' => null, 'message' => 'Pengiriman tidak ditemukan', 'short_code' => null];
+        }
+        if ($d->status !== 'menunggu_verifikasi') {
+            return ['ok' => false, 'status' => $d->status, 'message' => 'Pengiriman ini sudah diproses', 'short_code' => $d->short_code];
+        }
+
+        $note = $note !== null ? trim($note) : null;
+        if ($decision === 'revisi' && ($note === null || $note === '')) {
+            return ['ok' => false, 'status' => $d->status, 'message' => 'Revisi wajib menyertakan catatan', 'short_code' => $d->short_code];
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        if ($decision === 'revisi') {
+            $this->update($id, [
+                'status'         => 'revisi',
+                'verif_decision' => 'revisi',
+                'verif_note'     => $note,
+                'id_verifikator' => $verifikator_id,
+                'verified_at'    => $now,
+            ]);
+            return ['ok' => true, 'status' => 'revisi', 'message' => "{$d->short_code} dikembalikan ke operator", 'short_code' => $d->short_code];
+        }
+
+        // setuju | setuju_catatan → approve, materialize the customer message, mark terkirim.
+        $this->update($id, [
+            'status'         => 'disetujui',
+            'verif_decision' => $decision,
+            'verif_note'     => ($decision === 'setuju_catatan' ? $note : null),
+            'id_verifikator' => $verifikator_id,
+            'verified_at'    => $now,
+        ]);
+        $this->materialize($id);
+        $this->update($id, ['status' => 'terkirim']);
+
+        return ['ok' => true, 'status' => 'terkirim', 'message' => "{$d->short_code} disetujui & dikirim ke pemohon", 'short_code' => $d->short_code];
+    }
+
+    // Insert ONE customer-facing wa_messages row (direction=out, status=pending) so the
+    // WA connector (polls direction='out' AND status='pending') sends it. Re-reads the row
+    // AFTER apply_decision's approve update so verif_decision/verif_note are current.
+    private function materialize(int $id): void
+    {
+        $d = $this->get($id);
+        if (!$d) return;
+
+        $addr = $this->customer_addr((int) $d->id_kunjungan);
+        if (!$addr) {
+            log_message('error', "delivery {$id}: no wa address for kunjungan {$d->id_kunjungan}");
+            return;
+        }
+
+        $caption = (string) $d->note_operator;
+        if ($d->link_url) {
+            $caption = trim($caption . "\n" . $d->link_url);
+        }
+        if ($d->verif_decision === 'setuju_catatan' && $d->verif_note) {
+            $caption = trim($caption . "\nCatatan: " . $d->verif_note);
+        }
+
+        $base = [
+            'phone_norm'   => $addr->phone_norm,
+            'wa_chat_id'   => $addr->wa_chat_id,
+            'id_kunjungan' => (int) $d->id_kunjungan,
+            'direction'    => 'out',
+            'status'       => 'pending',
+        ];
+
+        if ($d->media_path) {
+            $type = strpos((string) $d->media_mime, 'image/') === 0 ? 'image' : 'document';
+            $this->insert_wa_message($base + [
+                'msg_type'   => $type,
+                'body'       => $caption,
+                'media_path' => $d->media_path,
+                'media_mime' => $d->media_mime,
+                'media_name' => $d->media_name,
+            ]);
+        } else {
+            $this->insert_wa_message($base + [
+                'msg_type' => 'text',
+                'body'     => $caption,
+            ]);
+        }
+    }
 }
