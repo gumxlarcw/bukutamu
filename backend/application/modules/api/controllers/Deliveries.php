@@ -288,7 +288,9 @@ class Deliveries extends Api_base
 
         $this->db->insert('wa_outbox', [
             'phone_raw'    => $v->notel,
-            'wa_chat_id'   => $v->notel,
+            // Format notel (08…/62…/+62…) → WA jid: connector sends to wa_chat_id verbatim,
+            // so a bare "08…" number would fail. Strip non-digits, leading 0 → 62, add @c.us.
+            'wa_chat_id'   => preg_replace('/^0/', '62', preg_replace('/\D/', '', (string) $v->notel)) . '@c.us',
             'msg_type'     => 'verif_request',
             'body'         => $body,
             'id_kunjungan' => (int) $d->id_kunjungan,
