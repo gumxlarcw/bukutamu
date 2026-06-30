@@ -38,11 +38,12 @@ interface NavItem {
   allowedRoles?: UserRole[]
 }
 
-// Hierarchy level: superadmin(3) > admin(2)=pimpinan(2) > operator(1)=resepsionis(1)=petugas_pst(1)
+// Hierarchy level: superadmin(3) > admin(2)=pimpinan(2) > operator(1)=resepsionis(1)=petugas_pst(1)=verifikator(1)
 const ROLE_LEVEL: Record<UserRole, number> = {
   operator: 1,
   resepsionis: 1,
   petugas_pst: 1,
+  verifikator: 1,
   pimpinan: 2,
   admin: 2,
   superadmin: 3,
