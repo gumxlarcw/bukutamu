@@ -62,6 +62,7 @@ class Deliveries extends Api_base
 
         if ($method === 'GET') {
             $this->require_auth();
+            $this->require_role_in(['petugas_pst', 'operator', 'verifikator', 'admin', 'superadmin']);
             $this->load->model('delivery_model');
             $row = $this->delivery_model->with_context($id);
             if (!$row) {
@@ -99,6 +100,7 @@ class Deliveries extends Api_base
             return $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
         $this->require_auth();
+        $this->require_role_in(['petugas_pst', 'operator', 'verifikator', 'admin', 'superadmin']);
 
         $this->load->model('delivery_model');
         $row = $this->delivery_model->get($id);
@@ -132,6 +134,7 @@ class Deliveries extends Api_base
     private function _list()
     {
         $this->require_auth();
+        $this->require_role_in(['petugas_pst', 'operator', 'verifikator', 'admin', 'superadmin']);
 
         $status       = $this->input->get('status');
         $id_kunjungan = $this->input->get('id_kunjungan');
