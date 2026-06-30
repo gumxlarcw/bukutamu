@@ -1242,10 +1242,14 @@ class Wa extends Api_base {
 
     private function wa_menu_text() {
         return "Selamat datang di Layanan Online BPS Maluku Utara 👋\n\n"
-             . "Silakan pilih layanan (balas dengan ANGKA):\n"
-             . "*1.* Permintaan Data / Konsultasi Statistik\n"
-             . "*2.* Daftar Antrian Offline (datang ke kantor)\n"
-             . "*3.* Lainnya";
+             . "Silakan balas dengan *ANGKA* sesuai kebutuhan Anda:\n\n"
+             . "*1.* 📊 *Permintaan Data / Konsultasi Statistik*\n"
+             . "Untuk meminta data statistik atau berkonsultasi *secara online lewat chat ini* — _tanpa perlu datang_ ke kantor. Cocok bila Anda hanya butuh data/jawaban.\n\n"
+             . "*2.* 🏢 *Daftar Antrian Offline*\n"
+             . "Pilih ini jika Anda _akan datang langsung ke kantor BPS_. Anda akan mendapat *nomor antrian untuk hari ini*; tinggal datang ke bagian Resepsionis untuk dilayani.\n\n"
+             . "*3.* 💬 *Lainnya*\n"
+             . "Pertanyaan umum atau keperluan lain yang tidak termasuk pilihan 1 dan 2.\n\n"
+             . "_Balas 1, 2, atau 3 untuk melanjutkan._";
     }
 
     // Enqueue pesan ke PEMOHON (bukan grup). msg_type harus valid ENUM wa_outbox.

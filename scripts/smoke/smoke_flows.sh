@@ -35,7 +35,9 @@ echo; echo "########## GROUP A: category gate routing ##########"
 PA=62888399011; NA=$(NORM $PA)
 ING $PA halo
 ok  "A1 new contact -> awaiting_category" "awaiting_category" "$(Q "SELECT state FROM wa_sessions WHERE phone_norm='$NA'")"
-okc "A1 menu sent"            "Silakan pilih layanan" "$(LASTOUT $PA)"
+okc "A1 menu sent"            "Layanan Online BPS Maluku Utara" "$(LASTOUT $PA)"
+okc "A1 menu clarifies #1 (online, no visit)" "tanpa perlu datang" "$(LASTOUT $PA)"
+okc "A1 menu clarifies #2 (come to office)"   "akan datang langsung ke kantor" "$(LASTOUT $PA)"
 ok  "A1 NO group ping yet"    "0" "$(Q "SELECT COUNT(*) FROM wa_outbox WHERE wa_chat_id='$FG'")"
 ING $PA 9
 okc "A2 invalid choice -> re-prompt" "Mohon balas dengan angka" "$(LASTOUT $PA)"
