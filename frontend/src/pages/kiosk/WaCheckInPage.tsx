@@ -29,6 +29,7 @@ export default function WaCheckInPage() {
     nama: string
     id_kunjungan: number
     nomor_antrian: string | null
+    has_face: boolean
     kiosk_token: string
   } | null>(null)
   const [consentAccepted, setConsentAccepted] = useState(false)
@@ -119,17 +120,20 @@ export default function WaCheckInPage() {
     )
   }
 
-  // ── Step 2: face capture (after phone matched) ──
+  // ── Step 2: face (after phone matched) ──
+  // Sudah punya biometrik → VERIFIKASI: pindai saja (tanpa ambil foto / consent ulang).
+  // Belum punya (pendaftar WA murni) → ENROLL: ambil foto + disclaimer consent.
   if (matched) {
+    const verify = matched.has_face
     return (
       <>
-        {!consentAccepted && (
+        {!verify && !consentAccepted && (
           <PhotoDisclaimer onAccept={() => setConsentAccepted(true)} onDecline={resetToPhone} />
         )}
         <div className="flex flex-col items-center text-gray-800 px-4 max-w-2xl w-full mx-auto">
           <h1 className="text-xl font-bold mb-1">Halo, {matched.nama}</h1>
           <p className="text-gray-500 mb-3 text-center text-xs">
-            Pindai wajah Anda untuk menyelesaikan check-in
+            {verify ? 'Pindai wajah Anda untuk verifikasi check-in' : 'Pindai wajah Anda untuk menyelesaikan check-in'}
           </p>
 
           {promoteMutation.isPending ? (
@@ -139,7 +143,12 @@ export default function WaCheckInPage() {
             </div>
           ) : (
             <>
-              {consentAccepted && <FaceCapture onConfirm={(photo, descriptor) => { setErrorMsg(null); promoteMutation.mutate({ photo, descriptor }) }} />}
+              {(verify || consentAccepted) && (
+                <FaceCapture
+                  scanOnly={verify}
+                  onConfirm={(photo, descriptor) => { setErrorMsg(null); promoteMutation.mutate({ photo, descriptor }) }}
+                />
+              )}
               {errorMsg && (
                 <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-center text-sm overflow-hidden">
                   {errorMsg}

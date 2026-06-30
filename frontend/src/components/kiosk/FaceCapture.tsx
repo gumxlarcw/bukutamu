@@ -9,9 +9,11 @@ const MIN_SAMPLES_TO_CAPTURE = 3
 
 interface FaceCaptureProps {
   onConfirm: (photo: string, descriptor: Float32Array | null) => void
+  /** Verifikasi (tamu sudah punya template): pindai saja — auto-kirim deskriptor, tanpa ambil/simpan foto. */
+  scanOnly?: boolean
 }
 
-export function FaceCapture({ onConfirm }: FaceCaptureProps) {
+export function FaceCapture({ onConfirm, scanOnly = false }: FaceCaptureProps) {
   const {
     videoRef,
     isModelLoading,
@@ -57,6 +59,17 @@ export function FaceCapture({ onConfirm }: FaceCaptureProps) {
     }
   }
 
+  // Mode verifikasi (scanOnly): begitu deskriptor stabil (sampling cukup), langsung kirim tanpa
+  // ambil/simpan foto. Foto kosong → backend wa_promote verifikasi 1:1 & TIDAK menimpa template/consent.
+  useEffect(() => {
+    if (scanOnly && !submitted && stableDescriptor) {
+      setSubmitted(true)
+      stopCamera()
+      onConfirm('', stableDescriptor)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanOnly, submitted, stableDescriptor])
+
   // Tombol enabled hanya kalau: face terdeteksi + sample cukup + camera aktif.
   // Tanpa gate sample, foto bisa di-snap saat descriptor mentah masih noisy → recognize
   // di kunjungan berikutnya untuk user ini akan ngaco.
@@ -95,7 +108,7 @@ export function FaceCapture({ onConfirm }: FaceCaptureProps) {
       statusText = `🔍 Menyempurnakan deteksi... ${sampleCount}/${sampleTarget}`
       statusColor = 'text-orange-600'
     } else {
-      statusText = '✓ Wajah terdeteksi — siap ambil foto'
+      statusText = scanOnly ? '✓ Wajah terdeteksi — memverifikasi…' : '✓ Wajah terdeteksi — siap ambil foto'
       statusColor = 'text-green-600'
     }
   } else if (captured) {
@@ -167,8 +180,8 @@ export function FaceCapture({ onConfirm }: FaceCaptureProps) {
         </div>
       )}
 
-      {/* Action buttons */}
-      {!captured ? (
+      {/* Action buttons (hidden in scanOnly: verification auto-submits the descriptor) */}
+      {!scanOnly && (!captured ? (
         <button
           onClick={handleCapture}
           disabled={!canCapture}
@@ -199,7 +212,7 @@ export function FaceCapture({ onConfirm }: FaceCaptureProps) {
             {submitted ? 'Mengirim...' : 'Konfirmasi'}
           </button>
         </div>
-      )}
+      ))}
     </div>
   )
 }

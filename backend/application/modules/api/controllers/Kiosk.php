@@ -505,7 +505,7 @@ class Kiosk extends Api_base {
 
         // Identitas harus tunggal: >1 tamu dengan nomor sama → tak bisa dipastikan siapa
         // (mis. nomor dipakai bersama) → minta bantuan petugas. (mirror multi-match prefill WA)
-        $guests = $this->db->select('id_user, nama')->where('notel', $phone)->get('tamdes_buku')->result();
+        $guests = $this->db->select('id_user, nama, face_descriptor')->where('notel', $phone)->get('tamdes_buku')->result();
         if (count($guests) === 0) {
             $this->json_response(['success' => false, 'message' => 'Nomor ini tidak terdaftar melalui layanan online WhatsApp. Silakan pilih "Belum Pernah Daftar".'], 404);
         }
@@ -533,9 +533,14 @@ class Kiosk extends Api_base {
         // Token bound ke id_kunjungan (TTL 5 menit) — wajib utk wa-promote.
         $kiosk_token = $this->mint_kiosk_token('wa-checkin', (int) $visit->id_kunjungan, 300);
 
+        // Sudah punya template wajah? → kiosk cukup PINDAI (verifikasi 1:1), tidak ambil foto baru.
+        // Pendaftar WA murni (belum pernah enroll) → kiosk ambil foto (enroll). wa_promote menangani keduanya.
+        $stored   = json_decode((string) $guest->face_descriptor, true);
+        $has_face = is_array($stored) && count($stored) > 0;
+
         $this->json_response([
             'success' => true,
-            'data'    => ['nama' => $guest->nama, 'id_kunjungan' => (int) $visit->id_kunjungan, 'nomor_antrian' => $visit->nomor_antrian, 'kiosk_token' => $kiosk_token],
+            'data'    => ['nama' => $guest->nama, 'id_kunjungan' => (int) $visit->id_kunjungan, 'nomor_antrian' => $visit->nomor_antrian, 'has_face' => $has_face, 'kiosk_token' => $kiosk_token],
             'message' => 'OK',
         ]);
     }

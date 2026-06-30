@@ -49,7 +49,7 @@ export const kioskApi = {
   // waLookup returns a short-lived kiosk_token bound to id_kunjungan; pass it to waPromote.
   // Server decides service/sarana from the WA registration — client sends NO service state.
   waLookup: (phone: string) =>
-    apiClient.post<ApiResponse<{ nama: string; id_kunjungan: number; nomor_antrian: string | null; kiosk_token: string }>>('/api/kiosk/wa-lookup', { phone }),
+    apiClient.post<ApiResponse<{ nama: string; id_kunjungan: number; nomor_antrian: string | null; has_face: boolean; kiosk_token: string }>>('/api/kiosk/wa-lookup', { phone }),
   waPromote: (
     data: { id_kunjungan: number; foto: string; face_descriptor: number[]; biometric_consent: boolean; consent_timestamp: string },
     kiosk_token: string,
