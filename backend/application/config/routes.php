@@ -84,6 +84,13 @@ $route['api/kiosk/profile-update/(:num)']    = 'api/kiosk/profile_update/$1';
 $route['api/kiosk/wa-lookup']                = 'api/kiosk/wa_lookup';    // POST find WA online registrant by phone (kiosk check-in)
 $route['api/kiosk/wa-promote']               = 'api/kiosk/wa_promote';   // POST enroll face + promote WA visit to physical queue
 
+// Data deliveries (verifikator flow) — specific paths before generic
+$route['api/deliveries']                 = 'api/deliveries/index';
+$route['api/deliveries/(:num)/file']     = 'api/deliveries/file/$1';
+$route['api/deliveries/(:num)/verify']   = 'api/deliveries/verify/$1';
+$route['api/deliveries/(:num)/resubmit'] = 'api/deliveries/resubmit/$1';
+$route['api/deliveries/(:num)']          = 'api/deliveries/detail/$1';
+
 // WhatsApp online data-request channel (api/wa/*)
 $route['api/wa/ingest']          = 'api/wa/ingest';        // POST internal-secret
 $route['api/wa/poll']            = 'api/wa/poll';          // POST internal-secret (dispatch scan + pending)

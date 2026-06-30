@@ -7,6 +7,7 @@ export interface AdminUser {
   username: string
   nama: string
   role: Exclude<UserRole, 'resepsionis' | 'petugas_pst'>
+  notel: string | null
   active: number
   last_login: string | null
   created_at: string
@@ -17,6 +18,7 @@ export interface CreateUserForm {
   password: string
   nama: string
   role: string
+  notel?: string
 }
 
 export interface UpdateUserForm {
@@ -24,6 +26,7 @@ export interface UpdateUserForm {
   role?: string
   password?: string
   active?: boolean
+  notel?: string | null
 }
 
 export interface ChangePasswordForm {

@@ -56,6 +56,7 @@ const UserManagementPage = lazyRetry(() => import('@/pages/admin/UserManagementP
 const GuestImportPage = lazyRetry(() => import('@/pages/admin/GuestImportPage'))
 const QueueStatsPage = lazyRetry(() => import('@/pages/admin/QueueStatsPage'))
 const AboutPage = lazyRetry(() => import('@/pages/admin/AboutPage'))
+const VerifikasiPage = lazyRetry(() => import('@/pages/admin/VerifikasiPage'))
 const LandingPage = lazyRetry(() => import('@/pages/LandingPage'))
 const NotFoundPage = lazyRetry(() => import('@/pages/NotFoundPage'))
 
@@ -101,6 +102,7 @@ function App() {
                   <Route path="/admin/users" element={<RequireRole min="superadmin"><UserManagementPage /></RequireRole>} />
                   <Route path="/admin/queue-stats" element={<QueueStatsPage />} />
                   <Route path="/admin/tentang" element={<AboutPage />} />
+                  <Route path="/admin/verifikasi" element={<VerifikasiPage />} />
                 </Route>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="*" element={<NotFoundPage />} />

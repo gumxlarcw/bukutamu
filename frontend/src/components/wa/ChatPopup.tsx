@@ -3,11 +3,14 @@ import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Send, Paperclip, X, Minus, FileText, Clock, Check, CheckCheck,
+  Send, Database, X, Minus, FileText, Clock, Check, CheckCheck,
   AlertCircle, MessageCircle, Download, ChevronDown, Reply, SmilePlus, MapPin, User,
 } from 'lucide-react'
 import { waApi } from '@/api/wa'
+import { deliveriesApi } from '@/api/deliveries'
+import { safeHref } from '@/lib/url'
 import type { WaMessage } from '@/types/wa'
+import type { DataDeliveryDetail, DeliveryStatus } from '@/types/delivery'
 
 const ALLOWED_MIME = [
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
@@ -17,6 +20,14 @@ const ALLOWED_MIME = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ]
 const MAX_BYTES = 25 * 1024 * 1024
+
+const DELIVERY_LABEL: Record<DeliveryStatus, { t: string; c: string }> = {
+  menunggu_verifikasi: { t: '⏳ Menunggu Verifikasi', c: 'bg-amber-100 text-amber-800' },
+  revisi: { t: '✏️ Revisi', c: 'bg-rose-100 text-rose-800' },
+  disetujui: { t: '✓ Disetujui', c: 'bg-emerald-100 text-emerald-800' },
+  terkirim: { t: '✓ Terkirim', c: 'bg-emerald-100 text-emerald-800' },
+  dibatalkan: { t: 'Dibatalkan', c: 'bg-zinc-100 text-zinc-600' },
+}
 
 // ── Ukuran popup (resizable, persisted) ──
 const DEFAULT_SIZE = { w: 360, h: 520 }
@@ -177,9 +188,10 @@ interface ChatPopupProps {
   nama: string | null
   index?: number
   onClose: () => void
+  idKunjungan?: number | null  // null/absent = no visit yet; disables Kirim Data
 }
 
-export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
+export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null }: ChatPopupProps) {
   const qc = useQueryClient()
   const [text, setText] = useState('')
   const [min, setMin] = useState(false)
@@ -190,14 +202,19 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
   const [resizing, setResizing] = useState(false)
   const [atBottom, setAtBottom] = useState(true)
   const [seenId, setSeenId] = useState(0) // id pesan terakhir yang sudah dilihat petugas (di dasar scroll)
-  const [uploading, setUploading] = useState<{ pct: number; name: string; preview: string | null; isImage: boolean } | null>(null)
   const [replyTo, setReplyTo] = useState<{ id: number; preview: string; out: boolean } | null>(null)
   const [reactFor, setReactFor] = useState<number | null>(null)
+  const [kirimDataOpen, setKirimDataOpen] = useState(false)
+  const [kdLink, setKdLink] = useState('')
+  const [kdNote, setKdNote] = useState('')
+  const [kdFile, setKdFile] = useState<File | null>(null)
+  const [kdPct, setKdPct] = useState(0)
+  const [editingDelivery, setEditingDelivery] = useState<DataDeliveryDetail | null>(null)
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const resizeRef = useRef<{ sx: number; sy: number; sw: number; sh: number; mode: 'w' | 'h' | 'wh' } | null>(null)
   const sizeRef = useRef(size)
   const atBottomRef = useRef(true)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const kdFileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -219,12 +236,22 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wa-chat', phone] }),
     onError: (e) => toast.error(errMsg(e) || 'Gagal memberi reaksi'),
   })
-  const clearUploading = () => setUploading((u) => { if (u?.preview) URL.revokeObjectURL(u.preview); return null })
-  const upload = useMutation({
-    mutationFn: (file: File) =>
-      waApi.uploadFile(phone, file, text.trim() || undefined, (pct) => setUploading((u) => (u ? { ...u, pct } : u))),
-    onSuccess: () => { setText(''); clearUploading(); qc.invalidateQueries({ queryKey: ['wa-chat', phone] }) },
-    onError: (e) => { clearUploading(); toast.error(errMsg(e) || 'Gagal mengirim file') },
+  function resetKdForm() { setKdLink(''); setKdNote(''); setKdFile(null); setKdPct(0); setEditingDelivery(null) }
+  const createDelivery = useMutation({
+    mutationFn: (fd: FormData) => deliveriesApi.create(fd, (pct) => setKdPct(pct)),
+    onSuccess: () => { toast.success('Data dikirim untuk verifikasi'); resetKdForm(); setKirimDataOpen(false); qc.invalidateQueries({ queryKey: ['deliveries', idKunjungan] }) },
+    onError: (e) => toast.error(errMsg(e) || 'Gagal mengirim data'),
+  })
+  const resubmitDelivery = useMutation({
+    mutationFn: ({ id, fd }: { id: number; fd: FormData }) => deliveriesApi.resubmit(id, fd),
+    onSuccess: () => { toast.success('Data dikirim ulang untuk verifikasi'); resetKdForm(); setKirimDataOpen(false); qc.invalidateQueries({ queryKey: ['deliveries', idKunjungan] }) },
+    onError: (e) => toast.error(errMsg(e) || 'Gagal mengirim ulang data'),
+  })
+  const { data: deliveries = [] } = useQuery({
+    queryKey: ['deliveries', idKunjungan],
+    queryFn: () => deliveriesApi.list({ id_kunjungan: idKunjungan! }).then((r) => r.data.data),
+    enabled: idKunjungan != null,
+    refetchInterval: 8000,
   })
 
   useEffect(() => { const r = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(r) }, [])
@@ -254,7 +281,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
     }
     // Petugas melihat dasar chat & ada pesan masuk → tandai dibaca (centang biru utk visitor).
     if (atBottomRef.current && last.direction === 'in') waApi.markSeen(phone).catch(() => { /* best-effort */ })
-  }, [messages.length, min, uploading?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [messages.length, min]) // eslint-disable-line react-hooks/exhaustive-deps
   // Textarea auto-grow (maks ~5 baris).
   useEffect(() => {
     const ta = taRef.current
@@ -264,7 +291,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
   }, [text])
 
   const initial = useMemo(() => (nama || phone || '?').trim().charAt(0).toUpperCase(), [nama, phone])
-  const busy = send.isPending || upload.isPending
+  const busy = send.isPending
 
   // Pra-hitung metadata grup (pemisah hari, awal/akhir grup) untuk tampilan ala WhatsApp.
   const items = useMemo(() => messages.map((m, i) => {
@@ -287,25 +314,19 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
     if (b.length > 4096) { toast.error('Pesan maksimal 4096 karakter'); return }
     send.mutate({ body: b, quoted: replyTo?.id })
   }
-  function pickFile(file: File | undefined) {
-    if (!file || upload.isPending) return
-    if (file.size > MAX_BYTES) { toast.error('Ukuran file melebihi 25 MB'); return }
-    if (!ALLOWED_MIME.includes(file.type)) { toast.error('Tipe file tidak didukung (gambar / pdf / doc / xls)'); return }
-    const isImage = file.type.startsWith('image/')
-    setUploading({ pct: 0, name: file.name, preview: isImage ? URL.createObjectURL(file) : null, isImage })
-    upload.mutate(file)
-  }
-  // Tempel (Ctrl+V) gambar dari clipboard → langsung kirim.
-  function onPaste(e: React.ClipboardEvent) {
-    const items = e.clipboardData?.items
-    if (!items) return
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i]
-      if (it.kind === 'file' && it.type.startsWith('image/')) {
-        const f = it.getAsFile()
-        if (f) { e.preventDefault(); pickFile(f); return }
-      }
-    }
+  function submitKirimData() {
+    if (!idKunjungan) return
+    const hasExistingMedia = !!editingDelivery?.media_path
+    if (!kdLink.trim() && !kdFile && !hasExistingMedia) { toast.error('Sertakan link atau file'); return }
+    if (kdFile && kdFile.size > MAX_BYTES) { toast.error('Ukuran file melebihi 25 MB'); return }
+    if (kdFile && !ALLOWED_MIME.includes(kdFile.type)) { toast.error('Tipe file tidak didukung (gambar / pdf / doc / xls)'); return }
+    const fd = new FormData()
+    fd.append('id_kunjungan', String(idKunjungan))
+    if (kdLink.trim()) fd.append('link_url', kdLink.trim())
+    if (kdNote.trim()) fd.append('note', kdNote.trim())
+    if (kdFile) fd.append('file', kdFile)
+    if (editingDelivery) resubmitDelivery.mutate({ id: editingDelivery.id, fd })
+    else createDelivery.mutate(fd)
   }
 
   // ── Scroll tracking: tahu kapan petugas di dasar (untuk auto-scroll & tombol "ke bawah") ──
@@ -585,27 +606,6 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
                   )
                 })
               )}
-              {uploading && (
-                <div className="flex justify-end pt-1">
-                  <div
-                    className="max-w-[78%] px-2 py-1.5 rounded-2xl"
-                    style={{ background: 'var(--admin-primary-light)', border: '1px solid color-mix(in srgb, var(--admin-primary) 22%, transparent)' }}
-                  >
-                    {uploading.isImage && uploading.preview ? (
-                      <div className="relative">
-                        <img src={uploading.preview} alt={uploading.name} className="rounded-lg max-h-52 w-auto block opacity-50" />
-                        <div className="absolute inset-0 grid place-items-center"><Ring pct={uploading.pct} /></div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 py-0.5">
-                        <Ring pct={uploading.pct} />
-                        <span className="text-xs truncate max-w-[170px]" style={{ color: 'var(--admin-text)' }}>{uploading.name}</span>
-                      </div>
-                    )}
-                    <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--admin-text-muted)' }}>Mengirim… {uploading.pct}%</p>
-                  </div>
-                </div>
-              )}
               <div ref={endRef} />
 
               {/* Tombol "ke pesan terbaru" — muncul saat petugas scroll ke atas. */}
@@ -628,6 +628,40 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
               )}
             </div>
 
+            {/* ── Tray kiriman data terverifikasi ── */}
+            {idKunjungan != null && deliveries.length > 0 && (
+              <div className="border-t px-2.5 py-2 space-y-1.5 max-h-36 overflow-y-auto" style={{ borderColor: 'var(--admin-border)', background: '#fdf8f3' }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--admin-text-muted)' }}>Kiriman Data</p>
+                {deliveries.map((d) => {
+                  const lbl = DELIVERY_LABEL[d.status]
+                  const href = safeHref(d.link_url ?? undefined)
+                  return (
+                    <div key={d.id} className="flex items-start gap-2 text-xs rounded-lg px-2 py-1.5" style={{ background: '#fff', border: '1px solid var(--admin-border)' }}>
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${lbl.c}`}>{lbl.t}</span>
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        {d.note_operator && <p className="truncate" style={{ color: 'var(--admin-text)' }}>{d.note_operator}</p>}
+                        {d.link_url && (href
+                          ? <a href={href} target="_blank" rel="noreferrer" className="truncate block underline" style={{ color: 'var(--admin-primary)' }}>{d.link_url}</a>
+                          : <span className="truncate block" style={{ color: 'var(--admin-text-secondary)' }}>{d.link_url}</span>
+                        )}
+                        {d.media_name && <p className="truncate" style={{ color: 'var(--admin-text-secondary)' }}>{d.media_name}</p>}
+                        {d.status === 'revisi' && d.verif_note && <p className="text-[10px] text-rose-600">Catatan: {d.verif_note}</p>}
+                      </div>
+                      {d.status === 'revisi' && (
+                        <button
+                          className="shrink-0 text-[10px] px-2 py-0.5 rounded font-medium"
+                          style={{ background: 'var(--admin-primary-light)', color: 'var(--admin-primary)' }}
+                          onClick={() => { setEditingDelivery(d); setKdLink(d.link_url || ''); setKdNote(d.note_operator || ''); setKdFile(null); setKirimDataOpen(true) }}
+                        >
+                          Edit &amp; kirim ulang
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             {/* ── Banner "membalas" (reply) ── */}
             {replyTo && (
               <div className="flex items-center gap-2 px-3 py-1.5 border-t" style={{ borderColor: 'var(--admin-border)', background: 'var(--admin-primary-light)' }}>
@@ -642,24 +676,83 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
               </div>
             )}
 
+            {/* ── Form Kirim Data (toggled, operator-only) ── */}
+            {kirimDataOpen && (
+              <div className="border-t px-2.5 py-2.5 space-y-2" style={{ borderColor: 'var(--admin-border)', background: '#fdf8f3' }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold" style={{ color: 'var(--admin-primary)' }}>
+                    {editingDelivery ? 'Edit & Kirim Ulang' : 'Kirim Data'}
+                  </p>
+                  <button onClick={() => { setKirimDataOpen(false); resetKdForm() }} className="p-0.5 rounded hover:bg-black/5" aria-label="Tutup form Kirim Data">
+                    <X className="w-3.5 h-3.5" style={{ color: 'var(--admin-text-muted)' }} />
+                  </button>
+                </div>
+                <input
+                  type="url"
+                  value={kdLink}
+                  onChange={(e) => setKdLink(e.target.value)}
+                  placeholder="URL link data (https://...)"
+                  className="w-full text-xs px-2.5 py-1.5 rounded-lg outline-none"
+                  style={{ background: '#fff', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={kdFileRef}
+                    type="file"
+                    hidden
+                    accept={ALLOWED_MIME.join(',')}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) setKdFile(f); e.currentTarget.value = '' }}
+                  />
+                  <button
+                    onClick={() => kdFileRef.current?.click()}
+                    className="text-xs px-2 py-1 rounded-lg shrink-0"
+                    style={{ background: 'var(--admin-primary-light)', color: 'var(--admin-primary)', border: '1px solid color-mix(in srgb,var(--admin-primary) 20%,transparent)' }}
+                  >
+                    {kdFile ? kdFile.name.slice(0, 20) + (kdFile.name.length > 20 ? '…' : '') : 'Pilih file'}
+                  </button>
+                  {kdFile && <button onClick={() => setKdFile(null)} className="text-xs text-red-500 hover:underline">hapus</button>}
+                  {!kdFile && editingDelivery?.media_name && (
+                    <span className="text-[10px] truncate max-w-[140px]" style={{ color: 'var(--admin-text-muted)' }}>
+                      Berkas saat ini: {editingDelivery.media_name}
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  value={kdNote}
+                  onChange={(e) => setKdNote(e.target.value)}
+                  placeholder="Catatan (opsional)"
+                  rows={2}
+                  className="w-full text-xs px-2.5 py-1.5 rounded-lg outline-none resize-none"
+                  style={{ background: '#fff', border: '1px solid var(--admin-border)', color: 'var(--admin-text)' }}
+                />
+                {(createDelivery.isPending || resubmitDelivery.isPending) && kdPct > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Ring pct={kdPct} />
+                    <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Mengunggah… {kdPct}%</span>
+                  </div>
+                )}
+                <button
+                  onClick={submitKirimData}
+                  disabled={createDelivery.isPending || resubmitDelivery.isPending}
+                  className="w-full text-xs py-1.5 rounded-lg font-medium text-white disabled:opacity-40"
+                  style={{ background: 'var(--admin-primary)' }}
+                >
+                  {(createDelivery.isPending || resubmitDelivery.isPending) ? 'Mengirim…' : editingDelivery ? 'Kirim Ulang' : 'Kirim untuk Verifikasi'}
+                </button>
+              </div>
+            )}
+
             {/* ── Composer ── */}
             <div className="flex items-end gap-1.5 px-2.5 py-2 border-t" style={{ borderColor: 'var(--admin-border)', background: '#fff' }}>
-              <input
-                ref={fileRef}
-                type="file"
-                hidden
-                accept={ALLOWED_MIME.join(',')}
-                onChange={(e) => { pickFile(e.target.files?.[0]); e.currentTarget.value = '' }}
-              />
               <button
-                onClick={() => fileRef.current?.click()}
-                disabled={busy}
-                aria-label="Lampirkan gambar atau dokumen"
-                className="p-2 rounded-full shrink-0 transition-colors hover:bg-[var(--admin-primary-light)] disabled:opacity-50"
-                title="Lampirkan gambar / dokumen (maks 25 MB)"
-                style={{ color: 'var(--admin-text-secondary)' }}
+                onClick={() => { if (kirimDataOpen) { setKirimDataOpen(false); resetKdForm() } else setKirimDataOpen(true) }}
+                disabled={!idKunjungan}
+                aria-label="Kirim Data"
+                title={idKunjungan ? 'Kirim data via jalur terverifikasi' : 'Pemohon belum mengisi formulir'}
+                className="p-2 rounded-full shrink-0 transition-colors hover:bg-[var(--admin-primary-light)] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ color: kirimDataOpen ? 'var(--admin-primary)' : 'var(--admin-text-secondary)' }}
               >
-                <Paperclip className="w-5 h-5" />
+                <Database className="w-5 h-5" />
               </button>
               <textarea
                 ref={taRef}
@@ -667,8 +760,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose }: ChatPopupProps) {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitText() } }}
-                onPaste={onPaste}
-                placeholder="Ketik pesan… (tempel gambar dengan Ctrl+V)"
+                placeholder="Ketik pesan…"
                 className="flex-1 resize-none px-3 py-2 text-sm rounded-2xl outline-none leading-snug"
                 style={{ background: '#f3eee6', color: 'var(--admin-text)', maxHeight: 120 }}
               />

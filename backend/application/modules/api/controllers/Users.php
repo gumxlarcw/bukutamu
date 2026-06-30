@@ -10,7 +10,7 @@ class Users extends Api_base {
         $this->require_role('superadmin');
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $users = $this->db->select('id, username, nama, role, active, last_login, created_at')
+            $users = $this->db->select('id, username, nama, role, notel, active, last_login, created_at')
                               ->order_by('id', 'ASC')
                               ->get('admin_users')->result();
             $this->json_response(['success' => true, 'data' => $users, 'message' => 'OK']);
@@ -39,13 +39,16 @@ class Users extends Api_base {
             // CATATAN PENTING: list ini HARUS sinkron dengan kolom `admin_users.role` (ENUM di MySQL).
             // Kalau tambah role baru di sini tanpa ALTER TABLE, MySQL silently coerce ke '' (empty) di
             // mode non-strict — bug yang sulit dideteksi. Verify-after-insert di bawah ini menangkap drift itu.
-            $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan'];
+            $notel = trim((string) ($input['notel'] ?? ''));
+
+            $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan', 'verifikator'];
             $final_role = in_array($role, $valid_roles, true) ? $role : 'operator';
             $this->db->insert('admin_users', [
                 'username'      => $username,
                 'password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
                 'nama'          => $nama,
                 'role'          => $final_role,
+                'notel'         => ($notel === '' ? null : $notel),
                 'active'        => 1,
             ]);
             $new_id = $this->db->insert_id();
@@ -80,12 +83,16 @@ class Users extends Api_base {
 
             // Whitelist sama dengan endpoint create (lihat index() di atas).
             // HARUS sinkron dengan ENUM admin_users.role — kalau tidak, MySQL coerce ke ''. Defense di bawah.
-            $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan'];
+            $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan', 'verifikator'];
             $intended_role = null;
             if (isset($input['nama']))   $update['nama']   = trim($input['nama']);
             if (isset($input['role'])) {
                 $intended_role = in_array($input['role'], $valid_roles, true) ? $input['role'] : 'operator';
                 $update['role'] = $intended_role;
+            }
+            if (isset($input['notel'])) {
+                $notel_val = trim((string) $input['notel']);
+                $update['notel'] = ($notel_val === '' ? null : $notel_val);
             }
             if (isset($input['active'])) $update['active']  = $input['active'] ? 1 : 0;
 

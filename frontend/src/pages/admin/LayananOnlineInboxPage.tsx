@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { waApi } from '@/api/wa'
 import { visitsApi } from '@/api/visits'
+import { deliveriesApi } from '@/api/deliveries'
 import { useAuth } from '@/providers/AuthProvider'
 import { ChatPopup } from '@/components/wa/ChatPopup'
 import ConsultationFormPage from '@/pages/admin/ConsultationFormPage'
@@ -267,11 +268,11 @@ function categoryBadge(category: string | null) {
 
 export default function LayananOnlineInboxPage() {
   // Popup chat aktif (tumpukan; dedupe per nomor).
-  const [chats, setChats] = useState<{ phone: string; nama: string | null }[]>([])
-  const openChat = (phone: string, nama: string | null) =>
+  const [chats, setChats] = useState<{ phone: string; nama: string | null; idKunjungan: number | null }[]>([])
+  const openChat = (phone: string, nama: string | null, idKunjungan: number | null) =>
     setChats((cs) => cs.some((c) => c.phone === phone)
-      ? cs.map((c) => (c.phone === phone ? { phone, nama } : c)) // segarkan nama bila dibuka ulang
-      : [...cs, { phone, nama }])
+      ? cs.map((c) => (c.phone === phone ? { phone, nama, idKunjungan } : c)) // segarkan nama/kunjungan bila dibuka ulang
+      : [...cs, { phone, nama, idKunjungan }])
   const closeChat = (phone: string) => { setChats((cs) => cs.filter((c) => c.phone !== phone)); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) }
 
   // Hapus entri inbox — HANYA admin/superadmin (bukan petugas PST).
@@ -348,6 +349,19 @@ export default function LayananOnlineInboxPage() {
     queryKey: ['wa-inbox'],
     queryFn: () => waApi.inbox().then(r => r.data.data),
     refetchInterval: 15000,   // badge pesan belum-dibaca terasa hidup tanpa membuka chat
+  })
+  // Badge kiriman data pending/revisi per kunjungan — lightweight set of id_kunjungan values.
+  const { data: deliveryBadgeIds } = useQuery({
+    queryKey: ['deliveries-badge'],
+    queryFn: () =>
+      Promise.all([
+        deliveriesApi.list({ status: 'menunggu_verifikasi', limit: 200 }),
+        deliveriesApi.list({ status: 'revisi', limit: 200 }),
+      ]).then(([r1, r2]) => new Set([
+        ...r1.data.data.map((d) => d.id_kunjungan),
+        ...r2.data.data.map((d) => d.id_kunjungan),
+      ])),
+    refetchInterval: 30000,
   })
 
   const rows: WaInboxRow[] = data ?? []
@@ -463,7 +477,7 @@ export default function LayananOnlineInboxPage() {
                   </Button>
                 )}
                 {r.notel && (
-                  <Button size="sm" variant="outline" className="shrink-0 relative" title="Buka chat WhatsApp" onClick={() => openChat(r.notel as string, r.nama)}>
+                  <Button size="sm" variant="outline" className="shrink-0 relative" title="Buka chat WhatsApp" onClick={() => openChat(r.notel as string, r.nama, r.id_kunjungan)}>
                     <MessageCircle className="w-4 h-4" />
                     {r.unread > 0 && !openPhones.has(r.notel) && (
                       <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 grid place-items-center rounded-full text-[10px] font-bold text-white bg-red-500 shadow-sm">
@@ -471,6 +485,9 @@ export default function LayananOnlineInboxPage() {
                       </span>
                     )}
                   </Button>
+                )}
+                {!pending && r.id_kunjungan != null && deliveryBadgeIds?.has(r.id_kunjungan) && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700">📦 Data Pending</span>
                 )}
                 {(r.category === 'offline' || r.category === 'lainnya') && r.session_id != null && (
                   <Button size="sm" variant="outline" className="shrink-0"
@@ -497,7 +514,7 @@ export default function LayananOnlineInboxPage() {
 
       {/* Popup chat melayang (bisa digeser/diminimalkan) */}
       {chats.map((c, i) => (
-        <ChatPopup key={c.phone} phone={c.phone} nama={c.nama} index={i} onClose={() => closeChat(c.phone)} />
+        <ChatPopup key={c.phone} phone={c.phone} nama={c.nama} index={i} idKunjungan={c.idKunjungan} onClose={() => closeChat(c.phone)} />
       ))}
 
       {/* Popup "Proses" — form konsultasi in-place (reuse backend yang sama, tanpa pindah halaman) */}

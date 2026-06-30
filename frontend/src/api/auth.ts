@@ -1,7 +1,7 @@
 import apiClient from './client'
 import type { ApiResponse } from '@/types/api'
 
-export type UserRole = 'superadmin' | 'admin' | 'operator' | 'resepsionis' | 'petugas_pst' | 'pimpinan'
+export type UserRole = 'superadmin' | 'admin' | 'operator' | 'resepsionis' | 'petugas_pst' | 'pimpinan' | 'verifikator'
 
 export interface AuthUser {
   id: number

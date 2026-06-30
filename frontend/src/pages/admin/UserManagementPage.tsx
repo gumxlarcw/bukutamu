@@ -19,6 +19,7 @@ const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'operator', label: 'Operator (Legacy, full access)' },
   { value: 'petugas_pst', label: 'Petugas PST' },
   { value: 'resepsionis', label: 'Resepsionis' },
+  { value: 'verifikator', label: 'Verifikator' },
 ]
 const ROLE_LABELS: Record<string, string> = Object.fromEntries(ROLE_OPTIONS.map(r => [r.value, r.label]))
 const ROLE_COLORS: Record<string, string> = {
@@ -28,6 +29,7 @@ const ROLE_COLORS: Record<string, string> = {
   operator:    'bg-gray-100 text-gray-700',
   petugas_pst: 'bg-orange-100 text-orange-700',
   resepsionis: 'bg-teal-100 text-teal-700',
+  verifikator: 'bg-green-100 text-green-700',
 }
 
 // Mirror of the backend password rule (Users.php: minimal 8 karakter, harus mengandung
@@ -42,8 +44,8 @@ export default function UserManagementPage() {
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [pwOpen, setPwOpen] = useState(false)
 
-  const [form, setForm] = useState({ username: '', password: '', nama: '', role: 'operator' })
-  const [editForm, setEditForm] = useState({ nama: '', role: '', password: '', active: true })
+  const [form, setForm] = useState({ username: '', password: '', nama: '', notel: '', role: 'operator' })
+  const [editForm, setEditForm] = useState({ nama: '', notel: '', role: '', password: '', active: true })
   const [pwForm, setPwForm] = useState({ old_password: '', new_password: '' })
 
   const { data, isLoading } = useQuery({
@@ -53,7 +55,7 @@ export default function UserManagementPage() {
 
   const createMut = useMutation({
     mutationFn: () => usersApi.create(form),
-    onSuccess: () => { toast.success('User berhasil dibuat'); setCreateOpen(false); setForm({ username: '', password: '', nama: '', role: 'operator' }); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
+    onSuccess: () => { toast.success('User berhasil dibuat'); setCreateOpen(false); setForm({ username: '', password: '', nama: '', notel: '', role: 'operator' }); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
     onError: (e: unknown) => toast.error((axios.isAxiosError(e) ? e.response?.data?.message : null) || 'Gagal membuat user'),
   })
 
@@ -116,7 +118,7 @@ export default function UserManagementPage() {
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
-                <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditForm({ nama: u.nama, role: u.role, password: '', active: !!u.active }) }}>
+                <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditForm({ nama: u.nama, notel: u.notel ?? '', role: u.role, password: '', active: !!u.active }) }}>
                   <Pencil className="w-3.5 h-3.5" />
                 </Button>
                 <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteId(u.id)}>
@@ -135,6 +137,7 @@ export default function UserManagementPage() {
           <div className="space-y-3 py-2">
             <div className="space-y-1"><Label>Username</Label><Input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} /></div>
             <div className="space-y-1"><Label>Nama Lengkap</Label><Input value={form.nama} onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>No. WhatsApp</Label><Input value={form.notel} onChange={e => setForm(f => ({ ...f, notel: e.target.value }))} placeholder="62812xxxxxxx" /></div>
             <div className="space-y-1">
               <Label>Password</Label>
               <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 karakter, huruf + angka" aria-invalid={createPasswordError ? true : undefined} />
@@ -164,6 +167,7 @@ export default function UserManagementPage() {
           <DialogHeader><DialogTitle>Edit User</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1"><Label>Nama Lengkap</Label><Input value={editForm.nama} onChange={e => setEditForm(f => ({ ...f, nama: e.target.value }))} /></div>
+            <div className="space-y-1"><Label>No. WhatsApp</Label><Input value={editForm.notel} onChange={e => setEditForm(f => ({ ...f, notel: e.target.value }))} placeholder="62812xxxxxxx" /></div>
             <div className="space-y-1">
               <Label>Role</Label>
               <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm bg-background">

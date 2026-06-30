@@ -104,18 +104,31 @@ class Api_base extends CI_Controller {
         // pimpinan = viewer tier level 2 (boleh akses page admin read-only seperti audit/eval).
         // Pimpinan TIDAK ada di bypass list require_layanan_role(), jadi tidak bisa finalize visit.
         $role_level = [
-            'operator'    => 1,
-            'resepsionis' => 1,
-            'petugas_pst' => 1,
-            'pimpinan'    => 2,
-            'admin'       => 2,
-            'superadmin'  => 3,
+            'operator'     => 1,
+            'resepsionis'  => 1,
+            'petugas_pst'  => 1,
+            'verifikator'  => 1,
+            'pimpinan'     => 2,
+            'admin'        => 2,
+            'superadmin'   => 3,
         ];
         $user_role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
         $user_lvl = isset($role_level[$user_role]) ? $role_level[$user_role] : 1;
         $min_lvl = isset($role_level[$min_role]) ? $role_level[$min_role] : 1;
         if ($user_lvl < $min_lvl) {
             $this->json_response(['success' => false, 'message' => 'Akses ditolak. Role tidak mencukupi.'], 403);
+        }
+    }
+
+    /**
+     * 403 unless the authenticated user's role is in $roles.
+     * Call AFTER require_auth().
+     */
+    protected function require_role_in(array $roles)
+    {
+        $role = isset($this->current_user->role) ? $this->current_user->role : null;
+        if (!in_array($role, $roles, true)) {
+            $this->json_response(['success' => false, 'message' => 'Akses ditolak'], 403);
         }
     }
 
