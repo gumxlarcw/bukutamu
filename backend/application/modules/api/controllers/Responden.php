@@ -123,8 +123,8 @@ class Responden extends Api_base {
                 b.pemanfaatan_lainnya,
                 CONCAT('[', GROUP_CONCAT(DISTINCT
                     CASE WHEN k.jenis_layanan LIKE '[%'
-                         THEN TRIM(BOTH '[]' FROM REPLACE(REPLACE(k.jenis_layanan, '\"', ''), ',', '\",\"'))
-                         ELSE CONCAT('\"', k.jenis_layanan, '\"')
+                         THEN TRIM(LEADING '[' FROM TRIM(TRAILING ']' FROM REPLACE(REPLACE(REPLACE(k.jenis_layanan, CHAR(9), ''), CHAR(10), ''), CHAR(13), '')))
+                         ELSE CONCAT('\"', TRIM(REPLACE(REPLACE(REPLACE(k.jenis_layanan, CHAR(9), ''), CHAR(10), ''), CHAR(13), '')), '\"')
                     END
                 SEPARATOR ','), ']') as layanan_json,
                 GROUP_CONCAT(DISTINCT k.layanan_lainnya SEPARATOR '; ') as layanan_lainnya,
