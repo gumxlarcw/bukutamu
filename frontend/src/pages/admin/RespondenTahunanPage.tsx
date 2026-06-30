@@ -193,36 +193,64 @@ export default function RespondenTahunanPage() {
   const summary = data?.summary
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))
 
+  // Export one row PER VISIT (per kunjungan) — a person with 2 evaluated visits at different
+  // times appears twice. Each row carries the visit date + the per-indikator kepuasan scores.
   const handleExport = () => {
-    respondenApi.list({
-      tahun, q: search || undefined, limit: 10000, triwulan: triwulan || undefined, ...(skdFilter ? { skd: '1' } : {}),
-    }).then(r => {
-      const d = r.data.data as RespondenRow[]
-      exportCsv(`responden-${tahun}${triwulan ? `-tw${triwulan}` : ''}${skdFilter ? '-skd' : ''}`, d.map((row: RespondenRow) => ({
-        id_user: row.id_user,
-        nama: row.nama,
-        eligible_skd: isSkdEligible(row.jenis_layanan) ? 'Ya' : 'Tidak',
-        email: row.email ?? '',
-        telepon: row.notel ?? '',
-        jenis_kelamin: row.jeniskelamin ?? '',
-        umur: UMUR_OPTIONS.find(o => o.value === Number(row.umur))?.label ?? '',
-        pendidikan: PENDIDIKAN_OPTIONS.find(o => o.value === Number(row.pendidikan))?.label ?? '',
-        pekerjaan: PEKERJAAN_OPTIONS.find(o => o.value === Number(row.pekerjaan))?.label ?? '',
-        pekerjaan_lainnya: row.pekerjaan_lainnya ?? '',
-        kategori_instansi: KATEGORI_INSTANSI_OPTIONS.find(o => o.value === Number(row.kategori_instansi))?.label ?? '',
-        kategori_lainnya: row.kategori_lainnya ?? '',
-        nama_instansi: row.nama_instansi ?? '',
-        pemanfaatan: PEMANFAATAN_OPTIONS.find(o => o.value === Number(row.pemanfaatan))?.label ?? '',
-        pemanfaatan_lainnya: row.pemanfaatan_lainnya ?? '',
-        disabilitas: DISABILITAS_OPTIONS.find(o => o.value === Number(row.disabilitas))?.label ?? '',
-        jenis_disabilitas: Number(row.disabilitas) === 1 ? (JENIS_DISABILITAS_OPTIONS.find(o => o.value === Number(row.jenis_disabilitas))?.label ?? '') : '',
-        layanan: parseLayanan(row.jenis_layanan).join('; '),
-        layanan_lainnya: row.layanan_lainnya ?? '',
-        sarana: parseSarana(row.sarana).map(saranaLabel).join('; '),
-        sarana_lainnya: row.sarana_lainnya ?? '',
-        total_kunjungan: row.total_kunjungan,
-        kunjungan_terakhir: row.max_visit,
-      })))
+    respondenApi.exportVisits({ tahun, triwulan: triwulan || undefined }).then(r => {
+      const { visits, indikator_labels } = r.data.data
+      const indIds = Object.keys(indikator_labels).map(Number).sort((a, b) => a - b)
+      const rows = visits.map((v) => {
+        const base: Record<string, unknown> = {
+          tanggal: v.date_visit,
+          nama: v.nama,
+          nama_instansi: v.nama_instansi ?? '',
+          email: v.email ?? '',
+          telepon: v.notel ?? '',
+          jenis_kelamin: v.jeniskelamin ?? '',
+          umur: UMUR_OPTIONS.find(o => o.value === Number(v.umur))?.label ?? '',
+          pendidikan: PENDIDIKAN_OPTIONS.find(o => o.value === Number(v.pendidikan))?.label ?? '',
+          pekerjaan: PEKERJAAN_OPTIONS.find(o => o.value === Number(v.pekerjaan))?.label ?? '',
+          pekerjaan_lainnya: v.pekerjaan_lainnya ?? '',
+          kategori_instansi: KATEGORI_INSTANSI_OPTIONS.find(o => o.value === Number(v.kategori_instansi))?.label ?? '',
+          kategori_lainnya: v.kategori_lainnya ?? '',
+          pemanfaatan: PEMANFAATAN_OPTIONS.find(o => o.value === Number(v.pemanfaatan))?.label ?? '',
+          pemanfaatan_lainnya: v.pemanfaatan_lainnya ?? '',
+          disabilitas: DISABILITAS_OPTIONS.find(o => o.value === Number(v.disabilitas))?.label ?? '',
+          jenis_disabilitas: Number(v.disabilitas) === 1 ? (JENIS_DISABILITAS_OPTIONS.find(o => o.value === Number(v.jenis_disabilitas))?.label ?? '') : '',
+          layanan: parseLayanan(v.jenis_layanan).join('; '),
+          layanan_lainnya: v.layanan_lainnya ?? '',
+          sarana: parseSarana(v.sarana).map(saranaLabel).join('; '),
+          sarana_lainnya: v.sarana_lainnya ?? '',
+          rating: v.rating_pengunjung ?? '',
+        }
+        indIds.forEach((id) => { base[`ind_${id}`] = v.indikator?.[String(id)] ?? '' })
+        return base
+      })
+      const cols = [
+        { key: 'tanggal', label: 'Tanggal Kunjungan' },
+        { key: 'nama', label: 'Nama' },
+        { key: 'nama_instansi', label: 'Instansi' },
+        { key: 'email', label: 'Email' },
+        { key: 'telepon', label: 'Telepon' },
+        { key: 'jenis_kelamin', label: 'Jenis Kelamin' },
+        { key: 'umur', label: 'Umur' },
+        { key: 'pendidikan', label: 'Pendidikan' },
+        { key: 'pekerjaan', label: 'Pekerjaan' },
+        { key: 'pekerjaan_lainnya', label: 'Pekerjaan Lainnya' },
+        { key: 'kategori_instansi', label: 'Kategori Instansi' },
+        { key: 'kategori_lainnya', label: 'Kategori Lainnya' },
+        { key: 'pemanfaatan', label: 'Pemanfaatan' },
+        { key: 'pemanfaatan_lainnya', label: 'Pemanfaatan Lainnya' },
+        { key: 'disabilitas', label: 'Disabilitas' },
+        { key: 'jenis_disabilitas', label: 'Jenis Disabilitas' },
+        { key: 'layanan', label: 'Layanan' },
+        { key: 'layanan_lainnya', label: 'Layanan Lainnya' },
+        { key: 'sarana', label: 'Sarana' },
+        { key: 'sarana_lainnya', label: 'Sarana Lainnya' },
+        { key: 'rating', label: 'Rating Keseluruhan' },
+        ...indIds.map((id) => ({ key: `ind_${id}`, label: `${id}. ${indikator_labels[String(id)] ?? `Indikator ${id}`}` })),
+      ]
+      exportCsv(`responden-skd-kunjungan-${tahun}${triwulan ? `-tw${triwulan}` : ''}`, rows, cols)
     })
   }
 

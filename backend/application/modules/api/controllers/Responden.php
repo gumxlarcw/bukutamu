@@ -68,6 +68,54 @@ class Responden extends Api_base {
         ]);
     }
 
+    // GET /api/responden/export?tahun=&triwulan=  → one row per EVALUATED visit (SKD survey
+    // response), with the per-indikator kepuasan scores. One person with 2 evaluated visits = 2 rows.
+    public function export() {
+        $this->require_auth();
+        $this->require_role('admin');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $year     = (int) ($this->input->get('tahun') ?: date('Y'));
+        $triwulan = $this->input->get('triwulan');
+
+        $this->db->select("k.id_kunjungan, k.id_user, k.date_visit,
+                k.jenis_layanan, k.layanan_lainnya, k.sarana, k.sarana_lainnya, k.rating_pengunjung,
+                b.nama, b.email, b.notel, b.jeniskelamin, b.umur, b.disabilitas, b.jenis_disabilitas,
+                b.pendidikan, b.pekerjaan, b.pekerjaan_lainnya, b.kategori_instansi, b.kategori_lainnya,
+                b.nama_instansi, b.pemanfaatan, b.pemanfaatan_lainnya")
+            ->from('tamdes_kunjungan k')
+            ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+            ->where('YEAR(k.date_visit)', $year)
+            ->where('EXISTS (SELECT 1 FROM tamdes_evaluasi_detail ed WHERE ed.id_kunjungan = k.id_kunjungan)', null, false);
+        if ($triwulan) {
+            $this->db->where('QUARTER(k.date_visit)', (int) $triwulan);
+        }
+        $visits = $this->db->order_by('k.date_visit', 'ASC')->get()->result();
+
+        // Per-indikator kepuasan, fetched in one query then grouped by visit.
+        $ids = array_map(function ($v) { return (int) $v->id_kunjungan; }, $visits);
+        $by_visit = [];
+        if (!empty($ids)) {
+            $rows = $this->db->select('id_kunjungan, indikator_id, kepuasan')
+                ->where_in('id_kunjungan', $ids)->get('tamdes_evaluasi_detail')->result();
+            foreach ($rows as $r) {
+                $by_visit[(int) $r->id_kunjungan][(int) $r->indikator_id] = (int) $r->kepuasan;
+            }
+        }
+        foreach ($visits as $v) {
+            $v->indikator = (object) (isset($by_visit[(int) $v->id_kunjungan]) ? $by_visit[(int) $v->id_kunjungan] : []);
+        }
+
+        $this->json_response([
+            'success' => true,
+            'data'    => ['visits' => $visits, 'indikator_labels' => $this->indikator_list()],
+            'message' => 'OK',
+        ]);
+    }
+
     /**
      * Build the aggregation query.
      * Groups tamdes_kunjungan by id_user + year, aggregates layanan & sarana.

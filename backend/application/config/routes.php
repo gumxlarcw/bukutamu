@@ -52,6 +52,7 @@ $route['api/evaluations/summary']        = 'api/evaluations/summary';
 $route['api/evaluations/(:num)/results'] = 'api/evaluations/results/$1';
 $route['api/evaluations/(:num)']         = 'api/evaluations/detail/$1';
 
+$route['api/responden/export']         = 'api/responden/export';
 $route['api/responden']                = 'api/responden/index';
 
 $route['api/users']                    = 'api/users/index';
