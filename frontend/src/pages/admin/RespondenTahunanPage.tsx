@@ -293,6 +293,71 @@ export default function RespondenTahunanPage() {
     })
   }
 
+  // Export Markdown — satu seksi per kunjungan: identitas, layanan/sarana, tabel rincian data
+  // (1 baris per permintaan), tabel 16 indikator, dan pengaduan. Lebih mudah dibaca/di-parse
+  // untuk otomasi entri (mis. Claude di Chrome).
+  const handleExportMd = () => {
+    respondenApi.exportVisits({ tahun, triwulan: triwulan || undefined }).then(r => {
+      const { visits, indikator_labels } = r.data.data
+      const indIds = Object.keys(indikator_labels).map(Number).sort((a, b) => a - b)
+      const lbl = (list: ReadonlyArray<{ value: number; label: string }>, val: unknown) =>
+        list.find(o => o.value === Number(val))?.label ?? ''
+      const cell = (s: unknown) => String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim()
+      const L: string[] = []
+      L.push(`# Responden SKD ${tahun}${triwulan ? ` — ${TW_LABELS[triwulan]}` : ''} (${visits.length} kunjungan)`, '')
+      visits.forEach((v, i) => {
+        L.push(`## ${i + 1}. ${v.nama || '-'}${v.nama_instansi ? ` — ${v.nama_instansi}` : ''}  (ID Kunjungan: ${v.id_kunjungan})`, '')
+        L.push('**Identitas & Kunjungan**')
+        L.push(`- ID Kunjungan: ${v.id_kunjungan}`)
+        L.push(`- ID Responden: ${v.id_user}`)
+        L.push(`- Tanggal Kunjungan: ${v.date_visit}`)
+        L.push(`- Tanggal Registrasi: ${v.tgldatang ?? '-'}`)
+        L.push(`- No. Antrian: ${v.nomor_antrian ?? '-'}`)
+        L.push(`- Email / Telepon: ${v.email ?? '-'} / ${v.notel ?? '-'}`)
+        L.push(`- Jenis Kelamin: ${v.jeniskelamin ?? '-'}`)
+        L.push(`- Umur: ${lbl(UMUR_OPTIONS, v.umur) || '-'}`)
+        L.push(`- Pendidikan: ${lbl(PENDIDIKAN_OPTIONS, v.pendidikan) || '-'}`)
+        L.push(`- Pekerjaan: ${lbl(PEKERJAAN_OPTIONS, v.pekerjaan) || '-'}${v.pekerjaan_lainnya ? ` (${v.pekerjaan_lainnya})` : ''}`)
+        L.push(`- Kategori Instansi: ${lbl(KATEGORI_INSTANSI_OPTIONS, v.kategori_instansi) || '-'}${v.kategori_lainnya ? ` (${v.kategori_lainnya})` : ''}`)
+        L.push(`- Pemanfaatan: ${lbl(PEMANFAATAN_OPTIONS, v.pemanfaatan) || '-'}${v.pemanfaatan_lainnya ? ` (${v.pemanfaatan_lainnya})` : ''}`)
+        L.push(`- Disabilitas: ${lbl(DISABILITAS_OPTIONS, v.disabilitas) || '-'}${Number(v.disabilitas) === 1 && v.jenis_disabilitas ? ` (${lbl(JENIS_DISABILITAS_OPTIONS, v.jenis_disabilitas)})` : ''}`)
+        L.push('')
+        L.push('**Layanan & Sarana**')
+        L.push(`- Layanan: ${parseLayanan(v.jenis_layanan).join(', ') || '-'}${v.layanan_lainnya ? ` (${v.layanan_lainnya})` : ''}`)
+        L.push(`- Sarana: ${parseSarana(v.sarana).map(saranaLabel).join(', ') || '-'}${v.sarana_lainnya ? ` (${v.sarana_lainnya})` : ''}`)
+        L.push(`- Hasil Konsultasi: ${v.hasil_konsultasi ?? '-'}`)
+        L.push(`- Durasi: ${v.durasi_detik ?? '-'} detik`)
+        L.push('')
+        const ks = v.konsultasi ?? []
+        if (ks.length) {
+          L.push('**Rincian Data Diminta**', '')
+          L.push('| # | Rincian | Wilayah | Tahun | Level | Periode | Status | Kode Bidang | Digunakan Nasional | Kualitas | Jenis Pub | Judul Pub | Thn Pub |')
+          L.push('|---|---------|---------|-------|-------|---------|--------|-------------|--------------------|----------|-----------|-----------|---------|')
+          ks.forEach((k, ki) => {
+            const thn = k.tahun_awal ? (String(k.tahun_awal) === String(k.tahun_akhir) ? String(k.tahun_awal) : `${k.tahun_awal}-${k.tahun_akhir}`) : ''
+            const dn = (k.digunakan_nasional == null || k.digunakan_nasional === '') ? '' : (Number(k.digunakan_nasional) === 1 ? 'Ya' : 'Tidak')
+            L.push(`| ${ki + 1} | ${cell(k.rincian_data)} | ${cell(k.wilayah_data)} | ${cell(thn)} | ${cell(lbl(LEVEL_DATA_OPTIONS, k.level_data))} | ${cell(lbl(PERIODE_DATA_OPTIONS, k.periode_data))} | ${cell(lbl(STATUS_DATA_OPTIONS, k.status_data))} | ${cell(k.kode_bidang_statistik)} | ${cell(dn)} | ${cell(k.kualitas)} | ${cell(k.jenis_publikasi)} | ${cell(k.judul_publikasi)} | ${cell(k.tahun_publikasi)} |`)
+          })
+          L.push('')
+        }
+        L.push(`**Evaluasi SKD** (Rating Keseluruhan: ${v.rating_pengunjung ?? '-'}/10)`, '')
+        L.push('| No | Indikator | Kepuasan |', '|----|-----------|----------|')
+        indIds.forEach(id => {
+          L.push(`| ${id} | ${cell(indikator_labels[String(id)] ?? `Indikator ${id}`)} | ${v.indikator?.[String(id)] ?? '-'} |`)
+        })
+        L.push('')
+        L.push(`**Pengaduan/Saran:** ${v.pengaduan ?? '-'}`, '', '---', '')
+      })
+      const blob = new Blob([L.join('\n')], { type: 'text/markdown;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `responden-skd-${tahun}${triwulan ? `-tw${triwulan}` : ''}.md`
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -300,10 +365,16 @@ export default function RespondenTahunanPage() {
           <h1 className="admin-h1">Responden SKD</h1>
           <p className="admin-subtitle">Responden yang telah mengisi evaluasi SKD/SKM (indikator kepuasan)</p>
         </div>
-        <Button variant="outline" onClick={handleExport}>
-          <Download className="w-4 h-4 mr-2" />
-          Export CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
+          <Button variant="outline" onClick={handleExportMd}>
+            <Download className="w-4 h-4 mr-2" />
+            Export MD
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}
