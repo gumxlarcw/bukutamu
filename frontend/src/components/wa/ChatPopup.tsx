@@ -239,16 +239,16 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
   function resetKdForm() { setKdLink(''); setKdNote(''); setKdFile(null); setKdPct(0); setEditingDelivery(null) }
   const createDelivery = useMutation({
     mutationFn: (fd: FormData) => deliveriesApi.create(fd, (pct) => setKdPct(pct)),
-    onSuccess: () => { toast.success('Data dikirim untuk verifikasi'); resetKdForm(); setKirimDataOpen(false); qc.invalidateQueries({ queryKey: ['deliveries', phone] }) },
+    onSuccess: () => { toast.success('Data dikirim untuk verifikasi'); resetKdForm(); setKirimDataOpen(false); qc.invalidateQueries({ queryKey: ['deliveries', idKunjungan] }) },
     onError: (e) => toast.error(errMsg(e) || 'Gagal mengirim data'),
   })
   const resubmitDelivery = useMutation({
     mutationFn: ({ id, fd }: { id: number; fd: FormData }) => deliveriesApi.resubmit(id, fd),
-    onSuccess: () => { toast.success('Data dikirim ulang untuk verifikasi'); resetKdForm(); setKirimDataOpen(false); qc.invalidateQueries({ queryKey: ['deliveries', phone] }) },
+    onSuccess: () => { toast.success('Data dikirim ulang untuk verifikasi'); resetKdForm(); setKirimDataOpen(false); qc.invalidateQueries({ queryKey: ['deliveries', idKunjungan] }) },
     onError: (e) => toast.error(errMsg(e) || 'Gagal mengirim ulang data'),
   })
   const { data: deliveries = [] } = useQuery({
-    queryKey: ['deliveries', phone],
+    queryKey: ['deliveries', idKunjungan],
     queryFn: () => deliveriesApi.list({ id_kunjungan: idKunjungan! }).then((r) => r.data.data),
     enabled: idKunjungan != null,
     refetchInterval: 8000,
@@ -315,7 +315,9 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
     send.mutate({ body: b, quoted: replyTo?.id })
   }
   function submitKirimData() {
-    if (!kdLink.trim() && !kdFile) { toast.error('Sertakan link atau file'); return }
+    if (!idKunjungan) return
+    const hasExistingMedia = !!editingDelivery?.media_path
+    if (!kdLink.trim() && !kdFile && !hasExistingMedia) { toast.error('Sertakan link atau file'); return }
     if (kdFile && kdFile.size > MAX_BYTES) { toast.error('Ukuran file melebihi 25 MB'); return }
     if (kdFile && !ALLOWED_MIME.includes(kdFile.type)) { toast.error('Tipe file tidak didukung (gambar / pdf / doc / xls)'); return }
     const fd = new FormData()
@@ -709,6 +711,11 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
                     {kdFile ? kdFile.name.slice(0, 20) + (kdFile.name.length > 20 ? '…' : '') : 'Pilih file'}
                   </button>
                   {kdFile && <button onClick={() => setKdFile(null)} className="text-xs text-red-500 hover:underline">hapus</button>}
+                  {!kdFile && editingDelivery?.media_name && (
+                    <span className="text-[10px] truncate max-w-[140px]" style={{ color: 'var(--admin-text-muted)' }}>
+                      Berkas saat ini: {editingDelivery.media_name}
+                    </span>
+                  )}
                 </div>
                 <textarea
                   value={kdNote}
