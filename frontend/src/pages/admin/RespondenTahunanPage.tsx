@@ -16,25 +16,12 @@ import {
   PEMANFAATAN_OPTIONS,
 } from '@/types/guest'
 import { guestsApi, type GuestVisit } from '@/api/guests'
-import { respondenApi, type RespondenRow } from '@/api/responden'
+import { respondenApi, type RespondenRow, type RespondenKonsultasi } from '@/api/responden'
 import { evaluationsApi } from '@/api/evaluations'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { exportCsv } from '@/lib/export-csv'
 
 const TW_LABELS: Record<string, string> = { '1': 'TW I (Jan–Mar)', '2': 'TW II (Apr–Jun)', '3': 'TW III (Jul–Sep)', '4': 'TW IV (Okt–Des)' }
-
-// 4 core SKD services that make a respondent eligible for SKD/SKM evaluation.
-const SKD_SERVICES = [
-  'Perpustakaan',
-  'Konsultasi Statistik',
-  'Rekomendasi Kegiatan Statistik',
-  'Penjualan Produk Statistik',
-] as const
-
-function isSkdEligible(jenis_layanan: string | null): boolean {
-  const services = parseLayanan(jenis_layanan)
-  return services.some(s => (SKD_SERVICES as readonly string[]).includes(s))
-}
 
 function formatDate(d: string) {
   try { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }
@@ -54,16 +41,75 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
+function optLabel(list: ReadonlyArray<{ value: number; label: string }>, val: unknown): string {
+  if (val == null || val === '') return ''
+  return list.find(o => o.value === Number(val))?.label ?? ''
+}
+
 /**
- * One visit row in the history list. Visits that were actually evaluated
- * (rating_pengunjung set) get an explicit "Lihat Evaluasi" button; clicking it
- * reveals that visit's full 16-indicator kepuasan scores. Visits without an
- * evaluation show no button. Each row owns its own react-query fetch keyed by
- * id_kunjungan, so results are cached per visit and only fetched once viewed.
+ * One "rincian data yang diminta" request (a konsultasi_pengunjung row) rendered as a
+ * compact card. A visit can carry several. Only populated meta fields are shown so the
+ * card stays readable inside the narrow detail dialog.
+ */
+function RequestedDataCard({ k, index }: { k: RespondenKonsultasi; index: number }) {
+  const thn = k.tahun_awal
+    ? (String(k.tahun_awal) === String(k.tahun_akhir) ? String(k.tahun_awal) : `${k.tahun_awal}–${k.tahun_akhir}`)
+    : ''
+  const dn = (k.digunakan_nasional == null || k.digunakan_nasional === '')
+    ? '' : (Number(k.digunakan_nasional) === 1 ? 'Ya' : 'Tidak')
+  const pubParts = [k.jenis_publikasi, k.judul_publikasi].filter(Boolean).join(' — ')
+  const pub = pubParts ? pubParts + (k.tahun_publikasi ? ` (${k.tahun_publikasi})` : '') : ''
+
+  const meta: Array<[string, string]> = ([
+    ['Wilayah', k.wilayah_data ?? ''],
+    ['Tahun', thn],
+    ['Level', optLabel(LEVEL_DATA_OPTIONS, k.level_data)],
+    ['Periode', optLabel(PERIODE_DATA_OPTIONS, k.periode_data)],
+    ['Status', optLabel(STATUS_DATA_OPTIONS, k.status_data)],
+    ['Kode Bidang', k.kode_bidang_statistik ?? ''],
+    ['Digunakan Nasional', dn],
+    ['Kepuasan Kualitas', k.kualitas != null && k.kualitas !== '' ? String(k.kualitas) : ''],
+    ['Publikasi', pub],
+  ] as Array<[string, string]>).filter(([, v]) => v.trim() !== '')
+
+  return (
+    <div className="rounded-md border bg-background p-2">
+      <div className="flex items-start gap-2">
+        <span className="shrink-0 text-[10px] font-bold text-orange-700 bg-orange-100 rounded px-1.5 py-0.5">#{index + 1}</span>
+        <p className="text-[11px] font-medium leading-snug flex-1">
+          {k.rincian_data || <span className="text-muted-foreground italic font-normal">Tanpa rincian</span>}
+        </p>
+      </div>
+      {meta.length > 0 && (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1.5 pl-7">
+          {meta.map(([label, value]) => (
+            <div key={label} className="text-[10px] leading-tight">
+              <span className="text-muted-foreground">{label}: </span>
+              <span className="font-medium">{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * One visit row in the history list. Every visit expands (button "Detail") to reveal its
+ * full "rincian data yang diminta" (konsultasi_pengunjung) AND — for evaluated visits
+ * (rating_pengunjung set) — its 16-indicator kepuasan scores. Each row owns its own
+ * react-query fetches keyed by id_kunjungan, so results are cached per visit and only
+ * fetched once expanded.
  */
 function VisitHistoryRow({ visit }: { visit: GuestVisit }) {
   const [expanded, setExpanded] = useState(false)
   const isEvaluated = visit.rating_pengunjung !== null
+
+  const { data: konsul, isLoading: konsulLoading } = useQuery({
+    queryKey: ['responden-visit-konsul', visit.id_kunjungan],
+    queryFn: () => respondenApi.visitDetail(visit.id_kunjungan).then(r => r.data.data),
+    enabled: expanded,
+  })
 
   const { data: evalDetail, isLoading } = useQuery({
     queryKey: ['eval-results-responden', visit.id_kunjungan],
@@ -88,53 +134,71 @@ function VisitHistoryRow({ visit }: { visit: GuestVisit }) {
           {visit.status}
         </span>
         {isEvaluated && (
-          <>
-            <span className="text-amber-600 font-bold shrink-0">
-              {'★'}{visit.rating_pengunjung}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 shrink-0"
-              onClick={() => setExpanded(e => !e)}
-            >
-              <Eye className="w-3.5 h-3.5 mr-1" />
-              {expanded ? 'Tutup' : 'Lihat Evaluasi'}
-            </Button>
-          </>
+          <span className="text-amber-600 font-bold shrink-0">
+            {'★'}{visit.rating_pengunjung}
+          </span>
         )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 shrink-0"
+          onClick={() => setExpanded(e => !e)}
+        >
+          <Eye className="w-3.5 h-3.5 mr-1" />
+          {expanded ? 'Tutup' : 'Detail'}
+        </Button>
       </div>
 
-      {expanded && isEvaluated && (
-        <div className="px-2 pb-2 border-t">
-          {isLoading ? (
-            <div className="space-y-1.5 pt-2">
-              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 rounded" />)}
-            </div>
-          ) : evalDetail && evalDetail.details && evalDetail.details.length > 0 ? (
-            <>
-              <p className="text-[11px] text-muted-foreground pt-2 mb-1">
-                Rating keseluruhan: <strong>{evalDetail.rating_pengunjung ?? '-'}/10</strong>
-                {evalDetail.durasi_detik != null && ` · Durasi ${Math.round(evalDetail.durasi_detik / 60)} mnt`}
-              </p>
-              <div className="space-y-0.5">
-                {evalDetail.details
-                  .slice()
-                  .sort((a, b) => a.indikator_id - b.indikator_id)
-                  .map(detail => {
-                    const label = evalDetail.indikator?.[String(detail.indikator_id)] ?? `Indikator ${detail.indikator_id}`
-                    return (
-                      <div key={detail.id} className="flex items-start gap-2 text-[11px] py-0.5">
-                        <span className="text-muted-foreground shrink-0 w-5 text-right pt-0.5">{detail.indikator_id}.</span>
-                        <span className="flex-1 text-muted-foreground leading-relaxed" title={label}>{label}</span>
-                        <ScoreBadge score={Number(detail.kepuasan)} />
-                      </div>
-                    )
-                  })}
+      {expanded && (
+        <div className="px-2 pb-2 border-t space-y-3">
+          {/* Rincian data yang diminta (konsultasi_pengunjung) — semua kunjungan */}
+          <div className="pt-2">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Rincian Data yang Diminta</p>
+            {konsulLoading ? (
+              <div className="space-y-1.5">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-10 rounded" />)}</div>
+            ) : konsul && konsul.length > 0 ? (
+              <div className="space-y-1.5">
+                {konsul.map((k, i) => <RequestedDataCard key={k.id} k={k} index={i} />)}
               </div>
-            </>
-          ) : (
-            <p className="text-[11px] text-muted-foreground italic pt-2">Rincian indikator tidak tersedia untuk kunjungan ini.</p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic">Tidak ada rincian data yang diminta tercatat untuk kunjungan ini.</p>
+            )}
+          </div>
+
+          {/* Evaluasi SKD (16 indikator) — hanya kunjungan yang dievaluasi */}
+          {isEvaluated && (
+            <div>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Evaluasi SKD</p>
+              {isLoading ? (
+                <div className="space-y-1.5">
+                  {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 rounded" />)}
+                </div>
+              ) : evalDetail && evalDetail.details && evalDetail.details.length > 0 ? (
+                <>
+                  <p className="text-[11px] text-muted-foreground mb-1">
+                    Rating keseluruhan: <strong>{evalDetail.rating_pengunjung ?? '-'}/10</strong>
+                    {evalDetail.durasi_detik != null && ` · Durasi ${Math.round(evalDetail.durasi_detik / 60)} mnt`}
+                  </p>
+                  <div className="space-y-0.5">
+                    {evalDetail.details
+                      .slice()
+                      .sort((a, b) => a.indikator_id - b.indikator_id)
+                      .map(detail => {
+                        const label = evalDetail.indikator?.[String(detail.indikator_id)] ?? `Indikator ${detail.indikator_id}`
+                        return (
+                          <div key={detail.id} className="flex items-start gap-2 text-[11px] py-0.5">
+                            <span className="text-muted-foreground shrink-0 w-5 text-right pt-0.5">{detail.indikator_id}.</span>
+                            <span className="flex-1 text-muted-foreground leading-relaxed" title={label}>{label}</span>
+                            <ScoreBadge score={Number(detail.kepuasan)} />
+                          </div>
+                        )
+                      })}
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-muted-foreground italic">Rincian indikator tidak tersedia untuk kunjungan ini.</p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -605,11 +669,8 @@ export default function RespondenTahunanPage() {
                     Riwayat Kunjungan ({viewVisits.length})
                   </p>
                   <p className="text-[11px] text-muted-foreground mb-2">
-                    {evaluatedVisitCount > 0
-                      ? `${evaluatedVisitCount} kunjungan dievaluasi — tekan "Lihat Evaluasi" untuk skor per indikator (kondisi tiap kunjungan).`
-                      : isSkdEligible(viewRow.jenis_layanan)
-                        ? 'Belum ada kunjungan yang dievaluasi.'
-                        : 'Layanan yang digunakan tidak memerlukan evaluasi SKD.'}
+                    Tekan &quot;Detail&quot; pada tiap kunjungan untuk melihat rincian data yang diminta
+                    {evaluatedVisitCount > 0 ? ` & skor evaluasi per indikator (${evaluatedVisitCount} kunjungan dievaluasi)` : ''}.
                   </p>
                   <div className="max-h-72 overflow-y-auto space-y-1.5">
                     {viewVisits.map((v: GuestVisit) => (

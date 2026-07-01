@@ -129,6 +129,28 @@ class Responden extends Api_base {
         ]);
     }
 
+    // GET /api/responden/visit/(:num) → rincian "data yang diminta" (konsultasi_pengunjung)
+    // untuk SATU kunjungan. Dipakai detail dialog Responden untuk menampilkan detail lengkap
+    // per kunjungan. Admin-only, samakan dengan export() supaya model akses konsisten.
+    public function visit_detail($id) {
+        $this->require_auth();
+        $this->require_role('admin');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $id   = (int) $id;
+        $rows = $this->db->select('id, id_kunjungan, rincian_data, wilayah_data, tahun_awal, tahun_akhir,
+                level_data, periode_data, status_data, kode_bidang_statistik, digunakan_nasional, kualitas,
+                jenis_publikasi, judul_publikasi, tahun_publikasi')
+            ->where('id_kunjungan', $id)
+            ->order_by('id', 'ASC')
+            ->get('konsultasi_pengunjung')->result();
+
+        $this->json_response(['success' => true, 'data' => $rows, 'message' => 'OK']);
+    }
+
     /**
      * Build the aggregation query.
      * Groups tamdes_kunjungan by id_user + year, aggregates layanan & sarana.

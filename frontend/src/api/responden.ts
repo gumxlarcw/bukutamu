@@ -99,6 +99,25 @@ export interface RespondenExportData {
   indikator_labels: Record<string, string>
 }
 
+// One "rincian data yang diminta" request (konsultasi_pengunjung row). A visit can have several.
+export interface RespondenKonsultasi {
+  id: number | string
+  id_kunjungan: number | string
+  rincian_data: string | null
+  wilayah_data: string | null
+  tahun_awal: number | string | null
+  tahun_akhir: number | string | null
+  level_data: number | string | null
+  periode_data: number | string | null
+  status_data: number | string | null
+  kode_bidang_statistik: string | null
+  digunakan_nasional: number | string | null
+  kualitas: number | string | null
+  jenis_publikasi: string | null
+  judul_publikasi: string | null
+  tahun_publikasi: number | string | null
+}
+
 export const respondenApi = {
   list: (params: RespondenParams) =>
     apiClient.get<RespondenListResponse>('/api/responden', { params }),
@@ -106,4 +125,7 @@ export const respondenApi = {
   // visits at different times = 2 rows.
   exportVisits: (params: { tahun: string; triwulan?: string }) =>
     apiClient.get<ApiResponse<RespondenExportData>>('/api/responden/export', { params }),
+  // Rincian "data yang diminta" (konsultasi_pengunjung) for one visit — used by the detail dialog.
+  visitDetail: (id: number) =>
+    apiClient.get<ApiResponse<RespondenKonsultasi[]>>(`/api/responden/visit/${id}`),
 }
