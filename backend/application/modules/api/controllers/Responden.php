@@ -131,7 +131,8 @@ class Responden extends Api_base {
 
     // GET /api/responden/visit/(:num) → rincian "data yang diminta" (konsultasi_pengunjung)
     // untuk SATU kunjungan. Dipakai detail dialog Responden untuk menampilkan detail lengkap
-    // per kunjungan. Admin-only, samakan dengan export() supaya model akses konsisten.
+    // per kunjungan. Admin-tier (require_role('admin') = level >= 2, jadi termasuk pimpinan),
+    // samakan persis dengan export() supaya model akses konsisten.
     public function visit_detail($id) {
         $this->require_auth();
         $this->require_role('admin');
