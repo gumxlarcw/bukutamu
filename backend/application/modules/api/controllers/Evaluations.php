@@ -182,18 +182,35 @@ class Evaluations extends Api_base {
                 }
             }
 
+            // #31 — Reject SEBELUM delete kalau tidak ada satupun kepuasan valid (1-10),
+            // supaya payload rusak tidak menghapus evaluasi lama tanpa menggantinya.
+            $valid_kepuasan = [];
+            foreach ($kepuasan as $indikator_id => $val_kepuasan) {
+                if ($val_kepuasan && $val_kepuasan >= 1 && $val_kepuasan <= 10) {
+                    $valid_kepuasan[(int) $indikator_id] = (int) $val_kepuasan;
+                }
+            }
+            if (empty($valid_kepuasan)) {
+                $this->json_response(['success' => false, 'message' => 'Minimal 1 indikator kepuasan (skala 1-10) harus diisi.'], 422);
+            }
+
+            // #24 — selesai_timestamp/durasi hanya di-set pada submit PERTAMA (transisi keluar
+            // dari 'menunggu_evaluasi'). Re-submit koreksi tidak memajukan waktu selesai / inflate durasi.
+            $is_first_submit = ($visit->status === 'menunggu_evaluasi');
+
+            // #31 — delete + reinsert + update dalam SATU transaksi (atomic, no partial loss).
+            $this->db->trans_start();
+
             // Delete existing evaluation rows to prevent duplicates
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
 
             // Insert evaluation rows: skala Likert 1-10 untuk kepuasan saja (kepentingan deprecated).
-            foreach ($kepuasan as $indikator_id => $val_kepuasan) {
-                if (!$val_kepuasan || $val_kepuasan < 1 || $val_kepuasan > 10) continue;
-
+            foreach ($valid_kepuasan as $indikator_id => $val_kepuasan) {
                 $this->db->insert('tamdes_evaluasi_detail', [
                     'id_kunjungan' => $id,
-                    'indikator_id' => (int) $indikator_id,
+                    'indikator_id' => $indikator_id,
                     'kepentingan'  => null,
-                    'kepuasan'     => (int) $val_kepuasan,
+                    'kepuasan'     => $val_kepuasan,
                 ]);
             }
 
@@ -208,22 +225,29 @@ class Evaluations extends Api_base {
                 }
             }
 
-            // Update kunjungan: rating, status, selesai_timestamp, durasi_detik.
+            // Update kunjungan: rating + status selalu; selesai_timestamp/durasi HANYA submit pertama.
             // WA channel: park in 'evaluasi_selesai' (operator closes manually; keeps the
             // session "active" so post-eval chatter never mints a new intake form).
             // Kiosk/tablet SKD: unchanged — straight to 'selesai'.
-            $is_wa = ($visit->created_by === 'whatsapp');
-            $selesai_timestamp = date('Y-m-d H:i:s');
+            $is_wa  = ($visit->created_by === 'whatsapp');
             $update = [
-                'rating_pengunjung'  => $skor_keseluruhan,
-                'status'             => $is_wa ? 'evaluasi_selesai' : 'selesai',
-                'selesai_timestamp'  => $selesai_timestamp,
+                'rating_pengunjung' => $skor_keseluruhan,
+                'status'            => $is_wa ? 'evaluasi_selesai' : 'selesai',
             ];
-            if ($visit->date_visit) {
-                $durasi             = strtotime($selesai_timestamp) - strtotime($visit->date_visit);
-                $update['durasi_detik'] = max(0, $durasi);
+            if ($is_first_submit) {
+                $selesai_timestamp           = date('Y-m-d H:i:s');
+                $update['selesai_timestamp'] = $selesai_timestamp;
+                if ($visit->date_visit) {
+                    $update['durasi_detik'] = max(0, strtotime($selesai_timestamp) - strtotime($visit->date_visit));
+                }
             }
             $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
+
+            $this->db->trans_complete();
+
+            if ($this->db->trans_status() === FALSE) {
+                $this->json_response(['success' => false, 'message' => 'Gagal menyimpan evaluasi (transaksi dibatalkan).'], 500);
+            }
 
             $this->json_response(['success' => true, 'data' => null, 'message' => 'Evaluasi berhasil disimpan']);
         } else {

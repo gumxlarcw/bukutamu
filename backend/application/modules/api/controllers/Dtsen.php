@@ -60,19 +60,60 @@ class Dtsen extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
         }
 
+        // #21 — tolak parkir 'menunggu_evaluasi' pada visit non-SKD (dead-end state).
+        if ($status === 'menunggu_evaluasi'
+            && $this->next_status_after_completion($visit->jenis_layanan) !== 'menunggu_evaluasi') {
+            $this->json_response(['success' => false, 'message' => 'Status menunggu_evaluasi hanya untuk layanan SKD.'], 400);
+        }
+
+        // Gate finalisasi: selesai/menunggu_evaluasi harus dari role yang berhak atas layanan tsb.
         if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
             $this->require_layanan_role($visit->jenis_layanan);
         }
 
-        // Form-complete gate: untuk visit DTSEN, wajib ada baris dtsen_konsultasi sebelum 'selesai'.
-        // Tanpa gate ini petugas bisa PUT status=selesai tanpa pernah POST data DTSEN.
-        if ($status === 'selesai' && $this->layanan_requires_dtsen_form($visit->jenis_layanan)) {
-            $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('dtsen_konsultasi');
-            if ($cnt === 0) {
-                $this->json_response([
-                    'success' => false,
-                    'message' => 'Form DTSEN belum diisi. Lengkapi jenis konsultasi, hasil, dan catatan sebelum menyelesaikan.',
-                ], 400);
+        // #3 — Soft-correct: layanan SKD yang dikirim 'selesai' dikoreksi ke 'menunggu_evaluasi'
+        // agar evaluasi IKM tidak bisa dilewati lewat endpoint DTSEN. Bypass roles override.
+        // Parity dgn Visits::status (audit 2026-07-12 #3).
+        if ($status === 'selesai') {
+            $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
+            $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
+            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+                $status = 'menunggu_evaluasi';
+            }
+        }
+
+        // ── Form-complete gates (defense-in-depth) — identik dgn Visits::status. ──
+        if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
+            // Gate 1: keterangan wajib (Lainnya / Keperluan Pimpinan).
+            if ($this->layanan_requires_keterangan($visit->jenis_layanan)) {
+                $konsul     = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->row();
+                $keterangan = $konsul ? trim((string) $konsul->hasil_konsultasi) : '';
+                if ($keterangan === '') {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Keterangan wajib diisi sebelum visit ini bisa diselesaikan. Isi field "Ringkasan / Keterangan" terlebih dahulu.',
+                    ], 400);
+                }
+            }
+            // Gate 2: form SKD wajib (4 layanan inti SKD) — ≥1 baris kebutuhan_data.
+            if ($this->layanan_requires_skd_form($visit->jenis_layanan)) {
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->where("rincian_data IS NOT NULL AND TRIM(rincian_data) <> ''", NULL, FALSE)->count_all_results('konsultasi_pengunjung');
+                if ($cnt === 0) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Form konsultasi SKD belum lengkap. Isi minimal 1 baris kebutuhan data + ringkasan konsultasi di halaman form konsultasi sebelum menyelesaikan visit.',
+                    ], 400);
+                }
+            }
+            // Gate 3: form DTSEN wajib (Konsultasi DTSEN) — 1 baris dtsen_konsultasi.
+            if ($status === 'selesai' && $this->layanan_requires_dtsen_form($visit->jenis_layanan)) {
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('dtsen_konsultasi');
+                if ($cnt === 0) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Form DTSEN belum diisi. Lengkapi jenis konsultasi, hasil, dan catatan sebelum menyelesaikan.',
+                    ], 400);
+                }
             }
         }
 
@@ -89,6 +130,9 @@ class Dtsen extends Api_base {
 
         $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
         $updated = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+
+        // #22 — audit trail parity dgn Visits::status.
+        $this->audit('update_status', 'visit', $id, ['from' => $visit->status, 'to' => $status]);
 
         $this->json_response(['success' => true, 'data' => $updated, 'message' => 'Status berhasil diupdate']);
     }

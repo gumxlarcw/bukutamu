@@ -145,7 +145,20 @@ class Visits extends Api_base {
                 $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
             }
 
-            // Capture state untuk audit log sebelum row hilang permanen
+            // Fetch data_deliveries media paths BEFORE row deletion so we can unlink
+            // files after all DB deletes succeed (paths are gone once rows are deleted).
+            $delivery_media = $this->db->select('media_path')
+                ->where('id_kunjungan', $id)
+                ->where('media_path IS NOT NULL')
+                ->get('data_deliveries')->result();
+
+            // #30 — Atomic hard-delete: audit + 8-table cascade dalam SATU transaksi.
+            // Kalau ada satu delete gagal, SEMUA rollback (tidak ada partial state) dan
+            // audit 'delete' tidak tertulis (tidak ada history palsu). Media di-unlink
+            // HANYA setelah commit sukses supaya file tidak hilang untuk visit yg masih ada.
+            $this->db->trans_start();
+
+            // Capture state untuk audit log sebelum row hilang permanen (ikut transaksi).
             $this->audit('delete', 'visit', $id, [
                 'nomor_antrian' => $visit->nomor_antrian,
                 'jenis_layanan' => $visit->jenis_layanan,
@@ -154,14 +167,7 @@ class Visits extends Api_base {
                 'id_user'       => $visit->id_user,
             ]);
 
-            // Fetch data_deliveries media paths BEFORE row deletion so we can unlink
-            // files after all DB deletes succeed (paths are gone once rows are deleted).
-            $delivery_media = $this->db->select('media_path')
-                ->where('id_kunjungan', $id)
-                ->where('media_path IS NOT NULL')
-                ->get('data_deliveries')->result();
-
-            // Cascade: 7 related tables yang FK ke id_kunjungan (owned-by-visit).
+            // Cascade: 7 related tables yang FK ke id_kunjungan (owned-by-visit) + parent.
             $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');
             $this->db->where('id_kunjungan', $id)->delete('dtsen_konsultasi');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
@@ -171,7 +177,13 @@ class Visits extends Api_base {
             $this->db->where('id_kunjungan', $id)->delete('data_deliveries');
             $this->db->where('id_kunjungan', $id)->delete('tamdes_kunjungan');
 
-            // Unlink deliverable files AFTER all DB deletes complete — best-effort,
+            $this->db->trans_complete();
+
+            if ($this->db->trans_status() === FALSE) {
+                $this->json_response(['success' => false, 'message' => 'Gagal menghapus kunjungan (transaksi dibatalkan).'], 500);
+            }
+
+            // Unlink deliverable files AFTER commit sukses — best-effort,
             // basename() prevents traversal, @unlink silences missing-file warnings.
             $media_dir = FCPATH . 'assets/wa_media/';
             foreach ($delivery_media as $row) {
@@ -208,6 +220,12 @@ class Visits extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
         }
 
+        // #21 — tolak parkir 'menunggu_evaluasi' pada visit non-SKD (dead-end state).
+        if ($status === 'menunggu_evaluasi'
+            && $this->next_status_after_completion($visit->jenis_layanan) !== 'menunggu_evaluasi') {
+            $this->json_response(['success' => false, 'message' => 'Status menunggu_evaluasi hanya untuk layanan SKD.'], 400);
+        }
+
         // Gate finalisasi: selesai/menunggu_evaluasi harus dari role yang berhak atas layanan tsb.
         if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
             $this->require_layanan_role($visit->jenis_layanan);
@@ -216,7 +234,7 @@ class Visits extends Api_base {
         // Soft-correct: kalau layanan SKD (perlu evaluasi) tapi FE kirim 'selesai' langsung,
         // koreksi ke 'menunggu_evaluasi'. Bypass roles boleh override (admin/superadmin/operator).
         if ($status === 'selesai') {
-            $role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
+            $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
             if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
                 $status = 'menunggu_evaluasi';
@@ -241,7 +259,7 @@ class Visits extends Api_base {
             }
             // Gate 2: form SKD wajib (4 layanan inti SKD) — ≥1 baris kebutuhan_data.
             if ($this->layanan_requires_skd_form($visit->jenis_layanan)) {
-                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('konsultasi_pengunjung');
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->where("rincian_data IS NOT NULL AND TRIM(rincian_data) <> ''", NULL, FALSE)->count_all_results('konsultasi_pengunjung');
                 if ($cnt === 0) {
                     $this->json_response([
                         'success' => false,

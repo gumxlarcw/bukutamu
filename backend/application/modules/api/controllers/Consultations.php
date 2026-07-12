@@ -67,6 +67,12 @@ class Consultations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
         }
 
+        // #21 — tolak parkir 'menunggu_evaluasi' pada visit non-SKD (dead-end state).
+        if ($status === 'menunggu_evaluasi'
+            && $this->next_status_after_completion($visit->jenis_layanan) !== 'menunggu_evaluasi') {
+            $this->json_response(['success' => false, 'message' => 'Status menunggu_evaluasi hanya untuk layanan SKD.'], 400);
+        }
+
         // Gate: hanya transisi finalisasi (selesai/menunggu_evaluasi) yang dicek per layanan.
         // Status awal (dipanggil/diproses) bebas — semua role boleh memanggil & mulai.
         if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
@@ -76,7 +82,7 @@ class Consultations extends Api_base {
         // Soft-correct: kalau layanan SKD (perlu evaluasi) tapi FE kirim 'selesai' langsung,
         // koreksi ke 'menunggu_evaluasi'. Bypass roles boleh override (admin/superadmin/operator).
         if ($status === 'selesai') {
-            $role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
+            $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
             if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
                 $status = 'menunggu_evaluasi';
@@ -100,11 +106,21 @@ class Consultations extends Api_base {
             }
             // Gate 2: form SKD (kebutuhan_data) wajib ≥1 baris untuk 4 layanan inti SKD.
             if ($this->layanan_requires_skd_form($visit->jenis_layanan)) {
-                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('konsultasi_pengunjung');
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->where("rincian_data IS NOT NULL AND TRIM(rincian_data) <> ''", NULL, FALSE)->count_all_results('konsultasi_pengunjung');
                 if ($cnt === 0) {
                     $this->json_response([
                         'success' => false,
                         'message' => 'Form konsultasi SKD belum lengkap. Isi minimal 1 baris kebutuhan data + ringkasan konsultasi sebelum menyelesaikan visit.',
+                    ], 400);
+                }
+            }
+            // Gate 3: form DTSEN wajib (Konsultasi DTSEN) — 1 baris dtsen_konsultasi (parity Visits::status; audit #7).
+            if ($status === 'selesai' && $this->layanan_requires_dtsen_form($visit->jenis_layanan)) {
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('dtsen_konsultasi');
+                if ($cnt === 0) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Form DTSEN belum diisi. Lengkapi jenis konsultasi, hasil, dan catatan sebelum menyelesaikan.',
                     ], 400);
                 }
             }
@@ -123,6 +139,9 @@ class Consultations extends Api_base {
 
         $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
         $updated = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+
+        // #22 — audit trail parity dgn Visits::status.
+        $this->audit('update_status', 'visit', $id, ['from' => $visit->status, 'to' => $status]);
 
         $this->json_response(['success' => true, 'data' => $updated, 'message' => 'Status berhasil diupdate']);
     }

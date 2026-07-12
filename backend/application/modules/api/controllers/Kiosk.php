@@ -116,6 +116,33 @@ class Kiosk extends Api_base {
         // the already WRITE-locked tamdes_buku — never reference a table outside this set.
         $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE');
 
+        // #32 — Re-run the double-tap guard INSIDE the lock (TOCTOU-safe). Two near-simultaneous
+        // POSTs both pass the pre-lock guard (neither sees the other's uncommitted row); the WRITE
+        // lock serializes them, so the 2nd finds the 1st's visit here and returns it instead of
+        // inserting a duplicate guest/visit. Excludes 'whatsapp' visits so WA-promote still falls
+        // through. Mirror of the pre-lock guard + Wa::session in-lock recheck.
+        if ($phone_norm !== '') {
+            $recent_locked = $this->db->where('nama', $input['nama'] ?? '')
+                                      ->where('notel', $phone_norm)
+                                      ->where('tgldatang', date('Y-m-d'))
+                                      ->order_by('id_user', 'DESC')
+                                      ->get('tamdes_buku')->row();
+            if ($recent_locked) {
+                $existing_locked = $this->db->where('id_user', $recent_locked->id_user)
+                                            ->where_not_in('created_by', ['whatsapp'])
+                                            ->order_by('id_kunjungan', 'DESC')
+                                            ->get('tamdes_kunjungan')->row();
+                if ($existing_locked) {
+                    $this->db->query('UNLOCK TABLES');
+                    $this->json_response([
+                        'success' => true,
+                        'data'    => ['id_kunjungan' => $existing_locked->id_kunjungan, 'id_user' => $recent_locked->id_user, 'nomor_antrian' => $existing_locked->nomor_antrian],
+                        'message' => 'Pendaftaran berhasil',
+                    ], 201);
+                }
+            }
+        }
+
         // ── Cross-channel reuse (phone = unique identity key) ───────────────────
         // A person already in tamdes_buku (from WhatsApp, or a prior offline/admin
         // registration) must be REUSED, not duplicated. We only reach register() because

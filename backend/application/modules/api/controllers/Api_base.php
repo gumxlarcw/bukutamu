@@ -143,7 +143,7 @@ class Api_base extends CI_Controller {
      * $jenis_layanan_raw bisa string atau JSON-encoded array dari kolom DB.
      */
     protected function require_layanan_role($jenis_layanan_raw) {
-        $role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
+        $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
 
         // Bypass roles: full access untuk superadmin, admin, dan operator legacy.
         if (in_array($role, ['admin', 'superadmin', 'operator'], true)) {
