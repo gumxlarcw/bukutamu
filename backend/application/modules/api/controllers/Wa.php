@@ -242,10 +242,7 @@ class Wa extends Api_base {
     public function disconnect() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        $role = $this->current_user->role ?? '';
-        if (!in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin', 'pimpinan'], true)) {
-            $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
-        }
+        $this->require_role_in(['admin', 'superadmin']); // #11 — device unlink is admin-only
         $this->db->where('id', 1)->update('wa_qr_state', ['command' => 'logout', 'ready' => 0, 'qr' => null, 'number' => null]);
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Memutuskan koneksi… QR baru akan muncul sebentar lagi.']);
     }
@@ -257,7 +254,7 @@ class Wa extends Api_base {
     public function send_data_form($sid) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $sid  = (int) $sid;
         $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
@@ -439,6 +436,7 @@ class Wa extends Api_base {
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
             $this->require_rate_limit('wa/chat', 15);
             $in    = $this->get_json_input();
             $phone = $this->normalize_phone((string) ($in['phone'] ?? ''));
@@ -447,6 +445,7 @@ class Wa extends Api_base {
             if (mb_strlen($body) > 4096) $this->json_response(['success' => false, 'message' => 'Pesan maksimal 4096 karakter'], 422);
             $sess = $this->wa_latest_session($phone);
             if (!$sess || !$sess->wa_chat_id) $this->json_response(['success' => false, 'message' => 'Kontak tidak ditemukan'], 404);
+            $this->wa_require_session_owner($sess); // #17 — only the assigned operator (or admin) may reply
             // Reply: FE mengirim DB id pesan yang dibalas → resolve wa_msg_id (utk kutip di WA) + snapshot teks.
             $quoted_db = (int) ($in['quoted_id'] ?? 0);
             $quoted_wa = null; $quoted_preview = null;
@@ -483,7 +482,7 @@ class Wa extends Api_base {
     public function seen() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $in    = $this->get_json_input();
         $phone = $this->normalize_phone((string) ($in['phone'] ?? ''));
         if ($phone === '') $this->json_response(['success' => false, 'message' => 'phone diperlukan'], 422);
@@ -507,13 +506,14 @@ class Wa extends Api_base {
     public function react() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $in    = $this->get_json_input();
         $id    = (int) ($in['id'] ?? 0);
         $emoji = mb_substr((string) ($in['emoji'] ?? ''), 0, 32);
         if ($id <= 0) $this->json_response(['success' => false, 'message' => 'id pesan diperlukan'], 422);
-        $row = $this->db->select('wa_msg_id')->where('id', $id)->limit(1)->get('wa_messages')->row();
+        $row = $this->db->select('wa_msg_id, phone_norm')->where('id', $id)->limit(1)->get('wa_messages')->row();
         if (!$row || !$row->wa_msg_id) $this->json_response(['success' => false, 'message' => 'Pesan belum terkirim — tak bisa direaksi'], 409);
+        $this->wa_require_session_owner($this->wa_latest_session($row->phone_norm)); // #17 — reactions only by the assigned operator
         $this->db->insert('wa_react_queue', ['wa_msg_id' => $row->wa_msg_id, 'emoji' => $emoji]); // connector message.react()
         $this->db->where('id', $id)->update('wa_messages', ['reaction' => ($emoji !== '' ? $emoji : null)]); // optimistic
         $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
@@ -523,7 +523,7 @@ class Wa extends Api_base {
     public function messages_upload() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $this->require_rate_limit('wa/chat-upload', 6);
 
         $phone   = $this->normalize_phone((string) $this->input->post('phone'));
@@ -539,6 +539,7 @@ class Wa extends Api_base {
 
         $sess = $this->wa_latest_session($phone);
         if (!$sess || !$sess->wa_chat_id) $this->json_response(['success' => false, 'message' => 'Kontak tidak ditemukan'], 404);
+        $this->wa_require_session_owner($sess); // #17 — only the assigned operator (or admin) may send media
 
         $name = bin2hex(random_bytes(16)) . '.' . $this->wa_ext_for_mime($mime);
         $dest = $this->wa_media_dir() . $name;
@@ -652,7 +653,7 @@ class Wa extends Api_base {
     public function session_delete($id) {
         if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        $this->require_role('admin');
+        $this->require_role_in(['admin', 'superadmin']); // #6 — admin/superadmin only (pimpinan shares level 2)
         $id   = (int) $id;
         $sess = $this->db->get_where('wa_sessions', ['id' => $id])->row();
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
@@ -676,7 +677,7 @@ class Wa extends Api_base {
     public function visit_proses($id) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $id = (int) $id;
         $v = $this->db->select('status')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
         if (!$v) $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
@@ -691,7 +692,7 @@ class Wa extends Api_base {
     public function visit_selesai($id) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $id = (int) $id;
         $v = $this->db->select('status, created_by')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
         if (!$v || $v->created_by !== 'whatsapp') $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
@@ -713,7 +714,7 @@ class Wa extends Api_base {
     public function session_assign($id) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
         $sid  = (int) $id;
         $uid  = (int) ($this->current_user->id ?? 0);
         $role = $this->current_user->role ?? '';
@@ -1175,7 +1176,7 @@ class Wa extends Api_base {
     public function pair() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_is_pst_role()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+        $this->require_role_in(['admin', 'superadmin']); // #11 — pairing is admin-only
         $in  = $this->get_json_input();
         $raw = preg_replace('/\D/', '', (string) ($in['phone'] ?? ''));
         if ($raw !== '' && strpos($raw, '0') === 0) $raw = '62' . substr($raw, 1); // 08xx → 628xx (internasional)
@@ -1546,6 +1547,25 @@ class Wa extends Api_base {
         return in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin', 'pimpinan'], true);
     }
 
+    // #5 — write-role set: excludes 'pimpinan' (read-only viewer tier). Reads keep wa_is_pst_role().
+    private function wa_can_write() {
+        $role = $this->current_user->role ?? '';
+        return in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin'], true);
+    }
+
+    // #17 — a claimed session (assigned_to set) may only be written by its assignee; admin override.
+    // Unclaimed sessions (or a null session) stay open to any write-role operator.
+    private function wa_require_session_owner($sess) {
+        if (!$sess) return;
+        $assigned = (int) ($sess->assigned_to ?? 0);
+        if ($assigned === 0) return;
+        $uid  = (int) ($this->current_user->id ?? 0);
+        $role = $this->current_user->role ?? '';
+        if ($assigned === $uid) return;
+        if (in_array($role, ['admin', 'superadmin'], true)) return;
+        $this->json_response(['success' => false, 'message' => 'Sesi ini sedang ditangani operator lain.'], 403);
+    }
+
     private function wa_media_dir() {
         $dir = FCPATH . 'assets/wa_media/';
         if (!is_dir($dir)) @mkdir($dir, 0775, true);
@@ -1608,7 +1628,7 @@ class Wa extends Api_base {
 
     // Sesi terbaru untuk nomor (alamat balas + konteks) — petugas boleh kirim kapan pun.
     private function wa_latest_session($phone_norm) {
-        return $this->db->select('id, wa_chat_id, id_kunjungan')->where('phone_norm', $phone_norm)
+        return $this->db->select('id, wa_chat_id, id_kunjungan, assigned_to')->where('phone_norm', $phone_norm)
                         ->order_by('id', 'DESC')->limit(1)->get('wa_sessions')->row();
     }
 

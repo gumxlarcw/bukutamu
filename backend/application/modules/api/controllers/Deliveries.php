@@ -68,6 +68,7 @@ class Deliveries extends Api_base
             if (!$row) {
                 return $this->json_response(['success' => false, 'message' => 'Tidak ditemukan'], 404);
             }
+            $this->require_delivery_access($row); // #19 — operators see only their own; verifikator/admin any
             return $this->json_response(['success' => true, 'data' => $row, 'message' => 'OK']);
         }
 
@@ -156,6 +157,9 @@ class Deliveries extends Api_base
             return $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
         $this->require_auth();
+        // #42 — Phase-1 single-verifier: ANY verifikator may decide ANY delivery (there is one
+        // active verifier). When multi-verifier routing lands, also gate this on the delivery's
+        // assigned/routed verifier id (id_verifikator), not just the role.
         $this->require_role_in(['verifikator', 'admin', 'superadmin']);
 
         // PUT bodies are NOT in $this->input->post() — read the raw JSON body (mirror Visits::status).
@@ -207,6 +211,7 @@ class Deliveries extends Api_base
         if (!$row || !$row->media_path) {
             return $this->json_response(['success' => false, 'message' => 'Tidak ditemukan'], 404);
         }
+        $this->require_delivery_access($row); // #19 — operators download only their own; verifikator/admin any
 
         // Path-traversal guard (mirror Wa::media)
         $dir  = $this->_wa_media_dir();
@@ -230,6 +235,16 @@ class Deliveries extends Api_base
     }
 
     // ── private helpers ─────────────────────────────────────────────────────
+
+    // #19 — least-privilege access to a delivery row. Operators may only touch deliveries
+    // they created; verifikator keeps access to ANY delivery (Phase-1 single-verifier — see
+    // verify()/#42); admin/superadmin full. Call AFTER loading the row.
+    private function require_delivery_access($row) {
+        $role = $this->current_user->role ?? '';
+        if (in_array($role, ['admin', 'superadmin', 'verifikator'], true)) return;
+        if ((int) $row->created_by === (int) ($this->current_user->id ?? 0)) return;
+        $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
+    }
 
     // Enqueue a formal verification-request message to the active verifier via wa_outbox.
     // Sets verif_outbox_id on the delivery so the WA reply handler (Task 6) can correlate.
