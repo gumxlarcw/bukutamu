@@ -34,7 +34,7 @@ There is **no staging**. Plan deploys for low-traffic windows.
 ### Frontend
 - No `.env` is checked in. Vite reads `import.meta.env.VITE_*` from
   `frontend/.env.*` (git-ignored). At minimum:
-  - `VITE_API_BASE_URL` — points at `https://bukutamu.bpsmalut.com:460`
+  - `VITE_API_URL` — points at `https://bukutamu.bpsmalut.com:460`
     in prod.
 
 ### MySQL

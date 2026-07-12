@@ -1,6 +1,6 @@
 node_modules/
 config.json
-.wwebjs_auth/
-.wwebjs_cache/
+.wwebjs_auth*
+.wwebjs_cache*
 *.log
 *.backup

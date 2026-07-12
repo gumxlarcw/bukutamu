@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Env files (per-machine config; keep only the committed template)
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
