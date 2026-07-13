@@ -1225,7 +1225,7 @@ class Wa extends Api_base {
             $tok = $this->mint_kiosk_token('wa-eval-access', $idk, 7 * 24 * 3600);
             $link = $this->wa_public_base() . '/evaluasi/' . $idk . '?t=' . rawurlencode($tok);
             $body = "Terima kasih telah menggunakan layanan kami. Mohon kesediaan Anda mengisi evaluasi singkat (berlaku 7 hari):\n" . $link;
-            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'wa_chat_id' => ($v->wa_chat_id ?: $v->notel), 'msg_type' => 'eval_link', 'body' => $body, 'id_kunjungan' => $idk, 'status' => 'pending']);
+            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'wa_chat_id' => ($v->wa_chat_id ?: null), 'msg_type' => 'eval_link', 'body' => $body, 'id_kunjungan' => $idk, 'status' => 'pending']);
         }
 
         // 3. Enqueue thankyou for WA visits selesai with no eval_link and no thankyou (non-SKD path).
@@ -1240,7 +1240,7 @@ class Wa extends Api_base {
         )->result();
         foreach ($need_ty as $v) {
             $body = "Terima kasih telah menghubungi BPS Provinsi Maluku Utara. Permintaan Anda telah selesai kami proses.";
-            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'wa_chat_id' => ($v->wa_chat_id ?: $v->notel), 'msg_type' => 'thankyou', 'body' => $body, 'id_kunjungan' => (int) $v->id_kunjungan, 'status' => 'pending']);
+            $this->db->insert('wa_outbox', ['phone_raw' => $v->notel, 'wa_chat_id' => ($v->wa_chat_id ?: null), 'msg_type' => 'thankyou', 'body' => $body, 'id_kunjungan' => (int) $v->id_kunjungan, 'status' => 'pending']);
         }
 
         // 4. Auto-close eval timeouts (>7d since the eval_link was ENQUEUED, no eval rows).
@@ -1535,7 +1535,7 @@ class Wa extends Api_base {
               . "_Jika sewaktu-waktu membutuhkan layanan lagi, cukup balas pesan ini untuk memulai permintaan baru._\n\n"
               . "Salam hangat, semoga hari Anda menyenangkan 🙂";
         $this->db->insert('wa_outbox', [
-            'phone_raw' => $info->notel, 'wa_chat_id' => ($info->wa_chat_id ?: $info->notel),
+            'phone_raw' => $info->notel, 'wa_chat_id' => ($info->wa_chat_id ?: null),
             'msg_type'  => 'closing', 'body' => $body, 'id_kunjungan' => $idk, 'status' => 'pending',
         ]);
     }

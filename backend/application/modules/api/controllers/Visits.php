@@ -102,6 +102,7 @@ class Visits extends Api_base {
     }
 
     public function detail($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -199,6 +200,7 @@ class Visits extends Api_base {
     }
 
     public function status($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
@@ -298,6 +300,7 @@ class Visits extends Api_base {
     }
 
     public function service($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
@@ -348,6 +351,7 @@ class Visits extends Api_base {
     }
 
     public function summary($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {

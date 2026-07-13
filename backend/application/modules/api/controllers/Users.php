@@ -39,7 +39,7 @@ class Users extends Api_base {
             // CATATAN PENTING: list ini HARUS sinkron dengan kolom `admin_users.role` (ENUM di MySQL).
             // Kalau tambah role baru di sini tanpa ALTER TABLE, MySQL silently coerce ke '' (empty) di
             // mode non-strict — bug yang sulit dideteksi. Verify-after-insert di bawah ini menangkap drift itu.
-            $notel = trim((string) ($input['notel'] ?? ''));
+            $notel = $this->normalize_phone($input['notel'] ?? ''); // #15 canonical phone key
 
             $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan', 'verifikator'];
             $final_role = in_array($role, $valid_roles, true) ? $role : 'operator';
@@ -70,6 +70,8 @@ class Users extends Api_base {
             $this->audit('create', 'admin_user', $new_id, ['username' => $username, 'role' => $final_role]);
 
             $this->json_response(['success' => true, 'data' => null, 'message' => 'User berhasil dibuat'], 201);
+        } else {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
     }
 
@@ -91,7 +93,7 @@ class Users extends Api_base {
                 $update['role'] = $intended_role;
             }
             if (isset($input['notel'])) {
-                $notel_val = trim((string) $input['notel']);
+                $notel_val = $this->normalize_phone($input['notel']); // #15 canonical phone key
                 $update['notel'] = ($notel_val === '' ? null : $notel_val);
             }
             if (isset($input['active'])) $update['active']  = $input['active'] ? 1 : 0;
@@ -137,6 +139,8 @@ class Users extends Api_base {
             $this->db->where('id', $id)->delete('admin_users');
             $this->audit('delete', 'admin_user', $id);
             $this->json_response(['success' => true, 'data' => null, 'message' => 'User berhasil dihapus']);
+        } else {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
     }
 

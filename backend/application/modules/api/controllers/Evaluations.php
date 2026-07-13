@@ -9,6 +9,7 @@ class Evaluations extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+        $this->require_rate_limit('eval/pending', 60); // #18 — throttle id-enumeration on this no-auth endpoint
 
         // Mode terarah: ?id=N → mint token untuk visit SPESIFIK itu (dipakai tombol
         // "Buka Evaluasi" admin + kartu pemilihan di standby saat >1 antri). Hanya
@@ -77,6 +78,7 @@ class Evaluations extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+        $this->require_rate_limit('eval/pending', 60); // #18 — throttle id-enumeration on this no-auth endpoint
 
         $candidates = $this->db
             ->select('k.id_kunjungan, k.jenis_layanan, k.nomor_antrian, k.date_visit, b.nama, b.nama_instansi')
@@ -101,6 +103,7 @@ class Evaluations extends Api_base {
         // minted by /api/evaluations/pending. Endpoint stays unauthenticated by
         // JWT (tablet kiosk has no admin login) but the token binds the request
         // to a specific visit that's currently eligible for evaluation.
+        $this->require_rate_limit('eval/detail', 30); // #18 — throttle enumeration / token replay on this no-auth endpoint
         $this->require_kiosk_token('eval-submit', (int) $id);
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {

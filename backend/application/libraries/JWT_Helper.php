@@ -21,13 +21,22 @@ class JWT_Helper {
             }
         }
         if (!$secret || strlen($secret) < 32) {
-            log_message('error', 'JWT_SECRET not set or too short. Set a strong secret in .env');
-            $secret = hash('sha256', 'fallback-' . FCPATH); // deterministic but unique per install
+            // #12 — fail CLOSED: never substitute a path-derived secret (forgeable offline).
+            // require_auth / require_kiosk_token return 503 when the secret is missing/short.
+            log_message('error', 'JWT_SECRET not set or too short (<32). Auth disabled (fail-closed). Set a strong secret in .env');
+            $this->secret = null;
+            return;
         }
         $this->secret = $secret;
     }
 
+    // #12 — auth gates check this; a null secret => fail closed (503), never a forgeable fallback.
+    public function has_secret() {
+        return $this->secret !== null;
+    }
+
     public function encode($payload) {
+        if ($this->secret === null) return null; // #12 fail-closed — no HMAC with a null key
         $header = $this->base64url_encode(json_encode(['typ' => 'JWT', 'alg' => 'HS256']));
         $payload['iat'] = time();
         $payload['exp'] = time() + $this->expiry;
@@ -39,6 +48,7 @@ class JWT_Helper {
     }
 
     public function decode($token) {
+        if ($this->secret === null) return null; // #12 fail-closed — no HMAC with a null key
         $parts = explode('.', $token);
         if (count($parts) !== 3) return null;
         list($header, $payload, $signature) = $parts;

@@ -86,6 +86,8 @@ class Guests extends Api_base {
                               ->get_where('tamdes_buku', ['id_user' => $new_id])
                               ->row();
             $this->json_response(['success' => true, 'data' => $guest, 'message' => 'Tamu berhasil ditambahkan'], 201);
+        } else {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
     }
 
@@ -146,6 +148,8 @@ class Guests extends Api_base {
             $this->audit('delete', 'guest', $id);
             $this->db->where('id_user', $id)->delete('tamdes_buku');
             $this->json_response(['success' => true, 'data' => null, 'message' => 'Tamu berhasil dihapus']);
+        } else {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
     }
 

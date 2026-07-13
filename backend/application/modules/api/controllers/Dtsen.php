@@ -39,6 +39,7 @@ class Dtsen extends Api_base {
     }
 
     public function detail($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
@@ -145,6 +146,7 @@ class Dtsen extends Api_base {
      * Fields: jenis_konsultasi_dtsen, hasil, catatan, nik_dirujuk.
      */
     public function data($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {

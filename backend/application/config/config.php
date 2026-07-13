@@ -454,10 +454,13 @@ $config['csrf_token_name'] = 'csrf_test_name';
 $config['csrf_cookie_name'] = 'csrf_cookie_name';
 $config['csrf_expire'] = 7200;
 $config['csrf_regenerate'] = TRUE;
+// #43 — The JSON API does NOT use a CSRF token. /api/* is cookie-JWT auth, and its CSRF
+// defense is the jwt_token cookie's SameSite=Strict (set at login in Auth.php) — that is the
+// sole CSRF control here. The two legacy web-module URIs (recognize/save, selamat_datang/masuk)
+// were removed with those modules on 2026-05-17. If SameSite is ever relaxed (e.g. to support a
+// subdomain), add an Origin/Referer check for non-GET requests in Api_base as defense-in-depth.
 $config['csrf_exclude_uris'] = array(
-	'recognize/save',
-	'selamat_datang/masuk',
-	'api/.*'  // Exclude all API routes from CSRF
+	'api/.*'  // JSON API — CSRF-protected by the SameSite=Strict cookie, not a token
 );
 
 /*

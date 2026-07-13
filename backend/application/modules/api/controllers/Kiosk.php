@@ -425,10 +425,22 @@ class Kiosk extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+        $this->require_rate_limit('kiosk/profile-gaps', 30); // #1 — throttle id_user enumeration
 
         $user = $this->db->where('id_user', $id_user)->get('tamdes_buku')->row_array();
         if (!$user) {
             $this->json_response(['success' => false, 'message' => 'User tidak ditemukan'], 404);
+        }
+
+        // #1 — proof-of-presence: only mint a mutation token for a guest ACTIVELY checking in now
+        // (a today-visit not yet finalized). Closes the unauth IDOR where anyone who guessed an
+        // id_user could mint a token and overwrite that guest's PII (incl. notel — the identity key).
+        $active = $this->db->where('id_user', $id_user)
+                           ->where('DATE(date_visit)', date('Y-m-d'))
+                           ->where_in('status', ['antri', 'dipanggil', 'proses', 'diproses', 'menunggu_evaluasi'])
+                           ->count_all_results('tamdes_kunjungan');
+        if ($active < 1) {
+            $this->json_response(['success' => false, 'message' => 'Sesi kios tidak aktif untuk pengunjung ini.'], 403);
         }
 
         // Fields to check — only ones that could be missing from old data

@@ -184,8 +184,8 @@ class Responden extends Api_base {
                     " . $this->_tw_clause($triwulan) . "
                     " . $this->_skd_clause($skd) . "
                     AND EXISTS (SELECT 1 FROM tamdes_evaluasi_detail ed WHERE ed.id_kunjungan = k.id_kunjungan)
-                    AND (b.nama LIKE '%" . $this->db->escape_like_str($q) . "%'
-                         OR b.nama_instansi LIKE '%" . $this->db->escape_like_str($q) . "%')
+                    AND (b.nama LIKE " . $this->db->escape('%' . $this->db->escape_like_str($q) . '%') . "
+                         OR b.nama_instansi LIKE " . $this->db->escape('%' . $this->db->escape_like_str($q) . '%') . ")
                     GROUP BY k.id_user
                 ) sub", false);
             }

@@ -46,6 +46,7 @@ class Consultations extends Api_base {
     }
 
     public function detail($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
@@ -147,6 +148,7 @@ class Consultations extends Api_base {
     }
 
     public function call($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -201,11 +203,13 @@ class Consultations extends Api_base {
         }
 
         $result = $this->proxy_antrian('TES');
+        if (!$result['success']) $this->json_response($result, 502); // #14 — reflect proxy failure (no 200-with-success:false)
 
         $this->json_response($result);
     }
 
     public function data($id) {
+        $id = (int) $id; // #44
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {

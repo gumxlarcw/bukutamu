@@ -37,6 +37,10 @@ class Api_base extends CI_Controller {
     }
 
     protected function require_auth() {
+        if (!$this->jwt_helper->has_secret()) { // #12 — fail closed (server misconfigured), never forgeable
+            $this->json_response(['success' => false, 'message' => 'Auth unavailable (server misconfigured).'], 503);
+            exit;
+        }
         $token = isset($_COOKIE['jwt_token']) ? $_COOKIE['jwt_token'] : null;
         if (!$token) {
             $this->json_response(['success' => false, 'message' => 'Unauthorized'], 401);
@@ -416,6 +420,10 @@ class Api_base extends CI_Controller {
      * Token must be sent via X-Kiosk-Token header (or kiosk_token in body for compat).
      */
     protected function require_kiosk_token($expected_purpose, $expected_bound_id) {
+        if (!$this->jwt_helper->has_secret()) { // #12 — fail closed (server misconfigured), never forgeable
+            $this->json_response(['success' => false, 'message' => 'Auth unavailable (server misconfigured).'], 503);
+            exit;
+        }
         $token = isset($_SERVER['HTTP_X_KIOSK_TOKEN']) ? trim($_SERVER['HTTP_X_KIOSK_TOKEN']) : '';
         if ($token === '') {
             $body  = $this->get_json_input();
