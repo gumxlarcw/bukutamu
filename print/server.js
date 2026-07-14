@@ -16,6 +16,9 @@ const PID  = parseInt(process.env.PRINTER_PID || '0x5840', 16);
 const PORT = Number(process.env.PRINT_PORT || 5300);
 const TITLE   = process.env.PRINT_TITLE   || 'BPS PROVINSI MALUKU UTARA';
 const ADDRESS = process.env.PRINT_ADDRESS || 'Jl. A. Yani No. 5, Ternate';
+// #45 — pin CORS ke origin kiosk (bukan '*') supaya JS dari origin lain yang terbuka di browser
+// kiosk tak bisa menembak /print (buang kertas / jam antrian). Override via env kalau origin beda.
+const ALLOW_ORIGIN = process.env.PRINT_ALLOW_ORIGIN || 'https://bukutamu.bpsmalut.com';
 
 // ── App ────────────────────────────────────────────────────────────────
 const app = express();
@@ -23,7 +26,7 @@ app.use(express.json({ limit: '64kb' }));
 
 // CORS — browser kiosk (origin https://bukutamu.bpsmalut.com) butuh izin lintas-origin
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', ALLOW_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -89,6 +92,7 @@ app.post('/print', (req, res) => {
         return res.status(500).send('USB open error: ' + err.message);
       }
 
+      try { // #36 — error di callback async ini TIDAK tertangkap try/catch luar → bisa crash proses
       printer
         .text('\x1B\x40')              // reset printer (ESC @)
         .align('CT')
@@ -123,16 +127,32 @@ app.post('/print', (req, res) => {
         // cutter sudah memaksa feed ~15-25mm dari print-head ke pisau —
         // pre-feed software apapun jadi pemborosan kertas.
         .cut(false, 0)
-        .close();
-
-      console.log(`✅ Tercetak: ${nomor} | ${nama} | ${layanan}`);
-      res.send('✅ Tercetak ' + nomor);
+        // #35 — balas HANYA setelah buffer ter-flush ke USB. Sebelumnya res.send jalan sebelum flush
+        // → printer mati / kertas macet di tengah job dilaporkan '✅ Tercetak' padahal gagal.
+        .close((cerr) => {
+          if (cerr) {
+            console.error('❌ Flush/close error:', cerr);
+            if (!res.headersSent) res.status(500).send('❌ Flush error: ' + cerr.message);
+            return;
+          }
+          console.log(`✅ Tercetak: ${nomor} | ${nama} | ${layanan}`);
+          if (!res.headersSent) res.send('✅ Tercetak ' + nomor);
+        });
+      } catch (e2) { // #36
+        console.error('❌ Print error:', e2);
+        if (!res.headersSent) res.status(500).send('❌ Print error: ' + e2.message);
+      }
     });
   } catch (e) {
     console.error('❌ Gagal:', e);
     res.status(500).send('❌ Error: ' + e.message);
   }
 });
+
+// #36 — guard proses: error async yang lolos (mis. escpos-usb 'error' saat USB dicabut) jangan
+// diam-diam mematikan server tanpa jejak. Log + exit(1) → PM2 autorestart bawa kembali bersih.
+process.on('uncaughtException', (e) => { console.error('💥 uncaughtException:', e); process.exit(1); });
+process.on('unhandledRejection', (e) => { console.error('💥 unhandledRejection:', e); process.exit(1); });
 
 app.listen(PORT, () => {
   console.log(`🖨️ tamdes-print aktif di http://localhost:${PORT}`);

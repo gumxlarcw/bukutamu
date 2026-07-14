@@ -353,7 +353,14 @@ async function tick() {
     for (const m of messages) {
       if (processed >= BATCH) break; // sisanya di tick berikutnya
       const key = (m.kind || 'outbox') + ':' + m.id; // outbox & chat punya ruang id sendiri
-      if ((failCount.get(key) || 0) >= MAX_SEND_ATTEMPTS) continue; // sudah menyerah
+      if ((failCount.get(key) || 0) >= MAX_SEND_ATTEMPTS) {
+        // #10 — sudah menyerah kirim, tapi RE-REPORT tiap tick sampai backend ack (idempoten: backend
+        // bump attempts / tandai 'failed' lalu berhenti menyajikannya → re-report berhenti sendiri).
+        // Tanpa ini, kalau POST fail-mark sebelumnya hilang, row tetap 'pending' + failCount skip
+        // selamanya → stuck-pending → terkirim basi saat connector restart.
+        if (m.kind === 'chat') failedChat.push(m.id); else failedOutbox.push(m.id);
+        continue;
+      }
       // Chat media: pastikan file masih ada sebelum kirim — hindari crash & false-fail.
       if (m.kind === 'chat' && m.media_path && !fs.existsSync(path.join(MEDIA_DIR, path.basename(m.media_path)))) {
         log('media file missing for chat', m.id);
@@ -409,13 +416,26 @@ async function tick() {
     // (cegah duplikat hantu saat reconnect mengirim balasan + backfill chat yang sama di tick yg
     // sama). Hanya saat ada backfill, jadi steady-state (tanpa backfill) tak menambah POST.
     if (backfills.length && (sentOutbox.length || chatSent.length)) {
-      await bfetch(ACK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
-        body: JSON.stringify({ ids: sentOutbox, chat_sent: chatSent }),
-      }).catch((e) => log('ack-send(pre-backfill) error', e.message));
-      log('acked-send(pre-backfill) outbox=' + sentOutbox.length + ' chat=' + chatSent.length);
-      sentOutbox.length = 0; chatSent.length = 0; // sudah di-ack; jangan ack ganda di akhir
+      // #9 — clear sent-id buffer HANYA bila ACK POST sukses. Sebelumnya .catch menelan error lalu
+      // buffer tetap ter-clear → row 'pending' → kirim ganda + backfill re-ingest pesan sendiri.
+      let preAckOk = false;
+      try {
+        const rr = await bfetch(ACK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
+          body: JSON.stringify({ ids: sentOutbox, chat_sent: chatSent }),
+        });
+        preAckOk = rr.ok;
+      } catch (e) { log('ack-send(pre-backfill) error', e.message); }
+      if (preAckOk) {
+        log('acked-send(pre-backfill) outbox=' + sentOutbox.length + ' chat=' + chatSent.length);
+        sentOutbox.length = 0; chatSent.length = 0; // sudah di-ack; jangan ack ganda di akhir
+      } else {
+        // ACK gagal → JANGAN clear (id terbawa ke ack akhir tick) & tunda backfill tick ini supaya
+        // backfill tak menggandakan pesan yang wa_msg_id-nya belum sempat tercatat backend.
+        log('ack-send(pre-backfill) gagal — tunda backfill tick ini, sent-id dipertahankan');
+        backfills.length = 0;
+      }
     }
     const backfillDone = [];
     const backfillFailed = [];

@@ -30,6 +30,9 @@ const PRUNE_URL = BASE + '/api/push/prune';
 
 const lastSeen = new Map(); // role -> Set<notifId> yang sudah dikirim
 let primed = false;
+const pushTries = new Map(); // #33 — notifId -> jumlah kegagalan transien (batasi retry)
+const MAX_PUSH_TRIES = cfg.maxPushTries || 5;
+const FETCH_TIMEOUT = cfg.fetchTimeoutMs || 15000; // #34
 
 function log(...args) {
   console.log(new Date().toISOString(), ...args);
@@ -40,10 +43,14 @@ if (typeof fetch !== 'function') {
   process.exit(1);
 }
 
+let busy = false; // #34 — re-entrancy guard: jangan tumpuk tick kalau yang sebelumnya masih jalan
 async function tick() {
+  if (busy) return; // #34 — koneksi loopback yang hang tak boleh menumpuk tick (setInterval terus jalan)
+  busy = true;
+  try {
   let data;
   try {
-    const res = await fetch(DISPATCH_URL, { headers: { 'X-Internal-Secret': cfg.internalSecret } });
+    const res = await fetch(DISPATCH_URL, { headers: { 'X-Internal-Secret': cfg.internalSecret }, signal: AbortSignal.timeout(FETCH_TIMEOUT) });
     if (!res.ok) {
       log('dispatch HTTP', res.status);
       return;
@@ -96,19 +103,28 @@ async function tick() {
         message: n.message,
         action_url: n.action_url,
       });
+      let delivered = false, liveFailure = false;
       for (const s of roleSubs) {
         const subscription = { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } };
         try {
           await webpush.sendNotification(subscription, payload);
+          delivered = true;
         } catch (err) {
           const code = err && err.statusCode;
           if (code === 404 || code === 410) {
             deadHashes.push(s.endpoint_hash);
           } else {
+            liveFailure = true;
             log('push error', code || '', (err && err.message) || err);
           }
         }
       }
+      // #33 — kalau SEMUA sub gagal transien (bukan 404/410 sub-mati) & belum pernah sukses, un-mark
+      // dari seen (currentIds sudah jadi lastSeen di atas) supaya di-retry tick berikut; dibatasi
+      // MAX_PUSH_TRIES agar notif yang permanen-gagal tak loop selamanya.
+      const tries = (pushTries.get(n.id) || 0) + 1;
+      if (!delivered && liveFailure && tries < MAX_PUSH_TRIES) { currentIds.delete(n.id); pushTries.set(n.id, tries); }
+      else pushTries.delete(n.id);
     }
     log(`role=${role} pushed ${fresh.length} new notif(s) to ${roleSubs.length} sub(s)`);
   }
@@ -120,12 +136,14 @@ async function tick() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
         body: JSON.stringify({ endpoint_hashes: uniq }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT), // #34
       });
       log('pruned', uniq.length, 'dead sub(s); http', res.status);
     } catch (e) {
       log('prune error:', e.message);
     }
   }
+  } finally { busy = false; } // #34
 }
 
 log('bukutamu-notifier start; poll', POLL, 'ms;', DISPATCH_URL);
