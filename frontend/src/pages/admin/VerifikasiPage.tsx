@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { deliveriesApi } from '@/api/deliveries'
 import type { DataDeliveryDetail, DeliveryStatus, VerifDecision } from '@/types/delivery'
 import { cn } from '@/lib/utils'
@@ -13,12 +14,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function getApiMessage(e: unknown): string {
-  if (e && typeof e === 'object' && 'response' in e) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const msg = (e as any).response?.data?.message
-    if (typeof msg === 'string' && msg) return msg
-  }
-  return 'Terjadi kesalahan'
+  return getApiErrorMessage(e)
 }
 
 function formatDate(iso: string | null | undefined): string {

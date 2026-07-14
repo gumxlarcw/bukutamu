@@ -353,7 +353,7 @@ export default function EvaluationSummaryPage() {
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
-        {data && data.overall.total_responden > 0 && (
+        {data && Number(data.overall.total_responden) > 0 && (
           <Button variant="outline" size="sm" onClick={() => {
             exportCsv('evaluasi-ikm', data.indicators.map(ind => ({
               indikator_id: ind.indikator_id,
@@ -374,7 +374,7 @@ export default function EvaluationSummaryPage() {
           <Skeleton className="h-64 rounded-xl" />
           <Skeleton className="h-64 rounded-xl" />
         </div>
-      ) : !data || !data.overall || data.overall.total_responden === 0 ? (
+      ) : !data || !data.overall || Number(data.overall.total_responden) === 0 ? (
         // ── Hero "Belum Dievaluasi" — friendly card, BUKAN grade D ──
         <div className="admin-card p-8 bg-gradient-to-br from-slate-50 to-slate-100/70 ring-1 ring-slate-200">
           <div className="flex flex-col md:flex-row items-center gap-6">

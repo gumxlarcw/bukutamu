@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import {
   Send, Database, X, Minus, FileText, Clock, Check, CheckCheck,
   AlertCircle, MessageCircle, Download, ChevronDown, Reply, SmilePlus, MapPin, User,
@@ -68,11 +69,7 @@ function dayLabel(iso: string): string {
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 function errMsg(e: unknown): string | null {
-  if (e && typeof e === 'object' && 'response' in e) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (e as any).response?.data?.message ?? null
-  }
-  return null
+  return getApiErrorMessage(e, '') || null
 }
 
 // Pesan hanya-emoji (≤ ~12 codepoint) → ditampilkan besar tanpa gelembung, seperti WhatsApp.

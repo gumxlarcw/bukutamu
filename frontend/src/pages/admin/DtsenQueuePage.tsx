@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { dtsenApi } from '@/api/dtsen'
 import { consultationsApi } from '@/api/consultations'
 import { QueueList } from '@/components/admin/QueueList'
@@ -38,11 +39,7 @@ export default function DtsenQueuePage() {
     },
     onError: (e: unknown) => {
       // Surface backend message untuk pesan "Form DTSEN belum diisi..." yang explicit.
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message
-        : null
-      toast.error(msg || 'Gagal memperbarui status')
+      toast.error(getApiErrorMessage(e, 'Gagal memperbarui status'))
     },
   })
 

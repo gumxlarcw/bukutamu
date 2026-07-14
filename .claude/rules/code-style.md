@@ -16,8 +16,14 @@
 - Order: external → `@/` aliased → relative — one blank line between groups.
 
 ### Naming
-- React components: `PascalCase.tsx`, default export matching the filename
-  (e.g. `ConsultationDataForm.tsx` exports `ConsultationDataForm`).
+- React components: `PascalCase.tsx`, export name matching the filename. Match
+  the directory you're in (#47 — this is the de-facto convention, verified):
+  - **Pages** (`src/pages/`) use a **default** export
+    (e.g. `VisitLogPage.tsx` → `export default function VisitLogPage`).
+  - **Components** (`src/components/`) use a **named** export
+    (e.g. `ConsultationDataForm.tsx` → `export function ConsultationDataForm`).
+  - `src/components/ui/` follows shadcn's **kebab-case** filenames
+    (e.g. `dropdown-menu.tsx`).
 - Hooks: `useFoo` in `src/hooks/`.
 - API wrappers: lowerCamelCase file in `src/api/` (one file per backend
   resource, e.g. `evaluations.ts`).

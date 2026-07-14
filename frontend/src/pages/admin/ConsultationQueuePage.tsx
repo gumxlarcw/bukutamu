@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { consultationsApi } from '@/api/consultations'
 import { QueueList } from '@/components/admin/QueueList'
 import { QueueCallButton } from '@/components/admin/QueueCallButton'
@@ -40,11 +41,7 @@ export default function ConsultationQueuePage() {
     onError: (e: unknown) => {
       // Surface backend message — backend bisa return 400 dengan pesan eksplisit
       // (mis. "Form konsultasi SKD belum lengkap. Isi minimal 1 baris...").
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message
-        : null
-      toast.error(msg || 'Gagal memperbarui status')
+      toast.error(getApiErrorMessage(e, 'Gagal memperbarui status'))
     },
   })
 

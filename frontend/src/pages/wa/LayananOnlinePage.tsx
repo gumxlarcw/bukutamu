@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { CheckCircle2, User, LayoutGrid, Clock } from 'lucide-react'
 import { waApi } from '@/api/wa'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
@@ -193,10 +194,7 @@ export default function LayananOnlinePage() {
       setNomorAntrian(d?.nomor_antrian ?? null)
     },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message : null
-      toast.error(msg || 'Gagal mengirim permintaan')
+      toast.error(getApiErrorMessage(e, 'Gagal mengirim permintaan'))
     },
   })
 

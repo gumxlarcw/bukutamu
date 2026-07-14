@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { waApi } from '@/api/wa'
 import { visitsApi } from '@/api/visits'
 import { deliveriesApi } from '@/api/deliveries'
@@ -284,10 +285,7 @@ export default function LayananOnlineInboxPage() {
       r.kind === 'pending' ? waApi.deleteSession(r.session_id as number) : visitsApi.delete(r.id_kunjungan as number),
     onSuccess: () => { toast.success('Berhasil dihapus'); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message : null
-      toast.error(msg || 'Gagal menghapus')
+      toast.error(getApiErrorMessage(e, 'Gagal menghapus'))
     },
   })
   function confirmDelete(r: WaInboxRow) {
@@ -315,10 +313,7 @@ export default function LayananOnlineInboxPage() {
       qc.invalidateQueries({ queryKey: ['wa-inbox'] })
     },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message : null
-      toast.error(msg || 'Gagal mengambil alih')
+      toast.error(getApiErrorMessage(e, 'Gagal mengambil alih'))
     },
   })
   // Tutup sesi WA secara manual (muncul setelah pengunjung mengisi evaluasi).
@@ -326,10 +321,7 @@ export default function LayananOnlineInboxPage() {
     mutationFn: (idk: number) => waApi.markSelesai(idk),
     onSuccess: () => { toast.success('Sesi ditutup & pesan penutup dikirim'); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message : null
-      toast.error(msg || 'Gagal menutup sesi')
+      toast.error(getApiErrorMessage(e, 'Gagal menutup sesi'))
     },
   })
   // Petugas: alihkan sesi #2 (offline) / #3 (lainnya) ke form Permintaan Data (backend guard offline/lainnya).
@@ -337,10 +329,7 @@ export default function LayananOnlineInboxPage() {
     mutationFn: (sessionId: number) => waApi.sendDataForm(sessionId),
     onSuccess: () => { toast.success('Tautan form Permintaan Data dikirim ke pemohon'); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message : null
-      toast.error(msg || 'Gagal mengirim form')
+      toast.error(getApiErrorMessage(e, 'Gagal mengirim form'))
     },
   })
   const canReassign = user?.role === 'admin' || user?.role === 'superadmin'

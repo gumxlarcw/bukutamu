@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { visitsApi } from '@/api/visits'
 import { consultationsApi } from '@/api/consultations'
 import type { Visit, VisitStatus, ConsultationDataRow, DtsenDataRow } from '@/types/visit'
@@ -212,11 +213,14 @@ function EvaluationResults({
  * Read-only — petugas DTSEN edit lewat /admin/dtsen/{id}/form.
  */
 function DtsenResultDetail({ row }: { row: DtsenDataRow }) {
-  const jenisOpt = JENIS_KONSULTASI_DTSEN_OPTIONS.find(o => o.value === row.jenis_konsultasi_dtsen)
-  const hasilOpt = HASIL_DTSEN_OPTIONS.find(o => o.value === row.hasil)
+  // #16 — CI3 returns these numerics as strings; coerce once so === and label lookups work.
+  const jenisNum = Number(row.jenis_konsultasi_dtsen)
+  const hasilNum = Number(row.hasil)
+  const jenisOpt = JENIS_KONSULTASI_DTSEN_OPTIONS.find(o => o.value === jenisNum)
+  const hasilOpt = HASIL_DTSEN_OPTIONS.find(o => o.value === hasilNum)
   const hasilTone =
-    row.hasil === 1 ? 'bg-emerald-100 text-emerald-700' :
-    row.hasil === 2 ? 'bg-amber-100 text-amber-700' :
+    hasilNum === 1 ? 'bg-emerald-100 text-emerald-700' :
+    hasilNum === 2 ? 'bg-amber-100 text-amber-700' :
                       'bg-red-100 text-red-700'
   return (
     <div className="text-sm">
@@ -225,11 +229,11 @@ function DtsenResultDetail({ row }: { row: DtsenDataRow }) {
         Detail Konsultasi DTSEN
       </p>
       <div className="rounded-lg border bg-sky-50/30 p-3 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-xs">
-        <DetailField label="Jenis Konsultasi" value={jenisOpt?.label ?? `Kode ${row.jenis_konsultasi_dtsen}`} colSpan={2} />
+        <DetailField label="Jenis Konsultasi" value={jenisOpt?.label ?? `Kode ${jenisNum}`} colSpan={2} />
         <div>
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Hasil</p>
           <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded ${hasilTone} mt-0.5`}>
-            {hasilOpt?.label ?? `Kode ${row.hasil}`}
+            {hasilOpt?.label ?? `Kode ${hasilNum}`}
           </span>
         </div>
         {row.nik_dirujuk && <DetailField label="NIK Dirujuk" value={row.nik_dirujuk} colSpan={3} />}
@@ -348,11 +352,7 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
       queryClient.invalidateQueries({ queryKey: ['visits'] })
     },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message
-        : null
-      toast.error(msg || 'Gagal menghapus kunjungan')
+      toast.error(getApiErrorMessage(e, 'Gagal menghapus kunjungan'))
     },
   })
 
@@ -743,7 +743,7 @@ export default function VisitLogPage() {
                 tanggal: v.date_visit, status: v.status,
                 nomor_antrian: v.nomor_antrian, rating: v.rating_pengunjung,
               })))
-            })
+            }).catch(() => toast.error('Gagal mengekspor data'))
           }}
         >
           <Download className="w-4 h-4 mr-2" />

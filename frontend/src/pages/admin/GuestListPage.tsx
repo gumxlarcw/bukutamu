@@ -70,8 +70,8 @@ export default function GuestListPage() {
       notel: guest.notel,
       jeniskelamin: guest.jeniskelamin,
       umur: guest.umur,
-      disabilitas: guest.disabilitas,
-      jenis_disabilitas: guest.jenis_disabilitas,
+      disabilitas: Number(guest.disabilitas), // #37 CI3 numeric-string coercion (used in === 1 check)
+      jenis_disabilitas: Number(guest.jenis_disabilitas),
       pendidikan: guest.pendidikan,
       pekerjaan: guest.pekerjaan,
       kategori_instansi: guest.kategori_instansi,

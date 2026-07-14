@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { parseLayanan, parseSarana, saranaLabel, LEVEL_DATA_OPTIONS, PERIODE_DATA_OPTIONS, STATUS_DATA_OPTIONS } from '@/types/visit'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -354,7 +355,7 @@ export default function RespondenTahunanPage() {
         { key: 'pengaduan', label: 'Pengaduan/Saran' },
       ]
       exportCsv(`responden-skd-kunjungan-${tahun}${triwulan ? `-tw${triwulan}` : ''}`, rows, cols)
-    })
+    }).catch(() => toast.error('Gagal mengekspor'))
   }
 
   // Export Markdown — satu seksi per kunjungan: identitas, layanan/sarana, tabel rincian data
@@ -419,7 +420,7 @@ export default function RespondenTahunanPage() {
       a.download = `responden-skd-${tahun}${triwulan ? `-tw${triwulan}` : ''}.md`
       a.click()
       URL.revokeObjectURL(url)
-    })
+    }).catch(() => toast.error('Gagal mengekspor'))
   }
 
   return (

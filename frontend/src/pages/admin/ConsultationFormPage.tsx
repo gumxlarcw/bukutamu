@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { consultationsApi } from '@/api/consultations'
 import { visitsApi } from '@/api/visits'
 import { ConsultationDataForm } from '@/components/admin/ConsultationDataForm'
@@ -137,11 +138,7 @@ export default function ConsultationFormPage({ visitIdProp, onClose }: { visitId
       goClose()
     },
     onError: (e: unknown) => {
-      const msg = e && typeof e === 'object' && 'response' in e
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ? (e as any).response?.data?.message
-        : null
-      toast.error(msg || 'Gagal menyimpan data konsultasi')
+      toast.error(getApiErrorMessage(e, 'Gagal menyimpan data konsultasi'))
     },
   })
 
