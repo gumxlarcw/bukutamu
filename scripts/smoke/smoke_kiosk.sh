@@ -3,6 +3,7 @@
 # Self-contained: sets a FAKE wa_notify_group (trap-restored), uses fake 0888399* phones,
 # full cleanup. See scripts/smoke/README.md for prerequisites & safety notes.
 set -u
+source "$(dirname "$0")/_guard.sh"   # audit #13 — self-heal push.php + require same-day backup
 BASE='http://127.0.0.1:60'
 PUSH=/var/www/html/bukutamu/backend/application/config/push.php
 SECRET=$(grep -oP "push_internal_secret'\]\s*=\s*'\K[^']+" "$PUSH")

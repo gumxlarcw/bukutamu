@@ -3,6 +3,7 @@
 # Self-contained: fake WA group (trap-restored), test phones 0888399*, mints test tokens
 # from .env (localhost). Skips the live TV /call. Full cleanup incl. audit + outbox.
 set -u
+source "$(dirname "$0")/_guard.sh"   # audit #13 — self-heal push.php + require same-day backup
 BASE='http://127.0.0.1:60'
 PUSH=/var/www/html/bukutamu/backend/application/config/push.php
 SC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

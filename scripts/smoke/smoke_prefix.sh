@@ -3,6 +3,7 @@
 # Uses WA #2 offline path (unauthenticated) which calls generate_queue_number.
 # Safety: fake group + fake phones (62888399xxx, never real) + prompt outbox delete + full cleanup.
 set -u
+source "$(dirname "$0")/_guard.sh"   # audit #13 — self-heal push.php + require same-day backup
 BASE='http://127.0.0.1:60'
 PUSH=/var/www/html/bukutamu/backend/application/config/push.php
 SECRET=$(grep -oP "push_internal_secret'\]\s*=\s*'\K[^']+" "$PUSH")

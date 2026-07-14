@@ -3,6 +3,7 @@
 # Safety: fake group (trap-restored), test phones 62888399xxx (norm 0888399xxx),
 # full cleanup keyed on normalized notel/phone_norm + fake-group wa_chat_id.
 set -u
+source "$(dirname "$0")/_guard.sh"   # audit #13 — self-heal push.php + require same-day backup
 BASE='http://127.0.0.1:60'
 PUSH=/var/www/html/bukutamu/backend/application/config/push.php
 SECRET=$(grep -oP "push_internal_secret'\]\s*=\s*'\K[^']+" "$PUSH")
