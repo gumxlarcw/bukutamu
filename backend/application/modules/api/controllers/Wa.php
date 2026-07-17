@@ -717,10 +717,14 @@ class Wa extends Api_base {
     public function session_assign($id) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
+        // #claim-gate — admin/superadmin tak pernah memiliki sesi; mereka memakai "Lepaskan".
+        // Pesan dibedakan agar admin tahu jalan yang benar, bukan sekadar "Akses ditolak".
+        if (in_array($this->current_user->role ?? '', ['admin', 'superadmin'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Admin tidak mengambil alih sesi. Gunakan "Lepaskan" untuk membebaskan sesi yang macet.'], 403);
+        }
+        if (!$this->wa_can_claim()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
         $sid  = (int) $id;
         $uid  = (int) ($this->current_user->id ?? 0);
-        $role = $this->current_user->role ?? '';
         if ($uid <= 0) $this->json_response(['success' => false, 'message' => 'Akun ini tidak dapat mengambil alih sesi (gunakan akun operator).'], 403);
         $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
@@ -737,11 +741,8 @@ class Wa extends Api_base {
             if ($holder === $uid) {
                 $this->json_response(['success' => true, 'data' => ['assigned_to' => $uid, 'operator_nama' => $this->wa_operator_name($uid)], 'message' => 'Sudah Anda tangani']);
             }
-            if (!in_array($role, ['admin', 'superadmin'], true)) {
-                $this->json_response(['success' => false, 'message' => 'Sudah ditangani oleh ' . $this->wa_operator_name($holder)], 409);
-            }
-            // Admin override → pindahkan ke admin yang meminta.
-            $this->db->where('id', $sid)->update('wa_sessions', ['assigned_to' => $uid, 'assigned_at' => $now]);
+            // Terkunci ke pemegang pertama. Hanya admin yang bisa membebaskan, lewat "Lepaskan".
+            $this->json_response(['success' => false, 'message' => 'Sudah ditangani oleh ' . $this->wa_operator_name($holder)], 409);
         }
 
         // Pesan "sedang ditangani" — HANYA dari aksi interaktif ini, tak pernah dari backfill.
@@ -756,6 +757,26 @@ class Wa extends Api_base {
         }
         $this->audit('wa_assign', 'wa_session', $sid, ['assigned_to' => $uid]);
         $this->json_response(['success' => true, 'data' => ['assigned_to' => $uid, 'operator_nama' => $this->wa_operator_name($uid)], 'message' => 'Anda mengambil alih sesi ini']);
+    }
+
+    // POST /api/wa/sessions/(:num)/release — admin membebaskan sesi macet (pemegangnya resign,
+    // tak masuk, atau salah klaim) agar petugas lain bisa mengambil alih. Ini katup pengaman
+    // dari larangan admin-klaim: tanpanya, sesi milik petugas yang menghilang terkunci selamanya.
+    // TANPA pesan WA — pengklaim berikutnya yang mengirim "sedang ditangani oleh". (admin only)
+    public function session_release($id) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        $this->require_role_in(['admin', 'superadmin']);
+        $sid  = (int) $id;
+        $sess = $this->db->select('id, assigned_to')->get_where('wa_sessions', ['id' => $sid])->row();
+        if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+        $holder = (int) ($sess->assigned_to ?? 0);
+        if ($holder === 0) {
+            $this->json_response(['success' => true, 'data' => ['assigned_to' => null], 'message' => 'Sesi memang belum dipegang siapa pun']);
+        }
+        $this->db->where('id', $sid)->update('wa_sessions', ['assigned_to' => null, 'assigned_at' => null]);
+        $this->audit('wa_release', 'wa_session', $sid, ['from' => $holder]);
+        $this->json_response(['success' => true, 'data' => ['assigned_to' => null], 'message' => 'Sesi dilepaskan — petugas lain dapat mengambil alih.']);
     }
 
     /* ───────────────────────── admin (Layanan Online inbox) ───────────────────────── */
