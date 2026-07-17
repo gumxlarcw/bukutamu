@@ -62,6 +62,10 @@ export const waApi = {
   assign: (sessionId: number) =>
     apiClient.post<ApiResponse<{ assigned_to: number; operator_nama: string }>>(`/api/wa/sessions/${sessionId}/assign`),
 
+  // Lepaskan sesi macet (admin only) → assigned_to = NULL, petugas lain bisa klaim ulang.
+  release: (sessionId: number) =>
+    apiClient.post<ApiResponse<{ assigned_to: null }>>(`/api/wa/sessions/${sessionId}/release`),
+
   // Petugas alihkan sesi #2 (offline) / #3 (lainnya) ke form Permintaan Data (kirim tautan form data).
   sendDataForm: (sessionId: number) =>
     apiClient.post<ApiResponse<null>>(`/api/wa/sessions/${sessionId}/send-data-form`),

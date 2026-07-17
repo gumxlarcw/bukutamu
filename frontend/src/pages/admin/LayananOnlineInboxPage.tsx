@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { StatsCard } from '@/components/admin/StatsCard'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { MessageSquare, MessageCircle, ExternalLink, Inbox, Clock, Hourglass, CircleCheck, Unplug, Send, Trash2, QrCode, Smartphone, Copy, Loader2, RefreshCw, ArrowRight, Hand, UserCheck } from 'lucide-react'
+import { MessageSquare, MessageCircle, ExternalLink, Inbox, Clock, Hourglass, CircleCheck, Unplug, Send, Trash2, QrCode, Smartphone, Copy, Loader2, RefreshCw, ArrowRight, Hand, UserCheck, Lock, Unlock } from 'lucide-react'
 import type { WaInboxRow } from '@/types/wa'
 
 function formatWhen(iso: string): string {
@@ -280,6 +280,17 @@ export default function LayananOnlineInboxPage() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const canDelete = user?.role === 'admin' || user?.role === 'superadmin'
+  // #claim-gate — petugas wajib memegang sesi sebelum boleh memproses/menutup/mengirim.
+  // admin/superadmin = pengawas: melihat & bertindak bebas, tapi tak pernah memiliki sesi.
+  const isAdmin  = user?.role === 'admin' || user?.role === 'superadmin'
+  const canClaim = user?.role === 'petugas_pst' || user?.role === 'operator'
+  // `user.id` arrives as a STRING ("3"): CI3 uses non-prepared mysqli queries, so mysqlnd
+  // returns every column as a string, and Auth.php passes id through uncast — while
+  // Wa.php casts assigned_to to (int). `AuthUser.id: number` is a compile-time assertion
+  // over untyped JSON, not a runtime guarantee, so `===` silently never matches and every
+  // petugas would be locked out of their own sessions. Coerce both sides; do not "simplify".
+  const isMine   = (r: WaInboxRow) => r.assigned_to != null && Number(r.assigned_to) === Number(user?.id)
+  const isLocked = (r: WaInboxRow) => !isAdmin && !isMine(r)
   const del = useMutation({
     mutationFn: (r: WaInboxRow) =>
       r.kind === 'pending' ? waApi.deleteSession(r.session_id as number) : visitsApi.delete(r.id_kunjungan as number),
@@ -301,6 +312,7 @@ export default function LayananOnlineInboxPage() {
   const markProses = useMutation({
     mutationFn: (idk: number) => waApi.markProses(idk),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wa-inbox'] }),
+    onError: (e: unknown) => toast.error(getApiErrorMessage(e, 'Gagal memproses')),
   })
   const openProses = (idk: number) => { setProsesId(idk); markProses.mutate(idk) }
   const closeProses = () => { setProsesId(null); qc.invalidateQueries({ queryKey: ['wa-inbox'] }) }
@@ -314,6 +326,17 @@ export default function LayananOnlineInboxPage() {
     },
     onError: (e: unknown) => {
       toast.error(getApiErrorMessage(e, 'Gagal mengambil alih'))
+    },
+  })
+  // Admin melepaskan sesi macet → assigned_to NULL; petugas lain bisa mengambil alih.
+  const release = useMutation({
+    mutationFn: (sessionId: number) => waApi.release(sessionId),
+    onSuccess: () => {
+      toast.success('Sesi dilepaskan — petugas lain dapat mengambil alih')
+      qc.invalidateQueries({ queryKey: ['wa-inbox'] })
+    },
+    onError: (e: unknown) => {
+      toast.error(getApiErrorMessage(e, 'Gagal melepaskan sesi'))
     },
   })
   // Tutup sesi WA secara manual (muncul setelah pengunjung mengisi evaluasi).
@@ -332,8 +355,6 @@ export default function LayananOnlineInboxPage() {
       toast.error(getApiErrorMessage(e, 'Gagal mengirim form'))
     },
   })
-  const canReassign = user?.role === 'admin' || user?.role === 'superadmin'
-
   const { data, isLoading } = useQuery({
     queryKey: ['wa-inbox'],
     queryFn: () => waApi.inbox().then(r => r.data.data),
@@ -372,6 +393,13 @@ export default function LayananOnlineInboxPage() {
         <div>
           <h1 className="admin-h1">Layanan Online</h1>
           <p className="admin-subtitle">Permintaan data via WhatsApp — antrian online PST, diperbarui otomatis</p>
+          {canClaim && (
+            <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
+               style={{ background: 'var(--admin-primary-light)', color: 'var(--admin-primary)' }}>
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              Ambil alih permintaan dulu sebelum bisa memproses atau membalas chat.
+            </p>
+          )}
         </div>
       </div>
 
@@ -437,30 +465,46 @@ export default function LayananOnlineInboxPage() {
                 )}
 
                 {r.assigned_to == null ? (
-                  <Button size="sm" variant="outline" className="shrink-0"
-                    disabled={assign.isPending || r.session_id == null}
-                    title="Ambil alih sesi ini" onClick={() => { if (r.session_id != null) assign.mutate(r.session_id) }}>
-                    <Hand className="w-3.5 h-3.5 mr-1" /> Ambil alih
-                  </Button>
+                  canClaim ? (
+                    <Button size="sm" variant="outline" className="shrink-0"
+                      disabled={assign.isPending || r.session_id == null}
+                      title="Ambil alih sesi ini agar bisa memproses & membalas chat"
+                      onClick={() => { if (r.session_id != null) assign.mutate(r.session_id) }}>
+                      <Hand className="w-3.5 h-3.5 mr-1" /> Ambil alih
+                    </Button>
+                  ) : (
+                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                      Belum ditangani
+                    </span>
+                  )
                 ) : (
-                  <span
-                    className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700"
-                    style={canReassign ? { cursor: 'pointer' } : undefined}
-                    title={canReassign ? 'Pindahkan penanganan ke Anda (admin)' : `Ditangani oleh ${r.operator_nama ?? '-'}`}
-                    onClick={() => { if (canReassign && r.session_id != null && window.confirm(`Pindahkan penanganan dari ${r.operator_nama} ke Anda?`)) assign.mutate(r.session_id) }}
-                  >
+                  <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700"
+                    title={`Ditangani oleh ${r.operator_nama ?? '-'}`}>
                     <UserCheck className="w-3.5 h-3.5" /> {r.operator_nama ?? 'Ditangani'}
                   </span>
                 )}
+                {isAdmin && r.assigned_to != null && r.session_id != null && (
+                  <Button size="sm" variant="outline" className="shrink-0"
+                    disabled={release.isPending}
+                    title="Lepaskan sesi ini agar petugas lain bisa mengambil alih"
+                    onClick={() => {
+                      if (r.session_id != null && window.confirm(`Lepaskan sesi ini dari ${r.operator_nama ?? 'petugas'}?\n\nPetugas lain akan bisa mengambil alih.`)) release.mutate(r.session_id)
+                    }}>
+                    <Unlock className="w-3.5 h-3.5 mr-1" /> Lepaskan
+                  </Button>
+                )}
                 {!pending && (
-                  <Button size="sm" variant="outline" className="shrink-0" onClick={() => openProses(r.id_kunjungan as number)}>
+                  <Button size="sm" variant="outline" className="shrink-0"
+                    disabled={isLocked(r)}
+                    title={isLocked(r) ? 'Ambil alih sesi ini dulu untuk memproses' : 'Proses permintaan'}
+                    onClick={() => openProses(r.id_kunjungan as number)}>
                     <ExternalLink className="w-3.5 h-3.5 mr-1" /> Proses
                   </Button>
                 )}
                 {!pending && r.status === 'evaluasi_selesai' && (
                   <Button size="sm" className="shrink-0"
-                    disabled={selesai.isPending}
-                    title="Tutup sesi & kirim pesan penutup"
+                    disabled={selesai.isPending || isLocked(r)}
+                    title={isLocked(r) ? 'Ambil alih sesi ini dulu untuk menutup' : 'Tutup sesi & kirim pesan penutup'}
                     onClick={() => { if (window.confirm('Tutup sesi ini & kirim pesan penutup ke pengguna?')) selesai.mutate(r.id_kunjungan as number) }}>
                     <CircleCheck className="w-3.5 h-3.5 mr-1" /> Selesai
                   </Button>
@@ -480,8 +524,8 @@ export default function LayananOnlineInboxPage() {
                 )}
                 {(r.category === 'offline' || r.category === 'lainnya') && r.session_id != null && (
                   <Button size="sm" variant="outline" className="shrink-0"
-                    disabled={sendDataForm.isPending}
-                    title="Alihkan ke Permintaan Data — kirim tautan form data ke pemohon"
+                    disabled={sendDataForm.isPending || isLocked(r)}
+                    title={isLocked(r) ? 'Ambil alih sesi ini dulu untuk mengirim form' : 'Alihkan ke Permintaan Data — kirim tautan form data ke pemohon'}
                     onClick={() => { if (r.session_id != null) sendDataForm.mutate(r.session_id) }}>
                     <Send className="w-3.5 h-3.5 mr-1" /> Form Data
                   </Button>
@@ -502,9 +546,21 @@ export default function LayananOnlineInboxPage() {
       )}
 
       {/* Popup chat melayang (bisa digeser/diminimalkan) */}
-      {chats.map((c, i) => (
-        <ChatPopup key={c.phone} phone={c.phone} nama={c.nama} index={i} idKunjungan={c.idKunjungan} onClose={() => closeChat(c.phone)} />
-      ))}
+      {/* locked/sessionId diturunkan dari `rows` (bukan disimpan di state `chats`) agar popup
+          langsung membuka kunci begitu klaim berhasil, tanpa perlu ditutup-buka ulang.
+          Baris tak ditemukan → anggap terkunci (fail-closed). */}
+      {chats.map((c, i) => {
+        const row = rows.find((r) => r.notel === c.phone)
+        const claimable = canClaim && row != null && row.assigned_to == null && row.session_id != null
+        return (
+          <ChatPopup key={c.phone} phone={c.phone} nama={c.nama} index={i} idKunjungan={c.idKunjungan}
+            locked={row ? isLocked(row) : true}
+            sessionId={row?.session_id ?? null}
+            operatorNama={row?.operator_nama ?? null}
+            onClaim={claimable ? () => { if (row?.session_id != null) assign.mutate(row.session_id) } : undefined}
+            onClose={() => closeChat(c.phone)} />
+        )
+      })}
 
       {/* Popup "Proses" — form konsultasi in-place (reuse backend yang sama, tanpa pindah halaman) */}
       <Dialog open={prosesId != null} onOpenChange={(o) => { if (!o) closeProses() }}>

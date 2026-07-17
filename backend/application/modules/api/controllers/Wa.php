@@ -258,6 +258,7 @@ class Wa extends Api_base {
         $sid  = (int) $sid;
         $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+        $this->wa_require_session_owner($sess); // #claim-gate — wajib klaim sebelum mengirim apa pun ke pemohon
         // Hanya alihkan sesi Antrian Offline / Lainnya — JANGAN reset sesi data yang sedang diproses.
         if (!in_array($sess->category, ['offline', 'lainnya'], true)) {
             $this->json_response(['success' => false, 'message' => 'Hanya untuk sesi Antrian Offline / Lainnya.'], 409);
@@ -681,6 +682,7 @@ class Wa extends Api_base {
         $id = (int) $id;
         $v = $this->db->select('status')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
         if (!$v) $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+        $this->wa_require_session_owner($this->wa_session_for_visit($id)); // #claim-gate — wajib klaim sebelum memproses
         if (in_array($v->status, ['antri', 'dipanggil'], true)) {
             $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', ['status' => 'diproses']);
         }
@@ -696,6 +698,7 @@ class Wa extends Api_base {
         $id = (int) $id;
         $v = $this->db->select('status, created_by')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
         if (!$v || $v->created_by !== 'whatsapp') $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+        $this->wa_require_session_owner($this->wa_session_for_visit($id)); // #claim-gate — wajib klaim sebelum menutup sesi (D5)
         if ($v->status === 'selesai') {
             $this->json_response(['success' => true, 'data' => ['status' => 'selesai'], 'message' => 'Sudah selesai']);
         }
@@ -714,10 +717,14 @@ class Wa extends Api_base {
     public function session_assign($id) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
-        if (!$this->wa_can_write()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403); // #5 pimpinan read-only
+        // #claim-gate — admin/superadmin tak pernah memiliki sesi; mereka memakai "Lepaskan".
+        // Pesan dibedakan agar admin tahu jalan yang benar, bukan sekadar "Akses ditolak".
+        if (in_array($this->current_user->role ?? '', ['admin', 'superadmin'], true)) {
+            $this->json_response(['success' => false, 'message' => 'Admin tidak mengambil alih sesi. Gunakan "Lepaskan" untuk membebaskan sesi yang macet.'], 403);
+        }
+        if (!$this->wa_can_claim()) $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
         $sid  = (int) $id;
         $uid  = (int) ($this->current_user->id ?? 0);
-        $role = $this->current_user->role ?? '';
         if ($uid <= 0) $this->json_response(['success' => false, 'message' => 'Akun ini tidak dapat mengambil alih sesi (gunakan akun operator).'], 403);
         $sess = $this->db->get_where('wa_sessions', ['id' => $sid])->row();
         if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
@@ -734,11 +741,8 @@ class Wa extends Api_base {
             if ($holder === $uid) {
                 $this->json_response(['success' => true, 'data' => ['assigned_to' => $uid, 'operator_nama' => $this->wa_operator_name($uid)], 'message' => 'Sudah Anda tangani']);
             }
-            if (!in_array($role, ['admin', 'superadmin'], true)) {
-                $this->json_response(['success' => false, 'message' => 'Sudah ditangani oleh ' . $this->wa_operator_name($holder)], 409);
-            }
-            // Admin override → pindahkan ke admin yang meminta.
-            $this->db->where('id', $sid)->update('wa_sessions', ['assigned_to' => $uid, 'assigned_at' => $now]);
+            // Terkunci ke pemegang pertama. Hanya admin yang bisa membebaskan, lewat "Lepaskan".
+            $this->json_response(['success' => false, 'message' => 'Sudah ditangani oleh ' . $this->wa_operator_name($holder)], 409);
         }
 
         // Pesan "sedang ditangani" — HANYA dari aksi interaktif ini, tak pernah dari backfill.
@@ -753,6 +757,26 @@ class Wa extends Api_base {
         }
         $this->audit('wa_assign', 'wa_session', $sid, ['assigned_to' => $uid]);
         $this->json_response(['success' => true, 'data' => ['assigned_to' => $uid, 'operator_nama' => $this->wa_operator_name($uid)], 'message' => 'Anda mengambil alih sesi ini']);
+    }
+
+    // POST /api/wa/sessions/(:num)/release — admin membebaskan sesi macet (pemegangnya resign,
+    // tak masuk, atau salah klaim) agar petugas lain bisa mengambil alih. Ini katup pengaman
+    // dari larangan admin-klaim: tanpanya, sesi milik petugas yang menghilang terkunci selamanya.
+    // TANPA pesan WA — pengklaim berikutnya yang mengirim "sedang ditangani oleh". (admin only)
+    public function session_release($id) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        $this->require_auth();
+        $this->require_role_in(['admin', 'superadmin']);
+        $sid  = (int) $id;
+        $sess = $this->db->select('id, assigned_to')->get_where('wa_sessions', ['id' => $sid])->row();
+        if (!$sess) $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+        $holder = (int) ($sess->assigned_to ?? 0);
+        if ($holder === 0) {
+            $this->json_response(['success' => true, 'data' => ['assigned_to' => null], 'message' => 'Sesi memang belum dipegang siapa pun']);
+        }
+        $this->db->where('id', $sid)->update('wa_sessions', ['assigned_to' => null, 'assigned_at' => null]);
+        $this->audit('wa_release', 'wa_session', $sid, ['from' => $holder]);
+        $this->json_response(['success' => true, 'data' => ['assigned_to' => null], 'message' => 'Sesi dilepaskan — petugas lain dapat mengambil alih.']);
     }
 
     /* ───────────────────────── admin (Layanan Online inbox) ───────────────────────── */
@@ -1553,17 +1577,31 @@ class Wa extends Api_base {
         return in_array($role, ['petugas_pst', 'operator', 'admin', 'superadmin'], true);
     }
 
-    // #17 — a claimed session (assigned_to set) may only be written by its assignee; admin override.
-    // Unclaimed sessions (or a null session) stay open to any write-role operator.
+    // #claim-gate — klaim adalah milik petugas lapangan. admin/superadmin pengawas: melihat
+    // semua & boleh bertindak, tapi tak pernah memiliki sesi. pimpinan read-only.
+    private function wa_can_claim() {
+        return in_array($this->current_user->role ?? '', ['petugas_pst', 'operator'], true);
+    }
+
+    // #claim-gate — gerbang wajib-klaim: sesi hanya boleh ditulis oleh pemegangnya. Sesi yang
+    // BELUM diklaim kini TERTUTUP (dulu terbuka untuk siapa pun) — petugas harus menekan
+    // "Ambil alih" dulu, agar tiap penanganan punya pemilik tercatat dan pemohon selalu tahu
+    // siapa yang menanganinya. admin/superadmin dikecualikan: pengawas yang boleh bertindak
+    // tanpa pernah memiliki sesi (mereka memakai "Lepaskan", bukan "Ambil alih").
+    // 409 = belum diklaim (petugas bisa memulihkan sendiri); 403 = milik orang lain (tidak bisa).
     private function wa_require_session_owner($sess) {
-        if (!$sess) return;
-        $assigned = (int) ($sess->assigned_to ?? 0);
-        if ($assigned === 0) return;
-        $uid  = (int) ($this->current_user->id ?? 0);
         $role = $this->current_user->role ?? '';
-        if ($assigned === $uid) return;
         if (in_array($role, ['admin', 'superadmin'], true)) return;
-        $this->json_response(['success' => false, 'message' => 'Sesi ini sedang ditangani operator lain.'], 403);
+        if (!$sess) {
+            $this->json_response(['success' => false, 'message' => 'Sesi tidak ditemukan'], 404);
+        }
+        $assigned = (int) ($sess->assigned_to ?? 0);
+        if ($assigned === 0) {
+            $this->json_response(['success' => false, 'message' => 'Ambil alih sesi ini dulu sebelum memproses atau membalas chat.'], 409);
+        }
+        if ($assigned !== (int) ($this->current_user->id ?? 0)) {
+            $this->json_response(['success' => false, 'message' => 'Sesi ini sedang ditangani operator lain.'], 403);
+        }
     }
 
     private function wa_media_dir() {
@@ -1629,6 +1667,13 @@ class Wa extends Api_base {
     // Sesi terbaru untuk nomor (alamat balas + konteks) — petugas boleh kirim kapan pun.
     private function wa_latest_session($phone_norm) {
         return $this->db->select('id, wa_chat_id, id_kunjungan, assigned_to')->where('phone_norm', $phone_norm)
+                        ->order_by('id', 'DESC')->limit(1)->get('wa_sessions')->row();
+    }
+
+    // Sesi terbaru milik sebuah kunjungan. Klaim hidup di wa_sessions, sedangkan
+    // visit_proses/visit_selesai hanya menerima id_kunjungan — cermin subquery di inbox().
+    private function wa_session_for_visit($idKunjungan) {
+        return $this->db->select('id, assigned_to')->where('id_kunjungan', (int) $idKunjungan)
                         ->order_by('id', 'DESC')->limit(1)->get('wa_sessions')->row();
     }
 

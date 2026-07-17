@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '@/lib/apiError'
 import {
   Send, Database, X, Minus, FileText, Clock, Check, CheckCheck,
   AlertCircle, MessageCircle, Download, ChevronDown, Reply, SmilePlus, MapPin, User,
+  Lock, Hand,
 } from 'lucide-react'
 import { waApi } from '@/api/wa'
 import { deliveriesApi } from '@/api/deliveries'
@@ -186,9 +187,15 @@ interface ChatPopupProps {
   index?: number
   onClose: () => void
   idKunjungan?: number | null  // null/absent = no visit yet; disables Kirim Data
+  // #claim-gate — true = petugas ini bukan pemegang sesi → hanya boleh membaca.
+  // Baca sengaja tetap terbuka (peran 'pimpinan' read-only bergantung padanya).
+  locked?: boolean
+  sessionId?: number | null    // untuk tombol "Ambil alih" di panel terkunci
+  operatorNama?: string | null // nama pemegang sesi saat ini, agar panel bisa jelaskan keadaan
+  onClaim?: () => void         // hanya diisi oleh pemanggil bila viewer memang bisa mengklaim baris ini
 }
 
-export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null }: ChatPopupProps) {
+export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null, locked = false, sessionId = null, operatorNama = null, onClaim }: ChatPopupProps) {
   const qc = useQueryClient()
   const [text, setText] = useState('')
   const [min, setMin] = useState(false)
@@ -263,8 +270,8 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
   // Polling getMessages akan memunculkan pesan histori beberapa detik kemudian.
   useEffect(() => {
     waApi.requestBackfill(phone).catch(() => { /* best-effort */ })
-    waApi.markSeen(phone).catch(() => { /* best-effort */ }) // buka chat → tandai dibaca (centang biru visitor)
-  }, [phone])
+    if (!locked) waApi.markSeen(phone).catch(() => { /* best-effort */ }) // buka chat → tandai dibaca (centang biru visitor)
+  }, [phone, locked])
   // Auto-scroll HANYA bila petugas sedang di dasar, atau pesan terakhir dari kita sendiri.
   // (Jangan menyentak ke bawah saat petugas sedang membaca histori di atas → cegah pesan "terlewat".)
   useEffect(() => {
@@ -277,7 +284,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
       setSeenId(last.id)
     }
     // Petugas melihat dasar chat & ada pesan masuk → tandai dibaca (centang biru utk visitor).
-    if (atBottomRef.current && last.direction === 'in') waApi.markSeen(phone).catch(() => { /* best-effort */ })
+    if (!locked && atBottomRef.current && last.direction === 'in') waApi.markSeen(phone).catch(() => { /* best-effort */ })
   }, [messages.length, min]) // eslint-disable-line react-hooks/exhaustive-deps
   // Textarea auto-grow (maks ~5 baris).
   useEffect(() => {
@@ -503,7 +510,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
                         </div>
                       )}
                       <div className={`group flex items-end gap-1 ${out ? 'justify-end' : 'justify-start'} ${firstOfGroup ? 'mt-2' : 'mt-0.5'} ${m.reaction ? 'mb-2.5' : ''}`}>
-                        {out && (
+                        {out && !locked && (
                           <BubbleActions open={reactFor === m.id}
                             onReply={() => setReplyTo({ id: m.id, preview: replyPreview(m), out })}
                             onToggleReact={() => setReactFor((v) => (v === m.id ? null : m.id))}
@@ -592,7 +599,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
                             </span>
                           )}
                         </div>
-                        {!out && (
+                        {!out && !locked && (
                           <BubbleActions open={reactFor === m.id}
                             onReply={() => setReplyTo({ id: m.id, preview: replyPreview(m), out })}
                             onToggleReact={() => setReactFor((v) => (v === m.id ? null : m.id))}
@@ -739,7 +746,30 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
               </div>
             )}
 
-            {/* ── Composer ── */}
+            {/* ── Composer ── #claim-gate: hanya pemegang sesi (atau admin) yang boleh mengirim.
+                 Riwayat di atas tetap terbaca penuh — baca sengaja terbuka. */}
+            {locked ? (
+              <div className="px-3 py-3 border-t flex flex-col items-center gap-2 text-center"
+                   style={{ borderColor: 'var(--admin-border)', background: '#faf7f2' }}>
+                <p className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--admin-text-secondary)' }}>
+                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                  {onClaim && sessionId != null
+                    ? 'Ambil alih dulu untuk bisa chat dengan pemohon ini'
+                    : operatorNama
+                    ? `Sedang ditangani oleh ${operatorNama}`
+                    : 'Anda hanya dapat membaca percakapan ini'}
+                </p>
+                {onClaim && sessionId != null && (
+                  <button
+                    onClick={onClaim}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-transform active:scale-95"
+                    style={{ background: 'var(--admin-primary)' }}
+                  >
+                    <Hand className="w-3.5 h-3.5" /> Ambil alih
+                  </button>
+                )}
+              </div>
+            ) : (
             <div className="flex items-end gap-1.5 px-2.5 py-2 border-t" style={{ borderColor: 'var(--admin-border)', background: '#fff' }}>
               <button
                 onClick={() => { if (kirimDataOpen) { setKirimDataOpen(false); resetKdForm() } else setKirimDataOpen(true) }}
@@ -772,6 +802,7 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null 
                 <Send className="w-4 h-4" />
               </button>
             </div>
+            )}
           </>
         )}
       </div>
