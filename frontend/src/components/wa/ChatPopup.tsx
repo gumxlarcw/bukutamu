@@ -191,10 +191,11 @@ interface ChatPopupProps {
   // Baca sengaja tetap terbuka (peran 'pimpinan' read-only bergantung padanya).
   locked?: boolean
   sessionId?: number | null    // untuk tombol "Ambil alih" di panel terkunci
-  onClaim?: () => void         // memanggil mutasi assign milik halaman inbox
+  operatorNama?: string | null // nama pemegang sesi saat ini, agar panel bisa jelaskan keadaan
+  onClaim?: () => void         // hanya diisi oleh pemanggil bila viewer memang bisa mengklaim baris ini
 }
 
-export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null, locked = false, sessionId = null, onClaim }: ChatPopupProps) {
+export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null, locked = false, sessionId = null, operatorNama = null, onClaim }: ChatPopupProps) {
   const qc = useQueryClient()
   const [text, setText] = useState('')
   const [min, setMin] = useState(false)
@@ -752,7 +753,11 @@ export function ChatPopup({ phone, nama, index = 0, onClose, idKunjungan = null,
                    style={{ borderColor: 'var(--admin-border)', background: '#faf7f2' }}>
                 <p className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--admin-text-secondary)' }}>
                   <Lock className="w-3.5 h-3.5 shrink-0" />
-                  Ambil alih dulu untuk bisa chat dengan pemohon ini
+                  {onClaim && sessionId != null
+                    ? 'Ambil alih dulu untuk bisa chat dengan pemohon ini'
+                    : operatorNama
+                    ? `Sedang ditangani oleh ${operatorNama}`
+                    : 'Anda hanya dapat membaca percakapan ini'}
                 </p>
                 {onClaim && sessionId != null && (
                   <button

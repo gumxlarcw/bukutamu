@@ -284,7 +284,12 @@ export default function LayananOnlineInboxPage() {
   // admin/superadmin = pengawas: melihat & bertindak bebas, tapi tak pernah memiliki sesi.
   const isAdmin  = user?.role === 'admin' || user?.role === 'superadmin'
   const canClaim = user?.role === 'petugas_pst' || user?.role === 'operator'
-  const isMine   = (r: WaInboxRow) => r.assigned_to != null && r.assigned_to === user?.id
+  // `user.id` arrives as a STRING ("3"): CI3 uses non-prepared mysqli queries, so mysqlnd
+  // returns every column as a string, and Auth.php passes id through uncast — while
+  // Wa.php casts assigned_to to (int). `AuthUser.id: number` is a compile-time assertion
+  // over untyped JSON, not a runtime guarantee, so `===` silently never matches and every
+  // petugas would be locked out of their own sessions. Coerce both sides; do not "simplify".
+  const isMine   = (r: WaInboxRow) => r.assigned_to != null && Number(r.assigned_to) === Number(user?.id)
   const isLocked = (r: WaInboxRow) => !isAdmin && !isMine(r)
   const del = useMutation({
     mutationFn: (r: WaInboxRow) =>
@@ -546,11 +551,13 @@ export default function LayananOnlineInboxPage() {
           Baris tak ditemukan → anggap terkunci (fail-closed). */}
       {chats.map((c, i) => {
         const row = rows.find((r) => r.notel === c.phone)
+        const claimable = canClaim && row != null && row.assigned_to == null && row.session_id != null
         return (
           <ChatPopup key={c.phone} phone={c.phone} nama={c.nama} index={i} idKunjungan={c.idKunjungan}
             locked={row ? isLocked(row) : true}
             sessionId={row?.session_id ?? null}
-            onClaim={() => { if (row?.session_id != null) assign.mutate(row.session_id) }}
+            operatorNama={row?.operator_nama ?? null}
+            onClaim={claimable ? () => { if (row?.session_id != null) assign.mutate(row.session_id) } : undefined}
             onClose={() => closeChat(c.phone)} />
         )
       })}
