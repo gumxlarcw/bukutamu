@@ -101,29 +101,72 @@ class Dashboard extends Api_base {
         }
         $this->require_auth();
 
+        // Hormati rentang yang sama seperti stats(). Sebelumnya events() selalu
+        // memuat SELURUH riwayat, sehingga sorotan dan grafik di halaman yang sama
+        // bercerita tentang rentang berbeda tanpa memberi tahu siapa pun.
+        $date_from = $this->input->get('date_from');
+        $date_to   = $this->input->get('date_to');
+
         $this->db->select('DATE(date_visit) as date, COUNT(*) as count, jenis_layanan')
             ->group_by('DATE(date_visit), jenis_layanan')
             ->order_by('date', 'ASC');
+        if ($date_from) { $this->db->where('DATE(date_visit) >=', $date_from); }
+        if ($date_to)   { $this->db->where('DATE(date_visit) <=', $date_to); }
         $rows = $this->db->get('tamdes_kunjungan')->result();
 
-        $colors = [
-            'Perpustakaan' => '#0D9488',
-            'Konsultasi Statistik' => '#3B82F6',
-            'Rekomendasi Kegiatan Statistik' => '#F59E0B',
-            'Penjualan Produk Statistik' => '#8B5CF6',
-            'Keperluan Pimpinan' => '#EF4444',
-            'Lainnya' => '#6B7280',
-        ];
-
-        $events = array_map(function ($row) use ($colors) {
+        $events = array_map(function ($row) {
+            $layanan = $this->first_layanan_name($row->jenis_layanan);
             return [
-                'id' => $row->date . '-' . $row->jenis_layanan,
-                'title' => $row->jenis_layanan . ' (' . $row->count . ')',
-                'start' => $row->date,
-                'color' => isset($colors[$row->jenis_layanan]) ? $colors[$row->jenis_layanan] : '#6B7280',
+                'id'      => $row->date . '-' . $layanan,
+                'title'   => $layanan . ' (' . $row->count . ')',
+                'start'   => $row->date,
+                'color'   => $this->warna_grup_layanan($layanan),
+                // Dua field di bawah dipakai grafik dashboard. FullCalendar menyerap
+                // kunci tak dikenal ke extendedProps dan mengabaikannya, jadi kalender
+                // tidak terpengaruh. Mengurai angka dari `title` ("Perpustakaan (3)")
+                // akan diam-diam salah begitu labelnya berubah.
+                'count'   => (int) $row->count,
+                'layanan' => $layanan,
             ];
         }, $rows);
 
         $this->json_response(['success' => true, 'data' => $events, 'message' => 'OK']);
+    }
+
+    /**
+     * `jenis_layanan` tersimpan dalam DUA format: string polos ("Perpustakaan")
+     * dan JSON array ('["Perpustakaan","Konsultasi Statistik"]'). Ambil nama
+     * pertama supaya event punya satu label yang bisa diwarnai.
+     */
+    private function first_layanan_name($raw) {
+        $raw = trim((string) $raw);
+        if ($raw === '') { return 'Tidak diketahui'; }
+        if (substr($raw, 0, 1) === '[') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && count($decoded) > 0) {
+                return (string) $decoded[0];
+            }
+        }
+        return $raw;
+    }
+
+    /**
+     * Warna per GRUP layanan, bukan per layanan. Peta lama memuat 6 layanan
+     * padahal taksonominya 9, sehingga DTSEN, Daftar Antrian Offline, dan
+     * Lainnya Online semuanya jatuh ke abu-abu dan tak terbedakan.
+     *
+     * Empat warna ini SUDAH divalidasi terhadap permukaan #ffffff — lolos
+     * lantai chroma, pita lightness, pemisahan buta warna, dan kontras.
+     * Jangan diubah tanpa menjalankan ulang validator palet.
+     */
+    private function warna_grup_layanan($layanan) {
+        $skd = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        $res = ['Lainnya', 'Keperluan Pimpinan', 'Daftar Antrian Offline'];
+
+        if (in_array($layanan, $skd, true))          { return '#c4570a'; }
+        if ($layanan === 'Konsultasi DTSEN')          { return '#0d9499'; }
+        if (in_array($layanan, $res, true))           { return '#be185d'; }
+        if ($layanan === 'Lainnya Online')            { return '#2563eb'; }
+        return '#7a7068'; // di luar taksonomi — sengaja netral, bukan warna kategori
     }
 }
