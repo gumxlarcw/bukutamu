@@ -73,8 +73,11 @@ export function VisitFilters({ filters, onChange }: VisitFiltersProps) {
         >
           <option value="">Semua Status</option>
           <option value="antri">Antri</option>
+          <option value="dipanggil">Dipanggil</option>
           <option value="proses">Proses</option>
+          <option value="diproses">Diproses</option>
           <option value="menunggu_evaluasi">Menunggu Evaluasi</option>
+          <option value="evaluasi_selesai">Evaluasi Selesai</option>
           <option value="selesai">Selesai</option>
         </select>
       </div>
