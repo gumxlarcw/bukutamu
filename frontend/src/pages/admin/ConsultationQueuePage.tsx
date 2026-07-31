@@ -10,7 +10,7 @@ import { VisitFilters, type VisitFilterState } from '@/components/admin/VisitFil
 import { QueueStatusCards } from '@/components/admin/QueueStatusCards'
 import { TAHAP_SKD } from '@/lib/queue-stages'
 import { useAuth } from '@/providers/AuthProvider'
-import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup, SKD_SERVICES } from '@/lib/role-access'
+import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup, SKD_SERVICES, requiresBlok3 } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -158,27 +158,33 @@ export default function ConsultationQueuePage() {
                     nomor_antrian={visit.nomor_antrian}
                   />
                 )}
-                {/* Sudah ada data konsultasi tersimpan → "Lihat / Edit", belum →
-                    "Mulai". Tetap lewat handleStart supaya transisi antri/dipanggil
-                    → diproses tidak hilang (hanya label/ikon yang berubah). */}
-                {Number(visit.has_konsultasi) > 0 ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleStart(visit.id_kunjungan, visit.status, visit.jenis_layanan)}
-                  >
-                    <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
-                    Lihat / Edit
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleStart(visit.id_kunjungan, visit.status, visit.jenis_layanan)}
-                  >
-                    <ClipboardList className="w-3.5 h-3.5 mr-1" />
-                    Mulai
-                  </Button>
+                {/* Tombol form hanya untuk layanan yang WAJIB mengisi Blok 3.
+                    Rekomendasi Kegiatan Statistik dilewati sepenuhnya — skip,
+                    bukan opsional: form yang boleh kosong akan tetap kosong
+                    sambil menyisakan langkah yang membingungkan.
+                    Sudah ada data tersimpan → "Lihat / Edit", belum → "Mulai".
+                    Tetap lewat handleStart supaya transisi antri/dipanggil →
+                    diproses tidak hilang (hanya label/ikon yang berubah). */}
+                {requiresBlok3(parseLayananForRole(visit.jenis_layanan)) && (
+                  Number(visit.has_konsultasi) > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleStart(visit.id_kunjungan, visit.status, visit.jenis_layanan)}
+                    >
+                      <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
+                      Lihat / Edit
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleStart(visit.id_kunjungan, visit.status, visit.jenis_layanan)}
+                    >
+                      <ClipboardList className="w-3.5 h-3.5 mr-1" />
+                      Mulai
+                    </Button>
+                  )
                 )}
                 {visit.status === 'menunggu_evaluasi' && (
                   <a

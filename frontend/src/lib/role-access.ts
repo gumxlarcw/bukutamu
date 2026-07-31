@@ -8,6 +8,18 @@ export const SKD_SERVICES = [
   'Penjualan Produk Statistik',
 ] as const
 
+// Layanan yang WAJIB mengisi form Blok 3 (rincian kebutuhan data).
+// Sengaja BERBEDA dari SKD_SERVICES: 'Rekomendasi Kegiatan Statistik' tetap
+// layanan SKD — tetap satu grup, tetap sarana SKD, tetap wajib evaluasi tablet —
+// tapi tamunya datang meminta rekomendasi kegiatan, bukan meminta angka,
+// sehingga "kebutuhan data" tidak berlaku baginya.
+// Cermin Api_base::layanan_requires_blok3().
+const BLOK3_SERVICES = [
+  'Perpustakaan',
+  'Konsultasi Statistik',
+  'Penjualan Produk Statistik',
+] as const
+
 // Layanan PST di luar SKD — tetap ditangani petugas_pst & pakai panggilan TV,
 // tapi tidak memicu evaluasi SKD (langsung selesai setelah finalisasi).
 const DTSEN_SERVICES = ['Konsultasi DTSEN'] as const
@@ -78,6 +90,15 @@ export function nextStatusAfterCompletion(layanan_list: string[]): 'menunggu_eva
 /** Apakah layanan ini termasuk 4 inti SKD (butuh evaluasi tablet). */
 export function isSkdLayanan(name: string): boolean {
   return (SKD_SERVICES as readonly string[]).includes(name)
+}
+
+/**
+ * Apakah kombinasi layanan ini wajib mengisi form Blok 3?
+ * Cermin Api_base::layanan_requires_blok3(). Dipakai Antrian PST untuk
+ * memutuskan apakah tombol "Mulai / Lihat / Edit" dirender sama sekali.
+ */
+export function requiresBlok3(layanan_list: string[]): boolean {
+  return layanan_list.some(l => (BLOK3_SERVICES as readonly string[]).includes(l))
 }
 
 /** Apakah layanan ini DTSEN (PST role-wise tapi tanpa SKD). */
