@@ -19,7 +19,7 @@ class Evaluations extends Api_base {
         if ($requested_id !== null && $requested_id !== '') {
             $rid   = (int) $requested_id;
             $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $rid])->row();
-            if ($visit && $visit->created_by !== 'whatsapp' && $visit->status === 'menunggu_evaluasi' && $this->layanan_requires_skd_form($visit->jenis_layanan)) {
+            if ($visit && $visit->created_by !== 'whatsapp' && $visit->status === 'menunggu_evaluasi' && $this->layanan_requires_evaluasi($visit->jenis_layanan)) {
                 $visit->kiosk_token = $this->mint_kiosk_token('eval-submit', $rid, 600);
                 $this->json_response(['success' => true, 'data' => $visit, 'message' => 'OK']);
             }
@@ -92,7 +92,7 @@ class Evaluations extends Api_base {
         // Filter ke SKD saja (DTSEN/resepsionis tidak pernah menunggu_evaluasi,
         // tapi tetap defense-in-depth seperti pending()).
         $list = array_values(array_filter($candidates, function ($c) {
-            return $this->layanan_requires_skd_form($c->jenis_layanan);
+            return $this->layanan_requires_evaluasi($c->jenis_layanan);
         }));
 
         $this->json_response(['success' => true, 'data' => $list, 'message' => 'OK']);

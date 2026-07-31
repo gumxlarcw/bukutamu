@@ -178,7 +178,7 @@ class Dtsen extends Api_base {
                 }
             }
             // Gate 2: form SKD wajib (4 layanan inti SKD) — ≥1 baris kebutuhan_data.
-            if ($this->layanan_requires_skd_form($visit->jenis_layanan)) {
+            if ($this->layanan_requires_blok3($visit->jenis_layanan)) {
                 $cnt = (int) $this->db->where('id_kunjungan', $id)->where("rincian_data IS NOT NULL AND TRIM(rincian_data) <> ''", NULL, FALSE)->count_all_results('konsultasi_pengunjung');
                 if ($cnt === 0) {
                     $this->json_response([

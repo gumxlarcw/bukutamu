@@ -373,14 +373,39 @@ class Api_base extends CI_Controller {
     }
 
     /**
-     * Apakah visit ini WAJIB punya form konsultasi PST (≥1 baris kebutuhan_data + hasil_konsultasi)
-     * sebelum bisa di-transition ke menunggu_evaluasi/selesai?
-     * True untuk 4 layanan inti SKD. DTSEN PST-role tapi punya tabel sendiri.
+     * Apakah visit ini WAJIB mengisi form Blok 3 (≥1 baris kebutuhan_data +
+     * hasil_konsultasi) sebelum bisa di-transition ke menunggu_evaluasi/selesai?
+     *
+     * TIGA layanan — Rekomendasi Kegiatan Statistik TIDAK termasuk: tamu datang
+     * meminta rekomendasi kegiatan, bukan meminta angka, sehingga "kebutuhan data"
+     * tidak berlaku baginya. Rekomendasi TETAP layanan SKD dalam segala hal lain
+     * (grup, sarana, dan terutama kewajiban evaluasi tablet).
+     *
+     * JANGAN satukan lagi dengan layanan_requires_evaluasi(). Dulu keduanya satu
+     * fungsi bernama layanan_requires_skd_form(), dan itu membuat "lewati form"
+     * mustahil dibedakan dari "lewati evaluasi".
      */
-    protected function layanan_requires_skd_form($jenis_layanan_raw) {
-        $skd = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+    protected function layanan_requires_blok3($jenis_layanan_raw) {
+        $svc = ['Perpustakaan', 'Konsultasi Statistik', 'Penjualan Produk Statistik'];
         foreach ($this->decode_layanan_list($jenis_layanan_raw) as $l) {
-            if (in_array($l, $skd, true)) return true;
+            if (in_array($l, $svc, true)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Apakah visit ini WAJIB melewati evaluasi tablet?
+     * EMPAT layanan inti SKD — Rekomendasi TETAP termasuk.
+     *
+     * Dipakai Evaluations::pending() (menerbitkan token kiosk) dan
+     * Evaluations::pending_list() (menyaring antrean tablet). Kalau Rekomendasi
+     * dikeluarkan dari sini, ia akan berpindah ke menunggu_evaluasi tapi tidak
+     * pernah muncul di tablet — terjebak permanen.
+     */
+    protected function layanan_requires_evaluasi($jenis_layanan_raw) {
+        $svc = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        foreach ($this->decode_layanan_list($jenis_layanan_raw) as $l) {
+            if (in_array($l, $svc, true)) return true;
         }
         return false;
     }
