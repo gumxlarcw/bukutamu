@@ -137,6 +137,73 @@ class Api_base extends CI_Controller {
     }
 
     /**
+     * Sumber tunggal taksonomi role -> layanan.
+     * Dibaca require_layanan_role() (gerbang tulis) dan Consultations::index()
+     * (filter baca) supaya tidak lahir salinan ketiga di samping
+     * frontend/src/lib/role-access.ts.
+     *
+     * 'Daftar Antrian Offline' disamakan dengan frontend (role-access.ts:26) —
+     * sebelumnya hanya ada di FE sehingga menjadi drift diam-diam.
+     */
+    protected function layanan_role_map() {
+        return [
+            'petugas_pst' => [
+                'Perpustakaan',
+                'Konsultasi Statistik',
+                'Rekomendasi Kegiatan Statistik',
+                'Penjualan Produk Statistik',
+                'Konsultasi DTSEN',
+                'Lainnya Online',
+            ],
+            'resepsionis' => [
+                'Lainnya',
+                'Keperluan Pimpinan',
+                'Daftar Antrian Offline',
+            ],
+        ];
+    }
+
+    /** Semua layanan yang dikenal salah satu grup role, rata. */
+    protected function all_known_services() {
+        $map = $this->layanan_role_map();
+        return array_merge($map['petugas_pst'], $map['resepsionis']);
+    }
+
+    /**
+     * Layanan yang boleh DILIHAT sebuah role di daftar antrian.
+     * NULL  = tanpa batas (admin/superadmin/operator).
+     * []    = tidak melihat apa pun (role tak dikenal; fail-closed, sejalan #23).
+     */
+    protected function services_visible_to_role($role) {
+        if (in_array($role, ['admin', 'superadmin', 'operator'], true)) {
+            return NULL;
+        }
+        $map = $this->layanan_role_map();
+        return isset($map[$role]) ? $map[$role] : [];
+    }
+
+    /**
+     * Potongan SQL boolean: "kunjungan ini mengandung layanan $name".
+     *
+     * Menangani DUA format penyimpanan yang sama-sama hidup di db_tamdes:
+     *   - string polos : 'Lainnya'            (106 baris)
+     *   - JSON array   : '["Lainnya"]'        (158 baris)
+     *
+     * Pola JSON memakai kutip ganda ('%"Lainnya"%') — BUKAN '%Lainnya%' —
+     * karena 'Lainnya' adalah substring dari 'Lainnya Online' yang berada di
+     * grup role BERBEDA. Tanpa kutip, resepsionis akan melihat layanan PST.
+     *
+     * COALESCE+TRIM menangani jenis_layanan NULL (1 baris) dan yang berspasi
+     * atau bertab di ujung (6 baris 'Perpustakaan\t').
+     */
+    protected function layanan_match_sql($name) {
+        $lit = $this->db->escape($name);
+        $esc = $this->db->escape_like_str($name);
+        return "(COALESCE(TRIM(k.jenis_layanan),'') = {$lit}"
+             . " OR COALESCE(k.jenis_layanan,'') LIKE '%\"{$esc}\"%')";
+    }
+
+    /**
      * Layanan-based authorization. Pastikan role user sesuai dengan jenis layanan visit.
      * - petugas_pst: 4 layanan SKD (Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan)
      *               + Konsultasi DTSEN + Lainnya Online (online, no-eval, WA category #3)
@@ -165,15 +232,9 @@ class Api_base extends CI_Controller {
 
         // PST role mencakup 4 layanan inti SKD + Konsultasi DTSEN (PST tapi tanpa SKD eval).
         // 'Lainnya Online' = WA category #3 — PST-handled online chat, no SKD eval.
-        $pst_services = [
-            'Perpustakaan',
-            'Konsultasi Statistik',
-            'Rekomendasi Kegiatan Statistik',
-            'Penjualan Produk Statistik',
-            'Konsultasi DTSEN',
-            'Lainnya Online', // WA category #3 — PST-handled online, no eval
-        ];
-        $resepsionis_services = ['Lainnya', 'Keperluan Pimpinan'];
+        $map                  = $this->layanan_role_map();
+        $pst_services         = $map['petugas_pst'];
+        $resepsionis_services = $map['resepsionis'];
 
         foreach ($list as $layanan) {
             $is_pst   = in_array($layanan, $pst_services, true);
