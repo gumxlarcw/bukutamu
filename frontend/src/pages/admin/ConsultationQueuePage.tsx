@@ -10,7 +10,7 @@ import { VisitFilters, type VisitFilterState } from '@/components/admin/VisitFil
 import { QueueStatusCards } from '@/components/admin/QueueStatusCards'
 import { TAHAP_SKD } from '@/lib/queue-stages'
 import { useAuth } from '@/providers/AuthProvider'
-import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup, SKD_SERVICES, requiresBlok3 } from '@/lib/role-access'
+import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup, SKD_SERVICES, requiresBlok3, isPostService } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -152,7 +152,10 @@ export default function ConsultationQueuePage() {
             emptyMessage="Tidak ada kunjungan yang cocok dengan filter."
             renderActions={(visit: Visit) => (
               <>
-                {needsQueueCall(parseLayananForRole(visit.jenis_layanan)) && (
+                {/* Panggil hanya selagi tamu masih menunggu. Tanpa pagar status,
+                    baris 'selesai' pun menawarkannya dan nomor tamu yang sudah
+                    pulang ikut diumumkan di TV + suara. */}
+                {needsQueueCall(parseLayananForRole(visit.jenis_layanan)) && !isPostService(visit.status) && (
                   <QueueCallButton
                     visitId={visit.id_kunjungan}
                     nomor_antrian={visit.nomor_antrian}
@@ -163,10 +166,13 @@ export default function ConsultationQueuePage() {
                     bukan opsional: form yang boleh kosong akan tetap kosong
                     sambil menyisakan langkah yang membingungkan.
                     Sudah ada data tersimpan → "Lihat / Edit", belum → "Mulai".
+                    Kunjungan yang sudah kelar SELALU "Lihat / Edit" meski datanya
+                    kosong — "Mulai" di baris selesai mengajak memulai sesuatu yang
+                    sudah berakhir.
                     Tetap lewat handleStart supaya transisi antri/dipanggil →
                     diproses tidak hilang (hanya label/ikon yang berubah). */}
                 {requiresBlok3(parseLayananForRole(visit.jenis_layanan)) && (
-                  Number(visit.has_konsultasi) > 0 ? (
+                  Number(visit.has_konsultasi) > 0 || isPostService(visit.status) ? (
                     <Button
                       size="sm"
                       variant="outline"

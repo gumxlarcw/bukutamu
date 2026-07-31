@@ -102,6 +102,21 @@ export function requiresBlok3(layanan_list: string[]): boolean {
   return layanan_list.some(l => (BLOK3_SERVICES as readonly string[]).includes(l))
 }
 
+// Status setelah tamu selesai dilayani di meja. Sengaja termasuk
+// 'menunggu_evaluasi' dan 'evaluasi_selesai': tamunya sudah tidak duduk di ruang
+// tunggu, jadi memanggil nomornya lagi di TV hanya membingungkan tamu lain.
+const POST_SERVICE_STATUSES = ['menunggu_evaluasi', 'evaluasi_selesai', 'selesai'] as const
+
+/**
+ * Apakah kunjungan sudah lewat titik layanan?
+ * Dipakai Antrian PST & DTSEN untuk dua hal: menyembunyikan tombol "Panggil",
+ * dan memaksa tombol form jadi tinjauan ("Lihat / Edit") alih-alih ajakan
+ * memulai ("Mulai" / "Form DTSEN") pada kunjungan yang sudah kelar.
+ */
+export function isPostService(status: string): boolean {
+  return (POST_SERVICE_STATUSES as readonly string[]).includes(status)
+}
+
 /** Apakah layanan ini DTSEN (PST role-wise tapi tanpa SKD). */
 export function isDtsenLayanan(name: string): boolean {
   return (DTSEN_SERVICES as readonly string[]).includes(name)

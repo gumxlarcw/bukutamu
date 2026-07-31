@@ -11,7 +11,7 @@ import { consultationsApi } from '@/api/consultations'
 import { QueueList } from '@/components/admin/QueueList'
 import { QueueCallButton } from '@/components/admin/QueueCallButton'
 import { useAuth } from '@/providers/AuthProvider'
-import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall } from '@/lib/role-access'
+import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, isPostService } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -136,15 +136,17 @@ export default function DtsenQueuePage() {
           visits={visits}
           renderActions={(visit: Visit) => (
             <>
-              {needsQueueCall(parseLayananForRole(visit.jenis_layanan)) && (
+              {/* Panggil hanya selagi tamu masih menunggu — lihat isPostService. */}
+              {needsQueueCall(parseLayananForRole(visit.jenis_layanan)) && !isPostService(visit.status) && (
                 <QueueCallButton
                   visitId={visit.id_kunjungan}
                   nomor_antrian={visit.nomor_antrian}
                 />
               )}
               {/* Sudah ada data DTSEN tersimpan → "Lihat / Edit", belum → "Form
-                  DTSEN". Tetap lewat handleStart (transisi antri → diproses). */}
-              {Number(visit.has_konsultasi) > 0 ? (
+                  DTSEN". Kunjungan yang sudah kelar SELALU "Lihat / Edit".
+                  Tetap lewat handleStart (transisi antri → diproses). */}
+              {Number(visit.has_konsultasi) > 0 || isPostService(visit.status) ? (
                 <Button
                   size="sm"
                   variant="outline"
