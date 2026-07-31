@@ -5,6 +5,9 @@ import type { ReactNode } from 'react'
 interface QueueListProps {
   visits: Visit[]
   renderActions: (visit: Visit) => ReactNode
+  /** Pesan saat daftar kosong. Default mempertahankan teks lama supaya
+   *  DtsenQueuePage tidak ikut berubah. */
+  emptyMessage?: string
 }
 
 function formatTime(dateStr: string): string {
@@ -18,11 +21,15 @@ function formatTime(dateStr: string): string {
   }
 }
 
-export function QueueList({ visits, renderActions }: QueueListProps) {
+export function QueueList({
+  visits,
+  renderActions,
+  emptyMessage = 'Tidak ada antrian hari ini.',
+}: QueueListProps) {
   if (visits.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        Tidak ada antrian hari ini.
+        {emptyMessage}
       </div>
     )
   }
