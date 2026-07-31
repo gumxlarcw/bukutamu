@@ -65,8 +65,13 @@ export function VisitFilters({ filters, onChange }: VisitFiltersProps) {
       </div>
       <div className="space-y-1">
         <Label htmlFor="filter-status">Status</Label>
+        {/* Ketujuh opsi mencerminkan PERSIS enum kolom tamdes_kunjungan.status.
+            Jangan validasi nilainya di backend memakai Api_base::valid_statuses() —
+            helper itu hanya memuat 6 nilai dan kehilangan 'evaluasi_selesai',
+            sehingga akan menolak filter yang sah dari dropdown ini. */}
         <select
           id="filter-status"
+          title="Tujuh status alur kunjungan, sama persis dengan enum di basis data"
           value={filters.status}
           onChange={e => update('status', e.target.value)}
           className="h-9 border rounded px-3 text-sm bg-background"
