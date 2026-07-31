@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { VisitFilters, type VisitFilterState } from '@/components/admin/VisitFilters'
 import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/apiError'
 import { dtsenApi } from '@/api/dtsen'
@@ -19,16 +21,38 @@ export default function DtsenQueuePage() {
   const { user } = useAuth()
   const role = user?.role
 
-  const { data: allVisits, isLoading } = useQuery({
-    queryKey: ['dtsen-queue'],
-    queryFn: () => dtsenApi.list().then(r => r.data.data),
+  const [filters, setFilters] = useState<VisitFilterState>({
+    q: '', layanan: '', status: '', tahun: '', bulan: '',
+  })
+  const [debounced, setDebounced] = useState(filters)
+  const [page, setPage] = useState(1)
+  const limit = 25
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebounced(filters); setPage(1) }, 400)
+    return () => clearTimeout(t)
+  }, [filters])
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['dtsen-queue', { ...debounced, page, limit }],
+    queryFn: () =>
+      dtsenApi
+        .list({
+          q: debounced.q || undefined,
+          status: debounced.status || undefined,
+          tahun: debounced.tahun || undefined,
+          bulan: debounced.bulan || undefined,
+          page,
+          limit,
+        })
+        .then(r => r.data),
     refetchInterval: 30000,
   })
 
-  const scopedRoles = role === 'petugas_pst' || role === 'resepsionis'
-  const visits = scopedRoles
-    ? (allVisits ?? []).filter((v: Visit) => canFinalizeLayanan(role, parseLayananForRole(v.jenis_layanan)))
-    : (allVisits ?? [])
+  // Role scoping kini dikerjakan backend (Dtsen::index). Memfilter lagi di sini
+  // akan merusak paginasi: halaman berisi 25 baris bisa menyisakan 3.
+  const visits = data?.data ?? []
+  const pagination = data?.pagination
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
@@ -70,7 +94,7 @@ export default function DtsenQueuePage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="admin-h1">Antrian Konsultasi DTSEN</h1>
-          <p className="admin-subtitle">Konsultasi Data Terpadu Sosial Ekonomi Nasional</p>
+          <p className="admin-subtitle">Konsultasi Data Terpadu Sosial Ekonomi Nasional — semua tanggal</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleTestSound}>
@@ -90,6 +114,9 @@ export default function DtsenQueuePage() {
         </div>
       </div>
 
+      {/* Dropdown Layanan disembunyikan: halaman ini terkunci ke Konsultasi DTSEN. */}
+      <VisitFilters filters={filters} onChange={setFilters} hideLayanan />
+
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -98,6 +125,7 @@ export default function DtsenQueuePage() {
         </div>
       ) : (
         <QueueList
+          emptyMessage="Tidak ada kunjungan DTSEN yang cocok dengan filter."
           visits={visits}
           renderActions={(visit: Visit) => (
             <>
@@ -162,6 +190,20 @@ export default function DtsenQueuePage() {
             </>
           )}
         />
+      )}
+
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-muted-foreground">
+            Halaman {pagination.page} dari {pagination.totalPages} — {pagination.total} kunjungan
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1}
+                    onClick={() => setPage(p => p - 1)}>Sebelumnya</Button>
+            <Button variant="outline" size="sm" disabled={page >= pagination.totalPages}
+                    onClick={() => setPage(p => p + 1)}>Berikutnya</Button>
+          </div>
+        </div>
       )}
     </div>
   )

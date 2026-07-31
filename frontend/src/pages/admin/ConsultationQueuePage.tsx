@@ -106,8 +106,8 @@ export default function ConsultationQueuePage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="admin-h1">Antrian PST — Semua Kunjungan</h1>
-          <p className="admin-subtitle">Semua layanan, semua tanggal, semua kanal</p>
+          <h1 className="admin-h1">Antrian PST — Semua Tanggal</h1>
+          <p className="admin-subtitle">4 layanan inti SKD: Perpustakaan, Konsultasi, Rekomendasi, Penjualan</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleTestSound}>

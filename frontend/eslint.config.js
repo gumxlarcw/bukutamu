@@ -8,7 +8,10 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // `public/` berisi file .ts berupa MPEG-TS segment HLS (bukan TypeScript) — exclude
   // supaya ESLint tidak mencoba parse-nya. `dist/` adalah hasil build.
-  globalIgnores(['dist', 'public/**']),
+  // `dist-staging/` juga hasil build — dipakai deploy atomik (build ke staging,
+  // lalu salin aditif ke dist/) supaya dist/ yang sedang dilayani PM2 tidak pernah
+  // dikosongkan. Tanpa dikecualikan, ESLint melaporkan ratusan error dari bundel.
+  globalIgnores(['dist', 'dist-staging', 'public/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

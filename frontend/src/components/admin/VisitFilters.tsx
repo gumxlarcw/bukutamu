@@ -13,6 +13,9 @@ interface VisitFilterState {
 interface VisitFiltersProps {
   filters: VisitFilterState
   onChange: (filters: VisitFilterState) => void
+  /** Sembunyikan dropdown Layanan. Dipakai halaman yang sudah terkunci ke satu
+   *  layanan (mis. Antrian DTSEN), di mana filter itu tidak punya arti. */
+  hideLayanan?: boolean
 }
 
 const BULAN_OPTIONS = [
@@ -33,7 +36,7 @@ const BULAN_OPTIONS = [
 const currentYear = new Date().getFullYear()
 const TAHUN_OPTIONS = Array.from({ length: 5 }, (_, i) => currentYear - i)
 
-export function VisitFilters({ filters, onChange }: VisitFiltersProps) {
+export function VisitFilters({ filters, onChange, hideLayanan = false }: VisitFiltersProps) {
   const update = (key: keyof VisitFilterState, value: string) => {
     onChange({ ...filters, [key]: value })
   }
@@ -49,20 +52,22 @@ export function VisitFilters({ filters, onChange }: VisitFiltersProps) {
           onChange={e => update('q', e.target.value)}
         />
       </div>
-      <div className="space-y-1">
-        <Label htmlFor="filter-layanan">Layanan</Label>
-        <select
-          id="filter-layanan"
-          value={filters.layanan}
-          onChange={e => update('layanan', e.target.value)}
-          className="h-9 border rounded px-3 text-sm bg-background"
-        >
-          <option value="">Semua Layanan</option>
-          {SERVICE_OPTIONS.map(s => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-      </div>
+      {!hideLayanan && (
+        <div className="space-y-1">
+          <Label htmlFor="filter-layanan">Layanan</Label>
+          <select
+            id="filter-layanan"
+            value={filters.layanan}
+            onChange={e => update('layanan', e.target.value)}
+            className="h-9 border rounded px-3 text-sm bg-background"
+          >
+            <option value="">Semua Layanan</option>
+            {SERVICE_OPTIONS.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="space-y-1">
         <Label htmlFor="filter-status">Status</Label>
         {/* Ketujuh opsi mencerminkan PERSIS enum kolom tamdes_kunjungan.status.

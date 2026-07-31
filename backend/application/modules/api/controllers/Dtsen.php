@@ -17,10 +17,24 @@ class Dtsen extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        $today = date('Y-m-d');
+        // Filter dikendalikan petugas lewat query param. Filter TANGGAL sengaja
+        // dibuang: kunjungan DTSEN yang belum selesai dari hari sebelumnya wajib
+        // tetap terlihat di halamannya sendiri. Sebelum ini 6 dari 7 kunjungan
+        // DTSEN (22 & 24 Juli, semuanya masih 'antri') tidak muncul di layar mana
+        // pun. Filter LAYANAN tetap ada — ini memang halaman khusus DTSEN.
+        $q      = $this->input->get('q');
+        $status = $this->input->get('status');
+        $tahun  = $this->input->get('tahun');
+        $bulan  = $this->input->get('bulan');
 
-        // Hanya visit hari ini dengan layanan Konsultasi DTSEN.
-        $visits = $this->db
+        $page  = (int) ($this->input->get('page') ?: 1);
+        if ($page < 1) { $page = 1; }
+        $limit = (int) ($this->input->get('limit') ?: 25);
+        if ($limit < 1)   { $limit = 1; }
+        if ($limit > 100) { $limit = 100; }
+        $offset = ($page - 1) * $limit;
+
+        $this->db
             ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
             // has_konsultasi: ada-tidaknya baris dtsen_konsultasi (parity dgn SKD).
             // Tabel ini hanya berisi 0/1 baris per visit & 'catatan' wajib saat
@@ -29,13 +43,54 @@ class Dtsen extends Api_base {
             ->select("(SELECT COUNT(*) FROM dtsen_konsultasi dk WHERE dk.id_kunjungan = k.id_kunjungan) AS has_konsultasi", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
-            ->where("DATE(k.date_visit)", $today)
-            ->where("k.jenis_layanan LIKE", '%Konsultasi DTSEN%')
-            ->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE)
-            ->order_by('k.date_visit', 'DESC')
-            ->get()->result();
+            // layanan_match_sql() (bukan LIKE polos) supaya cocok tepat di kedua
+            // format penyimpanan: string polos dan JSON array.
+            ->where($this->layanan_match_sql('Konsultasi DTSEN'), NULL, FALSE)
+            // Kanal WhatsApp punya rumahnya sendiri di inbox Layanan Online.
+            ->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE);
 
-        $this->json_response(['success' => true, 'data' => $visits, 'message' => 'OK']);
+        if ($q) {
+            $this->db->group_start()
+                     ->like('b.nama', $q)
+                     ->or_like('b.nama_instansi', $q)
+                     ->or_like('k.status', $q)
+                     ->group_end();
+        }
+        if ($status) { $this->db->where('k.status', $status); }
+        if ($tahun)  { $this->db->where('YEAR(k.date_visit)', (int) $tahun); }
+        if ($bulan)  { $this->db->where('MONTH(k.date_visit)', (int) $bulan); }
+
+        // Role scoping server-side — cermin Consultations::index. Wajib di server,
+        // bukan client, karena memfilter SETELAH paginasi akan membuat halaman
+        // berisi 25 baris menyisakan 3 baris.
+        $role    = isset($this->current_user->role) ? $this->current_user->role : '';
+        $visible = $this->services_visible_to_role($role);
+        if ($visible !== NULL) {
+            $mine = [];
+            foreach ($visible as $name) {
+                $mine[] = $this->layanan_match_sql($name);
+            }
+            // Tidak perlu cabang "layanan tak dikenal" seperti di Consultations:
+            // filter layanan di atas sudah membatasi hasil ke Konsultasi DTSEN saja.
+            $this->db->where($mine ? '(' . implode(' OR ', $mine) . ')' : '1=0', NULL, FALSE);
+        }
+
+        $this->db->order_by('k.date_visit', 'DESC');
+        // Arg kedua FALSE menahan reset Query Builder (footgun CI3, insiden 2026-06-30).
+        $total  = $this->db->count_all_results('', FALSE);
+        $visits = $this->db->limit($limit, $offset)->get()->result();
+
+        $this->json_response([
+            'success'    => true,
+            'data'       => $visits,
+            'message'    => 'OK',
+            'pagination' => [
+                'page'       => $page,
+                'limit'      => $limit,
+                'total'      => $total,
+                'totalPages' => max(1, ceil($total / $limit)),
+            ],
+        ]);
     }
 
     public function detail($id) {

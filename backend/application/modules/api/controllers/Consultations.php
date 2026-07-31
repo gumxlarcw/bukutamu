@@ -55,6 +55,25 @@ class Consultations extends Api_base {
         if ($tahun)   { $this->db->where('YEAR(k.date_visit)', (int) $tahun); }
         if ($bulan)   { $this->db->where('MONTH(k.date_visit)', (int) $bulan); }
 
+        // Antrian PST = HANYA 4 layanan inti SKD. Tiap grup layanan punya satu rumah:
+        // DTSEN di /api/dtsen, Resepsionis di /api/visits (Daftar Kunjungan), dan
+        // kanal WhatsApp di inbox Layanan Online. Yang dibuang permanen dari endpoint
+        // ini hanyalah filter TANGGAL — kunjungan SKD yang belum selesai dari hari
+        // sebelumnya wajib tetap terlihat dan bisa ditindak. Pakai layanan_match_sql()
+        // (bukan LIKE polos) supaya pencocokannya tepat di kedua format penyimpanan.
+        $skd = [
+            'Perpustakaan',
+            'Konsultasi Statistik',
+            'Rekomendasi Kegiatan Statistik',
+            'Penjualan Produk Statistik',
+        ];
+        $skd_sql = [];
+        foreach ($skd as $name) {
+            $skd_sql[] = $this->layanan_match_sql($name);
+        }
+        $this->db->where('(' . implode(' OR ', $skd_sql) . ')', NULL, FALSE);
+        $this->db->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE);
+
         // Role scoping pindah dari client (dulu ConsultationQueuePage.tsx:29-32)
         // ke server, karena filter client SETELAH paginasi akan membuat halaman
         // berisi 25 baris menyisakan 3 baris.
