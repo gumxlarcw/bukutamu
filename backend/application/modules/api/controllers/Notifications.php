@@ -325,6 +325,10 @@ class Notifications extends Api_base {
      * supaya bisa langsung di-link ke form yang sesuai.
      */
     private function pst_form_missing() {
+        // Rekomendasi Kegiatan Statistik sengaja TIDAK disertakan di daftar jenis_layanan
+        // di bawah: layanan ini tidak lagi punya form Blok 3 untuk diisi (lihat
+        // Api_base::layanan_requires_blok3()), jadi mengingatkan "Lengkapi form SKD"
+        // untuk Rekomendasi tidak actionable — petugas tidak bisa/tidak perlu buka form itu.
         $sql = "
             SELECT k.id_kunjungan, b.nama, k.date_visit
             FROM tamdes_kunjungan k
@@ -335,7 +339,6 @@ class Notifications extends Api_base {
               AND (
                 k.jenis_layanan LIKE '%Perpustakaan%'
                 OR k.jenis_layanan LIKE '%Konsultasi Statistik%'
-                OR k.jenis_layanan LIKE '%Rekomendasi Kegiatan Statistik%'
                 OR k.jenis_layanan LIKE '%Penjualan Produk Statistik%'
               )
             GROUP BY k.id_kunjungan

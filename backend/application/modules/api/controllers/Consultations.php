@@ -192,7 +192,8 @@ class Consultations extends Api_base {
                     ], 400);
                 }
             }
-            // Gate 2: form SKD (kebutuhan_data) wajib ≥1 baris untuk 4 layanan inti SKD.
+            // Gate 2: form SKD (kebutuhan_data) wajib ≥1 baris untuk 3 layanan
+            // (Rekomendasi dikecualikan: tidak menghasilkan kebutuhan data).
             if ($this->layanan_requires_blok3($visit->jenis_layanan)) {
                 $cnt = (int) $this->db->where('id_kunjungan', $id)->where("rincian_data IS NOT NULL AND TRIM(rincian_data) <> ''", NULL, FALSE)->count_all_results('konsultasi_pengunjung');
                 if ($cnt === 0) {

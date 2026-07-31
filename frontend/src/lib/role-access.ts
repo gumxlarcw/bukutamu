@@ -1,6 +1,7 @@
 import type { UserRole } from '@/api/auth'
 
-// 4 layanan inti SKD — butuh form evaluasi SKD setelah selesai.
+// 4 layanan inti SKD — butuh evaluasi tablet setelah selesai. Untuk yang wajib
+// mengisi form Blok 3 (subset lebih sempit), lihat BLOK3_SERVICES di bawah.
 export const SKD_SERVICES = [
   'Perpustakaan',
   'Konsultasi Statistik',
