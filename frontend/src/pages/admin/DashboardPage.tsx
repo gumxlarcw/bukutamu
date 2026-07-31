@@ -1,21 +1,29 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import { dashboardApi } from '@/api/dashboard'
 import { StatsCard } from '@/components/admin/StatsCard'
+import { TrendChart } from '@/components/admin/TrendChart'
+import { ServiceBars } from '@/components/admin/ServiceBars'
+import { MiniStat } from '@/components/admin/MiniStat'
+import { agregatTren, agregatLayanan, satuanTren } from '@/lib/dashboard-aggregate'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Users, User, CalendarDays, BarChart3, Flame, Calendar, CheckCircle, Hourglass, TrendingUp, Timer, Trophy, Building2 } from 'lucide-react'
+import { Users, User, CheckCircle, BarChart3 } from 'lucide-react'
 
-function StatsSkeleton() {
+function DashboardSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {Array.from({ length: 12 }).map((_, i) => (
-        <Skeleton key={i} className="h-20 rounded-xl" />
-      ))}
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-5">
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
     </div>
   )
 }
@@ -30,10 +38,21 @@ export default function DashboardPage() {
     queryFn: () => dashboardApi.stats(filterParams).then(r => r.data.data),
   })
 
-  const { data: events, isLoading: eventsLoading } = useQuery({
-    queryKey: ['dashboard-events'],
-    queryFn: () => dashboardApi.events().then(r => r.data.data),
+  const { data: events, isLoading: eventsLoading, isError: eventsError } = useQuery({
+    queryKey: ['dashboard-events', filterParams],
+    queryFn: () => dashboardApi.events(filterParams).then(r => r.data.data),
   })
+
+  const tren = useMemo(() => agregatTren(events ?? []), [events])
+  const satuan = useMemo(() => satuanTren(events ?? []), [events])
+  const layanan = useMemo(() => agregatLayanan(events ?? []), [events])
+
+  // Kalender harus terbuka di bulan awal rentang filter, bukan selalu bulan
+  // berjalan — dan `key` hanya bergantung pada filterParams (bukan events/
+  // eventsLoading) supaya paging manual pengguna tidak dipaksa reset oleh
+  // re-render yang tak terkait filter.
+  const calendarInitialDate = filterParams.date_from ?? filterParams.date_to ?? undefined
+  const calendarKey = `${filterParams.date_from ?? ''}_${filterParams.date_to ?? ''}`
 
   const handleFilter = () => {
     setFilterParams({
@@ -48,20 +67,25 @@ export default function DashboardPage() {
     setFilterParams({})
   }
 
-  const statsItems = stats
+  const sorotan = stats
     ? [
         { label: 'Total Kunjungan', value: stats.total_kunjungan, icon: <Users className="w-5 h-5" /> },
         { label: 'Tamu Unik', value: stats.tamu_unik, icon: <User className="w-5 h-5" /> },
-        { label: 'Jumlah Hari', value: stats.jumlah_hari, icon: <CalendarDays className="w-5 h-5" /> },
+        { label: 'Tingkat Selesai', value: `${stats.tingkat_selesai}%`, icon: <CheckCircle className="w-5 h-5" /> },
         { label: 'Rata-rata/Hari', value: stats.rata_rata_per_hari, icon: <BarChart3 className="w-5 h-5" /> },
-        { label: 'Hari Tersibuk', value: stats.hari_tersibuk, icon: <Flame className="w-5 h-5" /> },
-        { label: 'Periode Aktif', value: stats.periode_aktif, icon: <Calendar className="w-5 h-5" /> },
-        { label: 'Selesai', value: stats.selesai, icon: <CheckCircle className="w-5 h-5" /> },
-        { label: 'Antri', value: stats.antri, icon: <Hourglass className="w-5 h-5" /> },
-        { label: 'Tingkat Selesai', value: `${stats.tingkat_selesai}%`, icon: <TrendingUp className="w-5 h-5" /> },
-        { label: 'Rata-rata Durasi', value: stats.rata_rata_durasi, icon: <Timer className="w-5 h-5" /> },
-        { label: 'Layanan Terbanyak', value: stats.layanan_terbanyak, icon: <Trophy className="w-5 h-5" /> },
-        { label: 'Instansi Terbanyak', value: stats.instansi_terbanyak, icon: <Building2 className="w-5 h-5" /> },
+      ]
+    : []
+
+  const ringkas = stats
+    ? [
+        { label: 'Jumlah Hari', value: stats.jumlah_hari },
+        { label: 'Hari Tersibuk', value: stats.hari_tersibuk },
+        { label: 'Periode Aktif', value: stats.periode_aktif },
+        { label: 'Selesai', value: stats.selesai },
+        { label: 'Antri', value: stats.antri },
+        { label: 'Rata-rata Durasi', value: stats.rata_rata_durasi },
+        { label: 'Layanan Terbanyak', value: stats.layanan_terbanyak },
+        { label: 'Instansi Terbanyak', value: stats.instansi_terbanyak },
       ]
     : []
 
@@ -87,41 +111,65 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Two-column: stats left, calendar right */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,480px)_1fr] gap-5">
-        {/* Left — Stats cards */}
-        <div>
-          {statsLoading ? (
-            <StatsSkeleton />
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {statsItems.map((item, i) => (
-                <StatsCard key={item.label} label={item.label} value={item.value} icon={item.icon} accent={i >= 6 ? 'secondary' : 'primary'} />
-              ))}
-            </div>
-          )}
-        </div>
+      {statsLoading ? (
+        <DashboardSkeleton />
+      ) : (
+        <>
+          {/* Lapis 1 — sorotan */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {sorotan.map(s => (
+              <StatsCard key={s.label} label={s.label} value={s.value} icon={s.icon} accent="primary" />
+            ))}
+          </div>
 
-        {/* Right — Calendar */}
-        <div className="admin-card p-5">
-          <h2 className="text-sm font-bold mb-3 text-[--admin-text]">Kalender Kunjungan</h2>
-          {eventsLoading ? (
-            <Skeleton className="h-64 rounded-xl" />
-          ) : (
-            <FullCalendar
-              plugins={[dayGridPlugin]}
-              initialView="dayGridMonth"
-              events={events ?? []}
-              locale="id"
-              headerToolbar={{
-                left: 'prev,next today',
-                center: 'title',
-                right: '',
-              }}
-              height="auto"
-            />
-          )}
-        </div>
+          {/* Lapis 2 — grafik */}
+          <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-5">
+            <div className="admin-card p-5">
+              <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--admin-text)' }}>Tren Kunjungan</h2>
+              <p className="text-xs mb-3" style={{ color: 'var(--admin-text-muted)' }}>
+                Jumlah kunjungan per {satuan}
+              </p>
+              {eventsLoading ? <Skeleton className="h-[200px] rounded-xl" /> : <TrendChart data={tren} satuan={satuan} isError={eventsError} />}
+            </div>
+            <div className="admin-card p-5">
+              <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--admin-text)' }}>Komposisi Layanan</h2>
+              <p className="text-xs mb-3" style={{ color: 'var(--admin-text-muted)' }}>
+                Bagian tiap layanan dari total
+              </p>
+              {eventsLoading ? <Skeleton className="h-[200px] rounded-xl" /> : <ServiceBars data={layanan} isError={eventsError} />}
+            </div>
+          </div>
+
+          {/* Lapis 3 — ringkas */}
+          <div className="admin-card p-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
+              {ringkas.map(r => <MiniStat key={r.label} label={r.label} value={r.value} />)}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Lapis 4 — kalender lebar penuh */}
+      <div className="admin-card p-5">
+        <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--admin-text)' }}>Kalender Kunjungan</h2>
+        {eventsLoading ? (
+          <Skeleton className="h-64 rounded-xl" />
+        ) : (
+          <FullCalendar
+            // `key` berubah HANYA saat filterParams berubah (bukan tiap render),
+            // supaya navigasi bulan manual pengguna tidak direset oleh re-render
+            // yang tak terkait, tapi tetap loncat ke bulan filter saat filter
+            // baru ditekan.
+            key={calendarKey}
+            plugins={[dayGridPlugin]}
+            initialView="dayGridMonth"
+            initialDate={calendarInitialDate}
+            events={events ?? []}
+            locale="id"
+            headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
+            height="auto"
+          />
+        )}
       </div>
     </div>
   )

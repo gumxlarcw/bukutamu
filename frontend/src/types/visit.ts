@@ -185,4 +185,8 @@ export interface CalendarEvent {
   start: string
   end?: string
   color: string
+  /** Jumlah kunjungan pada tanggal + layanan ini. Dikirim Dashboard::events(). */
+  count: number
+  /** Nama layanan tunggal (elemen pertama bila tersimpan sebagai JSON array). */
+  layanan: string
 }
