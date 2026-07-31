@@ -58,11 +58,24 @@ class Dashboard extends Api_base {
         $avg_dur_row = $this->db->get('tamdes_kunjungan')->row();
         $avg_dur = $avg_dur_row && $avg_dur_row->avg_dur ? round($avg_dur_row->avg_dur / 60) . ' menit' : '-';
 
-        // Most popular service
+        // Most popular service — jenis_layanan tersimpan dalam format RAW yang
+        // berbeda-beda (mis. '["Lainnya"]' vs 'Lainnya'), jadi kelompokkan dulu
+        // per raw value lalu lipat per nama TERNORMALISASI (first_layanan_name)
+        // supaya keduanya digabung, tapi 'Lainnya Online' tetap terpisah dari
+        // 'Lainnya'. Distinct jenis_layanan < 20 baris, jadi ambil semua grup.
         $this->db->where($where)->select('jenis_layanan, COUNT(*) as cnt')
-            ->group_by('jenis_layanan')->order_by('cnt', 'DESC')->limit(1);
-        $top_service = $this->db->get('tamdes_kunjungan')->row();
-        $layanan_terbanyak = $top_service ? $top_service->jenis_layanan : '-';
+            ->group_by('jenis_layanan');
+        $service_rows = $this->db->get('tamdes_kunjungan')->result();
+        $layanan_totals = [];
+        foreach ($service_rows as $row) {
+            $nama = $this->first_layanan_name($row->jenis_layanan);
+            $layanan_totals[$nama] = ($layanan_totals[$nama] ?? 0) + (int) $row->cnt;
+        }
+        $layanan_terbanyak = '-';
+        if (!empty($layanan_totals)) {
+            arsort($layanan_totals);
+            $layanan_terbanyak = array_key_first($layanan_totals);
+        }
 
         // Most common institution
         $this->db->select('b.nama_instansi, COUNT(*) as cnt')

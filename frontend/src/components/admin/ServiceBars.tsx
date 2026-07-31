@@ -2,6 +2,7 @@ interface Baris { label: string; value: number; pct: number }
 
 interface ServiceBarsProps {
   data: Baris[]
+  isError?: boolean
 }
 
 /**
@@ -11,7 +12,15 @@ interface ServiceBarsProps {
  * Satu hue membuat panjang batang jadi satu-satunya isyarat, yang memang
  * pekerjaannya: membandingkan besaran.
  */
-export function ServiceBars({ data }: ServiceBarsProps) {
+export function ServiceBars({ data, isError }: ServiceBarsProps) {
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-[200px] text-sm" style={{ color: 'var(--admin-text-muted)' }}>
+        Gagal memuat data. Coba muat ulang halaman.
+      </div>
+    )
+  }
+
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[200px] text-sm" style={{ color: 'var(--admin-text-muted)' }}>

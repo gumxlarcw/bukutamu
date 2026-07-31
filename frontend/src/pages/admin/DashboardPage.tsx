@@ -38,7 +38,7 @@ export default function DashboardPage() {
     queryFn: () => dashboardApi.stats(filterParams).then(r => r.data.data),
   })
 
-  const { data: events, isLoading: eventsLoading } = useQuery({
+  const { data: events, isLoading: eventsLoading, isError: eventsError } = useQuery({
     queryKey: ['dashboard-events', filterParams],
     queryFn: () => dashboardApi.events(filterParams).then(r => r.data.data),
   })
@@ -46,6 +46,13 @@ export default function DashboardPage() {
   const tren = useMemo(() => agregatTren(events ?? []), [events])
   const satuan = useMemo(() => satuanTren(events ?? []), [events])
   const layanan = useMemo(() => agregatLayanan(events ?? []), [events])
+
+  // Kalender harus terbuka di bulan awal rentang filter, bukan selalu bulan
+  // berjalan — dan `key` hanya bergantung pada filterParams (bukan events/
+  // eventsLoading) supaya paging manual pengguna tidak dipaksa reset oleh
+  // re-render yang tak terkait filter.
+  const calendarInitialDate = filterParams.date_from ?? filterParams.date_to ?? undefined
+  const calendarKey = `${filterParams.date_from ?? ''}_${filterParams.date_to ?? ''}`
 
   const handleFilter = () => {
     setFilterParams({
@@ -122,14 +129,14 @@ export default function DashboardPage() {
               <p className="text-xs mb-3" style={{ color: 'var(--admin-text-muted)' }}>
                 Jumlah kunjungan per {satuan}
               </p>
-              {eventsLoading ? <Skeleton className="h-[200px] rounded-xl" /> : <TrendChart data={tren} satuan={satuan} />}
+              {eventsLoading ? <Skeleton className="h-[200px] rounded-xl" /> : <TrendChart data={tren} satuan={satuan} isError={eventsError} />}
             </div>
             <div className="admin-card p-5">
               <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--admin-text)' }}>Komposisi Layanan</h2>
               <p className="text-xs mb-3" style={{ color: 'var(--admin-text-muted)' }}>
                 Bagian tiap layanan dari total
               </p>
-              {eventsLoading ? <Skeleton className="h-[200px] rounded-xl" /> : <ServiceBars data={layanan} />}
+              {eventsLoading ? <Skeleton className="h-[200px] rounded-xl" /> : <ServiceBars data={layanan} isError={eventsError} />}
             </div>
           </div>
 
@@ -149,8 +156,14 @@ export default function DashboardPage() {
           <Skeleton className="h-64 rounded-xl" />
         ) : (
           <FullCalendar
+            // `key` berubah HANYA saat filterParams berubah (bukan tiap render),
+            // supaya navigasi bulan manual pengguna tidak direset oleh re-render
+            // yang tak terkait, tapi tetap loncat ke bulan filter saat filter
+            // baru ditekan.
+            key={calendarKey}
             plugins={[dayGridPlugin]}
             initialView="dayGridMonth"
+            initialDate={calendarInitialDate}
             events={events ?? []}
             locale="id"
             headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}

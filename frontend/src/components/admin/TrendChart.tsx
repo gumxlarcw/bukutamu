@@ -1,18 +1,46 @@
-import { useState, type MouseEvent } from 'react'
+import { useCallback, useLayoutEffect, useState, type MouseEvent } from 'react'
 
 interface Titik { label: string; value: number }
 
 interface TrendChartProps {
   data: Titik[]
   satuan: 'hari' | 'bulan'
+  isError?: boolean
 }
 
-const W = 640
 const H = 200
 const PAD = { atas: 16, kanan: 12, bawah: 26, kiri: 12 }
 
-export function TrendChart({ data, satuan }: TrendChartProps) {
+export function TrendChart({ data, satuan, isError }: TrendChartProps) {
   const [aktif, setAktif] = useState<number | null>(null)
+
+  // Callback ref (bukan useRef biasa) supaya efek pengukuran berjalan lagi
+  // setiap kali node DOM yang diamati berganti — termasuk saat komponen
+  // berpindah antar cabang render (kosong/terukur/grafik) tanpa unmount.
+  const [wadah, setWadah] = useState<HTMLDivElement | null>(null)
+  const [w, setW] = useState(0)
+
+  useLayoutEffect(() => {
+    if (!wadah) return
+    // observe() sendiri melaporkan ukuran awal secara async lewat callback —
+    // tidak perlu setState sinkron di badan efek untuk baca lebar pertama kali.
+    const ro = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width
+      if (width) setW(width)
+    })
+    ro.observe(wadah)
+    return () => ro.disconnect()
+  }, [wadah])
+
+  const wadahRef = useCallback((el: HTMLDivElement | null) => setWadah(el), [])
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-[200px] text-sm" style={{ color: 'var(--admin-text-muted)' }}>
+        Gagal memuat data. Coba muat ulang halaman.
+      </div>
+    )
+  }
 
   if (data.length === 0) {
     return (
@@ -21,6 +49,18 @@ export function TrendChart({ data, satuan }: TrendChartProps) {
       </div>
     )
   }
+
+  // Belum terukur (render pertama sebelum ResizeObserver melapor) — tampilkan
+  // wadah kosong supaya ref terpasang, tapi jangan hitung apa pun yang bisa
+  // membagi dengan lebar nol dan menghasilkan NaN.
+  if (w === 0) {
+    return <div ref={wadahRef} className="h-[200px]" />
+  }
+
+  // viewBox lebar = lebar piksel wadah yang terukur (bukan konstanta tetap),
+  // jadi SVG memetakan 1:1 ke piksel nyata — tidak ada gutter kosong dan
+  // hit-test/tooltip tidak meleset.
+  const W = Math.round(w)
 
   const inW = W - PAD.kiri - PAD.kanan
   const inH = H - PAD.atas - PAD.bawah
@@ -49,7 +89,7 @@ export function TrendChart({ data, satuan }: TrendChartProps) {
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wadahRef}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-[200px]"
