@@ -95,6 +95,10 @@ export default function ConsultationQueuePage() {
     if (group === 'DTSEN')            navigate(`/admin/dtsen/${visitId}/form`)
     else if (group === 'ONLINE')      navigate('/admin/layanan-online')
     else if (group === 'RESEPSIONIS') navigate('/admin/visits')
+    // group === null berarti layanan di luar taksonomi SKD/DTSEN yang dikenal
+    // (mis. 'Pelayanan Statistik Terpadu', string kosong, NULL) — BUKAN SKD,
+    // jadi tidak boleh dikirim ke form SKD yang menulis konsultasi_pengunjung.
+    else if (group === null)          navigate('/admin/visits')
     else                              navigate(`/admin/consultations/${visitId}/form`)
   }
 

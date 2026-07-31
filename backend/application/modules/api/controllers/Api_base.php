@@ -175,7 +175,7 @@ class Api_base extends CI_Controller {
      * []    = tidak melihat apa pun (role tak dikenal; fail-closed, sejalan #23).
      */
     protected function services_visible_to_role($role) {
-        if (in_array($role, ['admin', 'superadmin', 'operator'], true)) {
+        if (in_array($role, ['admin', 'superadmin', 'operator', 'pimpinan'], true)) {
             return NULL;
         }
         $map = $this->layanan_role_map();

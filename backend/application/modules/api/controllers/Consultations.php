@@ -76,7 +76,7 @@ class Consultations extends Api_base {
             }
             $clause = $mine
                 ? '((' . implode(' OR ', $mine) . ') OR (' . implode(' AND ', $none) . '))'
-                : '(' . implode(' AND ', $none) . ')';
+                : '1=0';
             $this->db->where($clause, NULL, FALSE);
         }
 
