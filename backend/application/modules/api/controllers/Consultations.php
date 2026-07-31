@@ -12,37 +12,91 @@ class Consultations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        $today = date('Y-m-d');
+        // Filter dikendalikan petugas lewat query param — TIDAK ada lagi filter
+        // keras tanggal/layanan/kanal. Kunjungan yang belum selesai dari hari
+        // sebelumnya harus tetap terlihat dan bisa ditindak.
+        $q       = $this->input->get('q');
+        $status  = $this->input->get('status');
+        $layanan = $this->input->get('layanan');
+        $tahun   = $this->input->get('tahun');
+        $bulan   = $this->input->get('bulan');
 
-        // Antrian PST: HANYA 4 layanan inti SKD (Perpustakaan, Konsultasi Statistik,
-        // Rekomendasi, Penjualan). DTSEN punya antrian sendiri di /api/dtsen.
-        // Resepsionis (Lainnya, Keperluan Pimpinan) tidak masuk antrian — di-handle
-        // langsung di Daftar Kunjungan (/api/visits) tanpa flow antrian.
-        // jenis_layanan disimpan sebagai JSON array string ('["Perpustakaan"]') — pakai LIKE
-        // OR untuk match salah satu nama; karena grup mutually exclusive, sebuah visit
-        // dengan layanan SKD pasti hanya berisi item-item SKD.
-        $consultations = $this->db
+        $page  = (int) ($this->input->get('page') ?: 1);
+        if ($page < 1) { $page = 1; }
+        // Clamp limit: tanpa batas atas, satu pemanggil bisa meminta seluruh
+        // tabel dan menghidupkan lagi masalah subquery-per-baris.
+        $limit = (int) ($this->input->get('limit') ?: 25);
+        if ($limit < 1)   { $limit = 1; }
+        if ($limit > 100) { $limit = 100; }
+        $offset = ($page - 1) * $limit;
+
+        $this->db
             ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
-            // has_konsultasi: jumlah baris kebutuhan_data NYATA (rincian terisi).
-            // FE pakai ini untuk bedakan tombol "Mulai" vs "Lihat/Edit". Filter
-            // rincian_data non-NULL/non-kosong supaya "ghost row" ringkasan
-            // (rincian NULL via Visits::summary) tidak ke-hitung sebagai data SKD.
+            // has_konsultasi sadar-grup: SKD menulis ke konsultasi_pengunjung,
+            // DTSEN ke dtsen_konsultasi. Dijumlah karena grup layanan mutually
+            // exclusive (validate_no_cross_layanan menolak campuran). Tanpa suku
+            // kedua, kunjungan DTSEN yang sudah terisi tampil bertombol "Mulai".
             // Arg kedua FALSE => CI3 tidak backtick-escape subquery-nya.
-            ->select("(SELECT COUNT(*) FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan AND kp.rincian_data IS NOT NULL AND TRIM(kp.rincian_data) <> '') AS has_konsultasi", FALSE)
+            ->select("((SELECT COUNT(*) FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan AND kp.rincian_data IS NOT NULL AND TRIM(kp.rincian_data) <> '')"
+                   . " + (SELECT COUNT(*) FROM dtsen_konsultasi dk WHERE dk.id_kunjungan = k.id_kunjungan)) AS has_konsultasi", FALSE)
             ->from('tamdes_kunjungan k')
-            ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
-            ->where("DATE(k.date_visit)", $today)
-            ->group_start()
-                ->like('k.jenis_layanan', 'Perpustakaan')
-                ->or_like('k.jenis_layanan', 'Konsultasi Statistik')
-                ->or_like('k.jenis_layanan', 'Rekomendasi Kegiatan Statistik')
-                ->or_like('k.jenis_layanan', 'Penjualan Produk Statistik')
-            ->group_end()
-            ->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE)   // WA visits live in Layanan Online inbox, not the PST queue
-            ->order_by('k.date_visit', 'DESC')
-            ->get()->result();
+            ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left');
 
-        $this->json_response(['success' => true, 'data' => $consultations, 'message' => 'OK']);
+        if ($q) {
+            $this->db->group_start()
+                     ->like('b.nama', $q)
+                     ->or_like('b.nama_instansi', $q)
+                     ->or_like('k.jenis_layanan', $q)
+                     ->or_like('k.status', $q)
+                     ->group_end();
+        }
+        if ($status)  { $this->db->where('k.status', $status); }
+        if ($layanan) { $this->db->like('k.jenis_layanan', $layanan); }
+        if ($tahun)   { $this->db->where('YEAR(k.date_visit)', (int) $tahun); }
+        if ($bulan)   { $this->db->where('MONTH(k.date_visit)', (int) $bulan); }
+
+        // Role scoping pindah dari client (dulu ConsultationQueuePage.tsx:29-32)
+        // ke server, karena filter client SETELAH paginasi akan membuat halaman
+        // berisi 25 baris menyisakan 3 baris.
+        $role    = isset($this->current_user->role) ? $this->current_user->role : '';
+        $visible = $this->services_visible_to_role($role);
+        if ($visible !== NULL) {
+            $mine = [];
+            foreach ($visible as $name) {
+                $mine[] = $this->layanan_match_sql($name);
+            }
+            // Layanan di luar kedua grup (mis. 'Pelayanan Statistik Terpadu',
+            // string kosong, NULL) tetap terlihat oleh semua role — paritas
+            // dengan canFinalizeLayanan yang mengembalikan true untuk layanan
+            // tak dikenal. Tanpa cabang ini, 12 baris lama hilang dari layar
+            // petugas, justru kebalikan dari tujuan perubahan ini.
+            $none = [];
+            foreach ($this->all_known_services() as $name) {
+                $none[] = 'NOT ' . $this->layanan_match_sql($name);
+            }
+            $clause = $mine
+                ? '((' . implode(' OR ', $mine) . ') OR (' . implode(' AND ', $none) . '))'
+                : '(' . implode(' AND ', $none) . ')';
+            $this->db->where($clause, NULL, FALSE);
+        }
+
+        $this->db->order_by('k.date_visit', 'DESC');
+        // Arg kedua FALSE menahan reset Query Builder (footgun CI3 yang
+        // menyebabkan insiden mass-update 2026-06-30).
+        $total  = $this->db->count_all_results('', FALSE);
+        $consultations = $this->db->limit($limit, $offset)->get()->result();
+
+        $this->json_response([
+            'success'    => true,
+            'data'       => $consultations,
+            'message'    => 'OK',
+            'pagination' => [
+                'page'       => $page,
+                'limit'      => $limit,
+                'total'      => $total,
+                'totalPages' => max(1, ceil($total / $limit)),
+            ],
+        ]);
     }
 
     public function detail($id) {
