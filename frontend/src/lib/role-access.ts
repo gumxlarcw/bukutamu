@@ -1,7 +1,7 @@
 import type { UserRole } from '@/api/auth'
 
 // 4 layanan inti SKD — butuh form evaluasi SKD setelah selesai.
-const SKD_SERVICES = [
+export const SKD_SERVICES = [
   'Perpustakaan',
   'Konsultasi Statistik',
   'Rekomendasi Kegiatan Statistik',

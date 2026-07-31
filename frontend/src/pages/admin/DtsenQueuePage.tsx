@@ -114,8 +114,9 @@ export default function DtsenQueuePage() {
         </div>
       </div>
 
-      {/* Dropdown Layanan disembunyikan: halaman ini terkunci ke Konsultasi DTSEN. */}
-      <VisitFilters filters={filters} onChange={setFilters} hideLayanan />
+      {/* Array kosong menyembunyikan dropdown Layanan: halaman ini terkunci ke
+          Konsultasi DTSEN, jadi filter itu tidak punya arti. */}
+      <VisitFilters filters={filters} onChange={setFilters} layananOptions={[]} />
 
       {isLoading ? (
         <div className="space-y-3">

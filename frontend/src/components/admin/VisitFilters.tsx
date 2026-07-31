@@ -13,9 +13,15 @@ interface VisitFilterState {
 interface VisitFiltersProps {
   filters: VisitFilterState
   onChange: (filters: VisitFilterState) => void
-  /** Sembunyikan dropdown Layanan. Dipakai halaman yang sudah terkunci ke satu
-   *  layanan (mis. Antrian DTSEN), di mana filter itu tidak punya arti. */
-  hideLayanan?: boolean
+  /**
+   * Batasi opsi dropdown Layanan agar hanya berisi layanan yang benar-benar bisa
+   * muncul di halaman pemanggil. Menawarkan opsi yang pasti nol hasil membuat
+   * petugas mengira kunjungannya hilang — persis kebingungan yang ingin dihapus.
+   *   - tidak diisi -> semua SERVICE_OPTIONS (mis. Daftar Kunjungan)
+   *   - array berisi -> hanya opsi itu (mis. Antrian PST: 4 layanan SKD)
+   *   - array kosong -> dropdown disembunyikan (mis. Antrian DTSEN, terkunci satu layanan)
+   */
+  layananOptions?: readonly string[]
 }
 
 const BULAN_OPTIONS = [
@@ -36,7 +42,8 @@ const BULAN_OPTIONS = [
 const currentYear = new Date().getFullYear()
 const TAHUN_OPTIONS = Array.from({ length: 5 }, (_, i) => currentYear - i)
 
-export function VisitFilters({ filters, onChange, hideLayanan = false }: VisitFiltersProps) {
+export function VisitFilters({ filters, onChange, layananOptions }: VisitFiltersProps) {
+  const opsiLayanan = layananOptions ?? SERVICE_OPTIONS
   const update = (key: keyof VisitFilterState, value: string) => {
     onChange({ ...filters, [key]: value })
   }
@@ -52,7 +59,7 @@ export function VisitFilters({ filters, onChange, hideLayanan = false }: VisitFi
           onChange={e => update('q', e.target.value)}
         />
       </div>
-      {!hideLayanan && (
+      {opsiLayanan.length > 0 && (
         <div className="space-y-1">
           <Label htmlFor="filter-layanan">Layanan</Label>
           <select
@@ -62,7 +69,7 @@ export function VisitFilters({ filters, onChange, hideLayanan = false }: VisitFi
             className="h-9 border rounded px-3 text-sm bg-background"
           >
             <option value="">Semua Layanan</option>
-            {SERVICE_OPTIONS.map(s => (
+            {opsiLayanan.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>

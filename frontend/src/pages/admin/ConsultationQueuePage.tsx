@@ -8,7 +8,7 @@ import { QueueList } from '@/components/admin/QueueList'
 import { QueueCallButton } from '@/components/admin/QueueCallButton'
 import { VisitFilters, type VisitFilterState } from '@/components/admin/VisitFilters'
 import { useAuth } from '@/providers/AuthProvider'
-import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup } from '@/lib/role-access'
+import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup, SKD_SERVICES } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -127,7 +127,10 @@ export default function ConsultationQueuePage() {
         </div>
       </div>
 
-      <VisitFilters filters={filters} onChange={setFilters} />
+      {/* Hanya 4 layanan SKD — backend memang membatasi halaman ini ke situ.
+          Menawarkan DTSEN/Resepsionis/WA di sini akan selalu nol hasil dan
+          membuat petugas mengira kunjungannya hilang. */}
+      <VisitFilters filters={filters} onChange={setFilters} layananOptions={SKD_SERVICES} />
 
       {isLoading ? (
         <div className="space-y-3">

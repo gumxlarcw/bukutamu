@@ -84,19 +84,13 @@ class Consultations extends Api_base {
             foreach ($visible as $name) {
                 $mine[] = $this->layanan_match_sql($name);
             }
-            // Layanan di luar kedua grup (mis. 'Pelayanan Statistik Terpadu',
-            // string kosong, NULL) tetap terlihat oleh semua role — paritas
-            // dengan canFinalizeLayanan yang mengembalikan true untuk layanan
-            // tak dikenal. Tanpa cabang ini, 12 baris lama hilang dari layar
-            // petugas, justru kebalikan dari tujuan perubahan ini.
-            $none = [];
-            foreach ($this->all_known_services() as $name) {
-                $none[] = 'NOT ' . $this->layanan_match_sql($name);
-            }
-            $clause = $mine
-                ? '((' . implode(' OR ', $mine) . ') OR (' . implode(' AND ', $none) . '))'
-                : '1=0';
-            $this->db->where($clause, NULL, FALSE);
+            // TIDAK ada cabang "layanan tak dikenal" di sini. Filter SKD di atas
+            // sudah membatasi hasil ke 4 layanan inti, jadi baris di luar taksonomi
+            // ('Pelayanan Statistik Terpadu', string kosong, NULL — 12 baris, semuanya
+            // sudah 'selesai') tidak pernah sampai ke klausa ini. Rumah mereka adalah
+            // Daftar Kunjungan (/api/visits) yang memang tanpa filter layanan.
+            // Cermin Dtsen::index yang bernalar sama.
+            $this->db->where($mine ? '(' . implode(' OR ', $mine) . ')' : '1=0', NULL, FALSE);
         }
 
         $this->db->order_by('k.date_visit', 'DESC');
