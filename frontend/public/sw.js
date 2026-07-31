@@ -8,7 +8,7 @@
 // terbaru pada full-reload berikutnya. Lupa bump = user lihat versi lama meski
 // origin sudah update (bug 2026-06-02: form konsultasi tampak kosong saat dibuka
 // ulang karena SW menyajikan ConsultationFormPage chunk lama).
-const CACHE_NAME = 'admin-bukutamu-8200-v68';
+const CACHE_NAME = 'admin-bukutamu-8200-v69';
 const SHELL_PATHS = ['/admin', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -58,6 +58,13 @@ self.addEventListener('fetch', (event) => {
 
   // Static assets: cache-first. Catch network failures so a transient blip never becomes
   // an uncaught rejection / broken response — fall back to cache if we have it.
+  //
+  // `caches.match` resolves to undefined on a miss, dan respondWith(undefined) melempar
+  // "Failed to convert value to 'Response'" — error itu muncul di produksi 2026-07-31 saat
+  // rebuild in-place sempat mengosongkan dist/ (chunk 404 beberapa detik) pada klien yang
+  // belum punya salinan cache-nya. Selalu akhiri dengan sebuah Response: Response.error()
+  // membuat request gagal secara wajar (import dinamis reject -> ErrorBoundary menangkap)
+  // alih-alih meledak di dalam service worker.
   event.respondWith(
     caches.match(event.request).then(
       (cached) =>
@@ -68,7 +75,9 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
           }
           return response;
-        }).catch(() => caches.match(event.request))
+        }).catch(() =>
+          caches.match(event.request).then((c) => c || Response.error())
+        )
     )
   );
 });
