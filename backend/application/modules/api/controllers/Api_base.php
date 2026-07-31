@@ -464,6 +464,28 @@ class Api_base extends CI_Controller {
     }
 
     /**
+     * Kerangka hitungan per status untuk kartu ringkasan antrian: semua kunci
+     * bernilai 0, siap ditimpa hasil GROUP BY.
+     *
+     * SENGAJA tidak memakai valid_statuses() — helper itu hanya memuat 6 nilai dan
+     * KEHILANGAN 'evaluasi_selesai', padahal kolom enum tamdes_kunjungan.status
+     * punya 7. Memakainya di sini akan membuat satu status hilang diam-diam dari
+     * kartu, dan angka yang salah lebih berbahaya daripada tanpa angka.
+     * Urutannya mengikuti alur nyata kunjungan, bukan urutan enum.
+     */
+    protected function status_counts_template() {
+        return [
+            'antri'             => 0,
+            'dipanggil'         => 0,
+            'proses'            => 0,
+            'diproses'          => 0,
+            'menunggu_evaluasi' => 0,
+            'evaluasi_selesai'  => 0,
+            'selesai'           => 0,
+        ];
+    }
+
+    /**
      * Mint a short-lived continuation token for unauthenticated kiosk endpoints.
      * Format: {purpose}.{bound_id}.{exp_unix}.{base64url-hmac}
      * HMAC-signed with JWT_SECRET (same secret, different purpose namespace via the

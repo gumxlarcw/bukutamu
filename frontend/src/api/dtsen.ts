@@ -1,12 +1,12 @@
 import apiClient from './client'
-import type { ApiResponse, PaginatedResponse } from '@/types/api'
+import type { ApiResponse, QueueListResponse } from '@/types/api'
 import type { Visit, DtsenDataRow } from '@/types/visit'
 
 export const dtsenApi = {
   list: (params?: {
     q?: string; status?: string
     tahun?: string; bulan?: string; page?: number; limit?: number
-  }) => apiClient.get<PaginatedResponse<Visit>>('/api/dtsen', { params }),
+  }) => apiClient.get<QueueListResponse<Visit>>('/api/dtsen', { params }),
   updateStatus: (id: number, status: string) =>
     apiClient.put<ApiResponse<Visit>>(`/api/dtsen/${id}`, { status }),
   getData: (id: number) =>

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { VisitFilters, type VisitFilterState } from '@/components/admin/VisitFilters'
+import { QueueStatusCards } from '@/components/admin/QueueStatusCards'
+import { TAHAP_DTSEN } from '@/lib/queue-stages'
 import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/apiError'
 import { dtsenApi } from '@/api/dtsen'
@@ -113,6 +115,10 @@ export default function DtsenQueuePage() {
           </a>
         </div>
       </div>
+
+      {/* Ringkasan status. 4 tahap saja — DTSEN tidak melewati evaluasi. Angkanya
+          dihitung backend atas SELURUH himpunan hasil, bukan halaman ini saja. */}
+      <QueueStatusCards counts={data?.counts} stages={TAHAP_DTSEN} />
 
       {/* Array kosong menyembunyikan dropdown Layanan: halaman ini terkunci ke
           Konsultasi DTSEN, jadi filter itu tidak punya arti. */}

@@ -7,6 +7,8 @@ import { consultationsApi } from '@/api/consultations'
 import { QueueList } from '@/components/admin/QueueList'
 import { QueueCallButton } from '@/components/admin/QueueCallButton'
 import { VisitFilters, type VisitFilterState } from '@/components/admin/VisitFilters'
+import { QueueStatusCards } from '@/components/admin/QueueStatusCards'
+import { TAHAP_SKD } from '@/lib/queue-stages'
 import { useAuth } from '@/providers/AuthProvider'
 import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall, getActiveServiceGroup, SKD_SERVICES } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
@@ -126,6 +128,11 @@ export default function ConsultationQueuePage() {
           </a>
         </div>
       </div>
+
+      {/* Ringkasan status. Angkanya datang dari backend atas SELURUH himpunan
+          hasil, bukan dari halaman yang sedang dibuka — lihat counts di
+          Consultations::index. */}
+      <QueueStatusCards counts={data?.counts} stages={TAHAP_SKD} />
 
       {/* Hanya 4 layanan SKD — backend memang membatasi halaman ini ke situ.
           Menawarkan DTSEN/Resepsionis/WA di sini akan selalu nol hasil dan

@@ -30,6 +30,25 @@ class Consultations extends Api_base {
         if ($limit > 100) { $limit = 100; }
         $offset = ($page - 1) * $limit;
 
+        // ── 1) Hitungan per status untuk kartu ringkasan ──────────────────────
+        // Dihitung di SERVER atas SELURUH himpunan hasil, bukan di klien atas
+        // halaman yang sedang dibuka. Halaman ini berpaginasi 25 baris, jadi
+        // menghitung di klien akan menampilkan "Antri: 3" padahal sebenarnya 21 —
+        // angka salah yang terlihat meyakinkan lebih berbahaya daripada tanpa angka.
+        // Filter STATUS sengaja diabaikan di sini supaya kartu tetap memperlihatkan
+        // gambaran utuh dan bisa dipakai sebagai tombol filter.
+        $this->db->select('k.status AS s, COUNT(*) AS n', FALSE)
+                 ->from('tamdes_kunjungan k')
+                 ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left');
+        $this->apply_pst_filters($q, $layanan, $tahun, $bulan);
+        $counts = $this->status_counts_template();
+        foreach ($this->db->group_by('k.status')->get()->result() as $row) {
+            if (array_key_exists($row->s, $counts)) {
+                $counts[$row->s] = (int) $row->n;
+            }
+        }
+
+        // ── 2) Baris untuk halaman yang diminta ───────────────────────────────
         $this->db
             ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
             // has_konsultasi sadar-grup: SKD menulis ke konsultasi_pengunjung,
@@ -42,56 +61,8 @@ class Consultations extends Api_base {
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left');
 
-        if ($q) {
-            $this->db->group_start()
-                     ->like('b.nama', $q)
-                     ->or_like('b.nama_instansi', $q)
-                     ->or_like('k.jenis_layanan', $q)
-                     ->or_like('k.status', $q)
-                     ->group_end();
-        }
-        if ($status)  { $this->db->where('k.status', $status); }
-        if ($layanan) { $this->db->like('k.jenis_layanan', $layanan); }
-        if ($tahun)   { $this->db->where('YEAR(k.date_visit)', (int) $tahun); }
-        if ($bulan)   { $this->db->where('MONTH(k.date_visit)', (int) $bulan); }
-
-        // Antrian PST = HANYA 4 layanan inti SKD. Tiap grup layanan punya satu rumah:
-        // DTSEN di /api/dtsen, Resepsionis di /api/visits (Daftar Kunjungan), dan
-        // kanal WhatsApp di inbox Layanan Online. Yang dibuang permanen dari endpoint
-        // ini hanyalah filter TANGGAL — kunjungan SKD yang belum selesai dari hari
-        // sebelumnya wajib tetap terlihat dan bisa ditindak. Pakai layanan_match_sql()
-        // (bukan LIKE polos) supaya pencocokannya tepat di kedua format penyimpanan.
-        $skd = [
-            'Perpustakaan',
-            'Konsultasi Statistik',
-            'Rekomendasi Kegiatan Statistik',
-            'Penjualan Produk Statistik',
-        ];
-        $skd_sql = [];
-        foreach ($skd as $name) {
-            $skd_sql[] = $this->layanan_match_sql($name);
-        }
-        $this->db->where('(' . implode(' OR ', $skd_sql) . ')', NULL, FALSE);
-        $this->db->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE);
-
-        // Role scoping pindah dari client (dulu ConsultationQueuePage.tsx:29-32)
-        // ke server, karena filter client SETELAH paginasi akan membuat halaman
-        // berisi 25 baris menyisakan 3 baris.
-        $role    = isset($this->current_user->role) ? $this->current_user->role : '';
-        $visible = $this->services_visible_to_role($role);
-        if ($visible !== NULL) {
-            $mine = [];
-            foreach ($visible as $name) {
-                $mine[] = $this->layanan_match_sql($name);
-            }
-            // TIDAK ada cabang "layanan tak dikenal" di sini. Filter SKD di atas
-            // sudah membatasi hasil ke 4 layanan inti, jadi baris di luar taksonomi
-            // ('Pelayanan Statistik Terpadu', string kosong, NULL — 12 baris, semuanya
-            // sudah 'selesai') tidak pernah sampai ke klausa ini. Rumah mereka adalah
-            // Daftar Kunjungan (/api/visits) yang memang tanpa filter layanan.
-            // Cermin Dtsen::index yang bernalar sama.
-            $this->db->where($mine ? '(' . implode(' OR ', $mine) . ')' : '1=0', NULL, FALSE);
-        }
+        $this->apply_pst_filters($q, $layanan, $tahun, $bulan);
+        if ($status) { $this->db->where('k.status', $status); }
 
         $this->db->order_by('k.date_visit', 'DESC');
         // Arg kedua FALSE menahan reset Query Builder (footgun CI3 yang
@@ -109,7 +80,56 @@ class Consultations extends Api_base {
                 'total'      => $total,
                 'totalPages' => max(1, ceil($total / $limit)),
             ],
+            'counts'     => $counts,
         ]);
+    }
+
+    /**
+     * Semua filter Antrian PST KECUALI status dan paginasi. Dipakai DUA kali —
+     * sekali untuk hitungan kartu, sekali untuk baris halaman — supaya keduanya
+     * tidak bisa melenceng satu sama lain.
+     *
+     * Antrian PST = HANYA 4 layanan inti SKD. Tiap grup layanan punya satu rumah:
+     * DTSEN di /api/dtsen, Resepsionis di /api/visits (Daftar Kunjungan), dan kanal
+     * WhatsApp di inbox Layanan Online. Yang dibuang permanen dari endpoint ini
+     * hanyalah filter TANGGAL — kunjungan SKD yang belum selesai dari hari sebelumnya
+     * wajib tetap terlihat. layanan_match_sql() (bukan LIKE polos) supaya pencocokannya
+     * tepat di kedua format penyimpanan.
+     */
+    private function apply_pst_filters($q, $layanan, $tahun, $bulan) {
+        if ($q) {
+            $this->db->group_start()
+                     ->like('b.nama', $q)
+                     ->or_like('b.nama_instansi', $q)
+                     ->or_like('k.jenis_layanan', $q)
+                     ->or_like('k.status', $q)
+                     ->group_end();
+        }
+        if ($layanan) { $this->db->like('k.jenis_layanan', $layanan); }
+        if ($tahun)   { $this->db->where('YEAR(k.date_visit)', (int) $tahun); }
+        if ($bulan)   { $this->db->where('MONTH(k.date_visit)', (int) $bulan); }
+
+        $skd_sql = [];
+        foreach (['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'] as $name) {
+            $skd_sql[] = $this->layanan_match_sql($name);
+        }
+        $this->db->where('(' . implode(' OR ', $skd_sql) . ')', NULL, FALSE);
+        $this->db->where("(k.created_by IS NULL OR k.created_by <> 'whatsapp')", NULL, FALSE);
+
+        // Role scoping di SERVER (dulu ConsultationQueuePage.tsx:29-32). Memfilter
+        // di klien SETELAH paginasi akan membuat halaman 25 baris menyisakan 3.
+        // Tidak ada cabang "layanan tak dikenal": filter SKD di atas sudah membatasi
+        // hasil ke 4 layanan inti, jadi baris di luar taksonomi tidak pernah sampai
+        // ke sini — rumahnya Daftar Kunjungan yang memang tanpa filter layanan.
+        $role    = isset($this->current_user->role) ? $this->current_user->role : '';
+        $visible = $this->services_visible_to_role($role);
+        if ($visible !== NULL) {
+            $mine = [];
+            foreach ($visible as $name) {
+                $mine[] = $this->layanan_match_sql($name);
+            }
+            $this->db->where($mine ? '(' . implode(' OR ', $mine) . ')' : '1=0', NULL, FALSE);
+        }
     }
 
     public function detail($id) {
