@@ -188,6 +188,12 @@ export function AdminLayout() {
         }
         .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: column; gap: 2px; align-items: center; }
         .admin-shell.is-collapsed .admin-side-extra { display: none; }
+        /* Kelompok pertama yang dirender tidak perlu garis di atasnya — ia tidak
+           memisahkan apa pun. Terjadi pada verifikator, yang kelompok Dashboard-nya
+           tersaring habis sehingga kelompok bertitle jadi yang pertama. */
+        .admin-shell.is-collapsed .admin-side-group:first-child .admin-side-grouptitle {
+          display: none;
+        }
 
         /* Reused by NotificationBell / Enable / Install buttons */
         .admin-nav-item {
@@ -248,6 +254,15 @@ export function AdminLayout() {
           .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: row; align-items: center; }
           .admin-shell.is-collapsed .admin-side-extra { display: inline-flex; }
           .admin-shell.is-collapsed .admin-side-toggle { margin-left: auto; }
+          /* Judul kelompok kembali jadi judul di drawer, bukan garis pemisah —
+             pasangan wajib dari aturan .admin-side-grouptitle di blok collapsed.
+             Aturan .admin-shell.is-collapsed di berkas ini SELALU berpasangan. */
+          .admin-shell.is-collapsed .admin-side-grouptitle {
+            height: auto;
+            padding: 0 11px 5px;
+            margin: 0;
+            background: transparent;
+          }
           .admin-main { margin-left: 0 !important; }
           .admin-mobile-bar {
             display: flex;
