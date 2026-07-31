@@ -193,8 +193,13 @@ class Api_base extends CI_Controller {
      * karena 'Lainnya' adalah substring dari 'Lainnya Online' yang berada di
      * grup role BERBEDA. Tanpa kutip, resepsionis akan melihat layanan PST.
      *
-     * COALESCE+TRIM menangani jenis_layanan NULL (1 baris) dan yang berspasi
-     * atau bertab di ujung (6 baris 'Perpustakaan\t').
+     * COALESCE+TRIM menangani jenis_layanan NULL dan yang berspasi di ujung.
+     * TRIM() MySQL HANYA membuang spasi, BUKAN tab — dulu ada 6 baris
+     * 'Perpustakaan\t' yang lolos dari TRIM dan jatuh ke bucket "layanan tak
+     * dikenal" (terlihat semua role), sementara FE .trim() (yang membuang tab)
+     * mengklasifikasikannya sebagai SKD. 6 baris itu dinormalisasi langsung
+     * di database pada 2026-07-31 (ids 126, 146-149, 151), bukan ditangani
+     * di SQL — supaya require_layanan_role() (in_array ketat) ikut terbenahi.
      */
     protected function layanan_match_sql($name) {
         $lit = $this->db->escape($name);
