@@ -116,6 +116,23 @@ export function AdminLayout() {
           flex-direction: column;
           gap: 2px;
         }
+        .admin-side-group {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        /* Jeda antar-kelompok harus jelas lebih besar daripada jeda antar-item
+           (2px), kalau tidak kelompoknya tidak terbaca sebagai kelompok. */
+        .admin-side-group + .admin-side-group { margin-top: 14px; }
+        .admin-side-grouptitle {
+          margin: 0;
+          padding: 0 11px 5px;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--admin-text-muted);
+        }
         .admin-sidebar-actions {
           border-top: 1px solid var(--admin-border);
           padding: 8px 10px;
@@ -160,8 +177,23 @@ export function AdminLayout() {
         .admin-shell.is-collapsed .admin-sidebar-brand { justify-content: center; padding: 12px 0; }
         .admin-shell.is-collapsed .admin-side-toggle { margin-left: 0; }
         .admin-shell.is-collapsed .admin-side-item { justify-content: center; gap: 0; padding: 9px 0; }
+        /* Judul kelompok jadi garis pemisah: teksnya sudah disembunyikan oleh
+           aturan .admin-side-label di atas, elemen <p>-nya tinggal diubah jadi
+           garis 1px supaya ritme kelompok tetap terasa saat hanya ikon tampak. */
+        .admin-shell.is-collapsed .admin-side-grouptitle {
+          height: 1px;
+          padding: 0;
+          margin: 8px 10px;
+          background: var(--admin-border);
+        }
         .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: column; gap: 2px; align-items: center; }
         .admin-shell.is-collapsed .admin-side-extra { display: none; }
+        /* Kelompok pertama yang dirender tidak perlu garis di atasnya — ia tidak
+           memisahkan apa pun. Terjadi pada verifikator, yang kelompok Dashboard-nya
+           tersaring habis sehingga kelompok bertitle jadi yang pertama. */
+        .admin-shell.is-collapsed .admin-side-group:first-child .admin-side-grouptitle {
+          display: none;
+        }
 
         /* Reused by NotificationBell / Enable / Install buttons */
         .admin-nav-item {
@@ -222,6 +254,15 @@ export function AdminLayout() {
           .admin-shell.is-collapsed .admin-side-actionrow { flex-direction: row; align-items: center; }
           .admin-shell.is-collapsed .admin-side-extra { display: inline-flex; }
           .admin-shell.is-collapsed .admin-side-toggle { margin-left: auto; }
+          /* Judul kelompok kembali jadi judul di drawer, bukan garis pemisah —
+             pasangan wajib dari aturan .admin-side-grouptitle di blok collapsed.
+             Aturan .admin-shell.is-collapsed di berkas ini SELALU berpasangan. */
+          .admin-shell.is-collapsed .admin-side-grouptitle {
+            height: auto;
+            padding: 0 11px 5px;
+            margin: 0;
+            background: transparent;
+          }
           .admin-main { margin-left: 0 !important; }
           .admin-mobile-bar {
             display: flex;
