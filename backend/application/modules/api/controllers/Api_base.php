@@ -449,6 +449,28 @@ class Api_base extends CI_Controller {
     }
 
     /**
+     * Durasi layanan, hanya bermakna bila kunjungan ditutup di HARI YANG SAMA.
+     *
+     * Kunjungan yang baru ditutup belakangan (petugas lupa, backfill, evaluasi
+     * telat) dulu menyimpan selisih penuh — rekor 1.232.306 detik = 342 jam —
+     * sehingga AVG di Queue_stats & Dashboard menggelembung 781 menit vs 176
+     * menit. Lihat docs/AUDIT_2026-08-01.md temuan #4.
+     *
+     * Mengembalikan NULL (bukan 0) supaya baris itu KELUAR dari AVG. Menulis 0
+     * akan menarik rata-rata ke bawah dan sama salahnya. Ini juga pola yang
+     * dipakai saat menutup tunggakan lewat SQL.
+     *
+     * @return int|null detik, atau NULL bila beda hari / date_visit kosong
+     */
+    protected function service_duration($date_visit, $selesai_timestamp) {
+        if (empty($date_visit) || empty($selesai_timestamp)) return null;
+        if (date('Y-m-d', strtotime($date_visit)) !== date('Y-m-d', strtotime($selesai_timestamp))) {
+            return null;
+        }
+        return max(0, strtotime($selesai_timestamp) - strtotime($date_visit));
+    }
+
+    /**
      * Tentukan status finalisasi berdasarkan jenis layanan.
      * - SKD (4 layanan inti: Perpustakaan, Konsultasi, Rekomendasi, Penjualan) → 'menunggu_evaluasi'
      * - Konsultasi DTSEN → 'selesai' langsung (PST role tapi di luar kuesioner SKD)

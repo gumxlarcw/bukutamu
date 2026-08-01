@@ -54,7 +54,10 @@ class Dashboard extends Api_base {
         $tingkat_selesai = $total_kunjungan > 0 ? round(($selesai / $total_kunjungan) * 100, 1) : 0;
 
         // Average duration
-        $this->db->where($where)->where('durasi_detik >', 0)->select_avg('durasi_detik', 'avg_dur');
+        // Batas 12 jam: kunjungan yang ditutup di hari berikutnya menyimpan durasi
+        // selisih penuh dan menggelembungkan rata-rata (lihat AUDIT_2026-08-01 #4).
+        // Aman sebagai filter baris di sini — query ini HANYA menghitung avg_dur.
+        $this->db->where($where)->where('durasi_detik >', 0)->where('durasi_detik <', 43200)->select_avg('durasi_detik', 'avg_dur');
         $avg_dur_row = $this->db->get('tamdes_kunjungan')->row();
         $avg_dur = $avg_dur_row && $avg_dur_row->avg_dur ? round($avg_dur_row->avg_dur / 60) . ' menit' : '-';
 

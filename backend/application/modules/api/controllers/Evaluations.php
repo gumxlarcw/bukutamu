@@ -197,9 +197,14 @@ class Evaluations extends Api_base {
                 $this->json_response(['success' => false, 'message' => 'Minimal 1 indikator kepuasan (skala 1-10) harus diisi.'], 422);
             }
 
-            // #24 — selesai_timestamp/durasi hanya di-set pada submit PERTAMA (transisi keluar
-            // dari 'menunggu_evaluasi'). Re-submit koreksi tidak memajukan waktu selesai / inflate durasi.
-            $is_first_submit = ($visit->status === 'menunggu_evaluasi');
+            // #24 — selesai_timestamp/durasi hanya di-set pada submit PERTAMA.
+            // Dulu ini dibaca dari status ('menunggu_evaluasi'), padahal status BISA turun
+            // balik ke sana (mis. Consultations::data menyimpan ulang form — AUDIT #23).
+            // Setiap turun-balik lalu submit lagi akan MENCAP ULANG durasi memakai
+            // date_visit asli, jadi sumber racun berulang. selesai_timestamp sekali di-set
+            // tidak pernah kosong lagi, jadi ia penanda "sudah pernah final" yang benar.
+            // Lihat docs/AUDIT_2026-08-01.md temuan #4.
+            $is_first_submit = empty($visit->selesai_timestamp);
 
             // #31 — delete + reinsert + update dalam SATU transaksi (atomic, no partial loss).
             $this->db->trans_start();
@@ -240,9 +245,10 @@ class Evaluations extends Api_base {
             if ($is_first_submit) {
                 $selesai_timestamp           = date('Y-m-d H:i:s');
                 $update['selesai_timestamp'] = $selesai_timestamp;
-                if ($visit->date_visit) {
-                    $update['durasi_detik'] = max(0, strtotime($selesai_timestamp) - strtotime($visit->date_visit));
-                }
+                // NULL bila beda hari — Api_base::service_duration (#4). Penting di
+                // sini: evaluasi sering disubmit jauh setelah kunjungan, dan jalur ini
+                // TIDAK menulis baris audit sehingga durasi racunnya sulit dilacak.
+                $update['durasi_detik'] = $this->service_duration($visit->date_visit, $selesai_timestamp);
             }
             $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
 

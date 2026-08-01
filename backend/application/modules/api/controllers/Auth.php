@@ -50,16 +50,29 @@ class Auth extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Username dan password wajib diisi'], 400);
         }
 
-        // ── Rate limiting: check recent failed attempts from this IP ──
+        // ── Rate limiting: failed attempts for this (IP, username) pair ──
+        // Kunci WAJIB menyertakan username. Tanpa itu hitungannya per-IP saja, dan
+        // karena backend ada di balik Cloudflare Tunnel (cloudflared -> localhost:60,
+        // mod_remoteip belum aktif) SEMUA klien internet tercatat '::1' — satu ember
+        // bersama. Akibatnya 5 request gagal dari mana pun mengunci KEDELAPAN akun
+        // admin sekaligus. Lihat docs/AUDIT_2026-08-01.md temuan #2.
+        // Setelah mod_remoteip aktif (Batch 3), kunci ini otomatis jadi benar-benar
+        // per-(IP, username): penyerang dari satu IP tidak lagi mengunci admin sah
+        // yang login dari IP lain.
         $cutoff = date('Y-m-d H:i:s', time() - ($this->lockout_minutes * 60));
         $recent_fails = $this->db
             ->where('ip_address', $ip)
+            ->where('username', $username)
             ->where('success', 0)
             ->where('created_at >', $cutoff)
             ->count_all_results('tamdes_login_attempts');
 
         if ($recent_fails >= $this->max_attempts) {
-            $this->_log_attempt($ip, $username, 0);
+            // JANGAN catat kegagalan lagi di sini. Baris ini dulu menulis success=0
+            // pada jalur yang SUDAH ditolak, sehingga tiap percobaan ulang petugas
+            // menggeser jendela 15 menit maju — korban mengunci dirinya sendiri
+            // tanpa henti. Lima kegagalan sebelumnya sudah tercatat; cukup.
+            log_message('error', "login lockout aktif: user={$username} ip={$ip}");
             $this->json_response([
                 'success' => false,
                 'message' => "Terlalu banyak percobaan login. Coba lagi dalam {$this->lockout_minutes} menit.",

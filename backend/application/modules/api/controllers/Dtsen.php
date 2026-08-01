@@ -205,10 +205,8 @@ class Dtsen extends Api_base {
         if ($status === 'selesai') {
             $selesai_timestamp           = date('Y-m-d H:i:s');
             $update['selesai_timestamp'] = $selesai_timestamp;
-            if ($visit->date_visit) {
-                $durasi                 = strtotime($selesai_timestamp) - strtotime($visit->date_visit);
-                $update['durasi_detik'] = max(0, $durasi);
-            }
+            // NULL bila ditutup di hari lain — lihat Api_base::service_duration (#4).
+            $update['durasi_detik'] = $this->service_duration($visit->date_visit, $selesai_timestamp);
         }
 
         $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
@@ -282,9 +280,8 @@ class Dtsen extends Api_base {
                 if ($next_status === 'selesai') {
                     $selesai_ts                  = date('Y-m-d H:i:s');
                     $update['selesai_timestamp'] = $selesai_ts;
-                    if ($visit_check->date_visit) {
-                        $update['durasi_detik'] = max(0, strtotime($selesai_ts) - strtotime($visit_check->date_visit));
-                    }
+                    // NULL bila beda hari — Api_base::service_duration (#4).
+                    $update['durasi_detik'] = $this->service_duration($visit_check->date_visit, $selesai_ts);
                 }
                 $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
                 $this->audit('save_dtsen', 'visit', $id, ['status_from' => $visit_check->status, 'status_to' => $next_status]);

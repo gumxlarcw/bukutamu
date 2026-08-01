@@ -15,7 +15,14 @@ class Queue_stats extends Api_base {
         $tahun = $this->input->get('tahun') ?: date('Y');
 
         // ── Operational: durasi layanan ─────────────────────────────────────
-        $avg_wait = $this->db->select('AVG(durasi_detik) as avg_durasi, MIN(durasi_detik) as min_durasi, MAX(durasi_detik) as max_durasi, COUNT(*) as total_selesai')
+        // Batas 12 jam (43200 s) dipasang DI DALAM agregat, bukan sebagai filter baris:
+        // query ini juga menghitung COUNT(*) as total_selesai, jadi memfilter baris akan
+        // ikut mengecilkan jumlah kunjungan selesai — metrik yang sama sekali berbeda.
+        // Kunjungan yang ditutup di hari berikutnya menyimpan durasi = selisih penuh
+        // (rekor: 342 jam) sehingga AVG 2026 menggelembung 781 menit vs 176 menit setelah
+        // dibatasi. Lihat docs/AUDIT_2026-08-01.md temuan #4. Perbaikan sisi tulis ada di
+        // Visits/Consultations/Dtsen/Evaluations (durasi dibiarkan NULL bila beda hari).
+        $avg_wait = $this->db->select('AVG(CASE WHEN durasi_detik < 43200 THEN durasi_detik END) as avg_durasi, MIN(durasi_detik) as min_durasi, MAX(CASE WHEN durasi_detik < 43200 THEN durasi_detik END) as max_durasi, COUNT(*) as total_selesai')
                              ->where('status', 'selesai')
                              ->where('durasi_detik IS NOT NULL')
                              ->where('YEAR(date_visit)', $tahun)
@@ -56,7 +63,7 @@ class Queue_stats extends Api_base {
         // Monthly extended: count + avg durasi (untuk selesai saja).
         $monthly = $this->db->select('MONTH(date_visit) as bulan,
                                       COUNT(*) as jumlah,
-                                      AVG(CASE WHEN status="selesai" THEN durasi_detik END) as avg_durasi')
+                                      AVG(CASE WHEN status="selesai" AND durasi_detik < 43200 THEN durasi_detik END) as avg_durasi')
                             ->where('YEAR(date_visit)', $tahun)
                             ->group_by('MONTH(date_visit)')
                             ->order_by('bulan', 'ASC')
@@ -66,7 +73,7 @@ class Queue_stats extends Api_base {
         $quarterly = $this->db->select('QUARTER(date_visit) as triwulan,
                                         COUNT(*) as jumlah,
                                         SUM(CASE WHEN status="selesai" THEN 1 ELSE 0 END) as selesai,
-                                        AVG(CASE WHEN status="selesai" THEN durasi_detik END) as avg_durasi')
+                                        AVG(CASE WHEN status="selesai" AND durasi_detik < 43200 THEN durasi_detik END) as avg_durasi')
                               ->where('YEAR(date_visit)', $tahun)
                               ->group_by('QUARTER(date_visit)')
                               ->order_by('triwulan', 'ASC')

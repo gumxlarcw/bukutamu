@@ -287,10 +287,8 @@ class Visits extends Api_base {
         if ($status === 'selesai') {
             $selesai_timestamp    = date('Y-m-d H:i:s');
             $update['selesai_timestamp'] = $selesai_timestamp;
-            if ($visit->date_visit) {
-                $durasi = strtotime($selesai_timestamp) - strtotime($visit->date_visit);
-                $update['durasi_detik'] = max(0, $durasi);
-            }
+            // NULL bila ditutup di hari lain — lihat Api_base::service_duration (#4).
+            $update['durasi_detik'] = $this->service_duration($visit->date_visit, $selesai_timestamp);
         }
 
         $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
