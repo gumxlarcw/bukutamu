@@ -74,6 +74,57 @@ class Kiosk extends Api_base {
 
         $input = $this->get_json_input();
 
+        // ── Validasi field wajib di batas controller ────────────────────────
+        // Endpoint ini publik tanpa autentikasi dan MENULIS dua tabel. Sebelum ini
+        // tidak ada satu pun pemeriksaan field: POST dengan body `{}` tetap membuat
+        // tamu tanpa nama + kunjungan tanpa layanan bernomor antrian "001" (terbukti
+        // saat verifikasi 2026-08-01 — barisnya dihapus lagi). Artinya siapa pun di
+        // internet bisa membanjiri tamdes_buku dan tamdes_kunjungan dengan sampah,
+        // hanya dibatasi 30/menit.
+        //
+        // Aturannya SENGAJA mencerminkan gate `isValid` milik VisitorFormPage, bukan
+        // aturan baru: satu-satunya pemanggil (FaceCapturePage) menyebar formData yang
+        // sudah lolos gate itu, jadi kontraknya memang sudah dipenuhi — ini hanya
+        // menegakkannya di sisi server. Semua field dikumpulkan dulu lalu dilaporkan
+        // sekaligus supaya klien tidak harus menebak satu per satu.
+        $str = function ($k) use ($input) { return trim((string) ($input[$k] ?? '')); };
+        $num = function ($k) use ($input) { return (int) ($input[$k] ?? 0); };
+        $missing = [];
+
+        if ($str('nama') === '')          $missing[] = 'nama';
+        if ($str('email') === '')         $missing[] = 'email';
+        if ($str('notel') === '')         $missing[] = 'notel';
+        if ($str('nama_instansi') === '') $missing[] = 'nama_instansi';
+        if ($num('umur') <= 0)            $missing[] = 'umur';
+        if ($num('disabilitas') <= 0)     $missing[] = 'disabilitas';
+        if ($num('pendidikan') <= 0)      $missing[] = 'pendidikan';
+        if ($num('pekerjaan') <= 0)       $missing[] = 'pekerjaan';
+        if ($num('kategori_instansi') <= 0) $missing[] = 'kategori_instansi';
+        if ($num('pemanfaatan') <= 0)     $missing[] = 'pemanfaatan';
+
+        // Cabang "lainnya" — nilai sentinel yang mewajibkan teks pendamping.
+        if ($num('disabilitas') === 1 && $num('jenis_disabilitas') <= 0) $missing[] = 'jenis_disabilitas';
+        if ($num('pekerjaan') === 7 && $str('pekerjaan_lainnya') === '')  $missing[] = 'pekerjaan_lainnya';
+        if ($num('kategori_instansi') === 9 && $str('kategori_lainnya') === '') $missing[] = 'kategori_lainnya';
+        if ($num('pemanfaatan') === 5 && $str('pemanfaatan_lainnya') === '') $missing[] = 'pemanfaatan_lainnya';
+
+        // Layanan wajib ada — tanpa ini nomor antrian keluar tanpa prefix ("001")
+        // karena tidak ada nama layanan yang cocok di $prefix_map.
+        $layanan_in = $input['jenis_layanan'] ?? null;
+        $layanan_list = is_array($layanan_in)
+            ? $layanan_in
+            : (is_string($layanan_in) && $layanan_in !== '' ? (json_decode($layanan_in, true) ?: [$layanan_in]) : []);
+        if (!is_array($layanan_list) || count(array_filter($layanan_list, function ($l) { return trim((string) $l) !== ''; })) === 0) {
+            $missing[] = 'jenis_layanan';
+        }
+
+        if ($missing) {
+            $this->json_response([
+                'success' => false,
+                'message' => 'Data pendaftaran belum lengkap: ' . implode(', ', $missing),
+            ], 422);
+        }
+
         // Strategy C: tolak cross layanan
         $this->validate_no_cross_layanan($input['jenis_layanan'] ?? null);
         $this->validate_sarana_for_layanan($input['jenis_layanan'] ?? null, $input['sarana'] ?? []);
