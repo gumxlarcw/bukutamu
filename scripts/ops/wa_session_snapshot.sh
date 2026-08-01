@@ -6,9 +6,17 @@
 # saat start berikutnya → kredensial multidevice musnah → wajib relink QR.
 # Snapshot ini membuat sesi bisa direstorasi tanpa relink (scripts/ops/wa_session_restore.sh).
 #
-# Mekanisme meniru RemoteAuth resmi wwebjs: kompres dir sesi SAAT klien hidup
-# (yang esensial: Default/IndexedDB + Default/Local Storage, <1 MB); cache besar
-# (Cache/Code Cache ~570 MB) di-exclude — chromium membangunnya ulang sendiri.
+# Mekanisme meniru RemoteAuth resmi wwebjs: kompres dir sesi SAAT klien hidup;
+# cache besar (Cache/Code Cache ~618 MB) di-exclude — chromium membangunnya ulang.
+#
+# Yang ESENSIAL dan tidak boleh di-exclude: Default/IndexedDB (~20 MB — di sinilah
+# kredensial multidevice web.whatsapp.com berada) dan Default/Local Storage.
+# Klaim "<1 MB" di versi lama komentar ini KELIRU: arsip nyata ~22,8 MB
+# terkompresi setelah trim (sebelumnya ~42 MB / 70,6 MB mentah, 42% di antaranya
+# hanya CertificateRevocation). Lihat docs/AUDIT_2026-08-01.md temuan #24p.
+#
+# Catatan exclude: 'session/Default/DIPS-wal' sengaja spesifik — file WAL-nya 4 MB
+# sedangkan DB 'session/Default/DIPS' cuma 36 KB dan tetap ikut.
 #
 # Gate: hanya snapshot saat konektor SEHAT (wa_qr_state.ready=1 & heartbeat <120s)
 # — snapshot sesi mati/menunggu-QR tidak berguna dan merusak rotasi.
@@ -61,6 +69,9 @@ tar -C "$WA_AUTH" \
   --exclude='session/extensions_crx_cache' \
   --exclude='session/Crashpad' \
   --exclude='session/BrowserMetrics*' \
+  --exclude='session/CertificateRevocation' \
+  --exclude='session/Default/Service Worker/ScriptCache' \
+  --exclude='session/Default/DIPS-wal' \
   --exclude='*.pma' \
   --warning=no-file-changed --warning=no-file-removed \
   -czf "$tmp" session || rc=$?

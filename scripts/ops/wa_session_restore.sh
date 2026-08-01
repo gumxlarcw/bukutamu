@@ -29,8 +29,32 @@ pkill -f "user-data-dir=$WA_AUTH/session" 2>/dev/null || true
 sleep 1
 
 keep="$WA_AUTH/session.pre-restore.$(date +%Y%m%d_%H%M%S)"
+
+# Rollback: tanpa ini, tar yang gagal di tengah meninggalkan konektor MATI tanpa
+# dir session/ sama sekali — operator harus menebak sendiri cara pulih. Trap ini
+# mengembalikan sesi sebelumnya lalu menyalakan konektor. Sisa ekstraksi TIDAK
+# dihapus, hanya dipindah, supaya bisa diperiksa. (AUDIT_2026-08-01 temuan #24o)
+moved=0
+rollback_on_fail() {
+  rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$moved" -eq 1 ] || return 0
+  echo "[!] restore GAGAL (rc=$rc) — mengembalikan sesi sebelumnya"
+  if [ -d "$WA_AUTH/session" ]; then
+    fail="$WA_AUTH/session.failed-restore.$(date +%Y%m%d_%H%M%S)"
+    mv "$WA_AUTH/session" "$fail"
+    echo "[!] hasil ekstraksi parsial dipindah ke: $fail"
+  fi
+  mv "$keep" "$WA_AUTH/session"
+  echo "[!] sesi sebelumnya dikembalikan dari: $keep"
+  pm2 start bukutamu-wa >/dev/null 2>&1 || true
+  echo "[!] konektor dinyalakan ulang — pantau: pm2 logs bukutamu-wa"
+}
+trap rollback_on_fail EXIT
+
 if [ -d "$WA_AUTH/session" ]; then
   mv "$WA_AUTH/session" "$keep"
+  moved=1
   echo "sesi lama disimpan di: $keep (hapus manual setelah yakin restore sukses)"
 fi
 tar -C "$WA_AUTH" -xzf "$SNAP"
