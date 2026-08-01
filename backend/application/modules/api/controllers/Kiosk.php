@@ -403,6 +403,27 @@ class Kiosk extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
+        // Satu-satunya metode publik di controller ini yang dulu tanpa throttle DAN tanpa
+        // token. id kunjungan berurutan dalam dua blok rapat, jadi ~1.400 GET tanpa batas
+        // menyalin seluruh riwayat kunjungan kantor — termasuk nama tamu dan layanan mana
+        // yang "Konsultasi DTSEN" / "Keperluan Pimpinan". Lihat AUDIT_2026-08-01 #6.
+        // CATATAN: sampai mod_remoteip aktif (Batch 3) ember rate-limit masih global
+        // karena semua klien tercatat '::1'. Perbaikan tuntas = require_kiosk_token
+        // dengan purpose 'ticket' yang di-mint saat register/visit/wa_promote.
+        $this->require_rate_limit('kiosk/ticket', 30);
+
+        // Rute (:num) tidak menjamin apa-apa di sini — CI3 auto-routing membuat
+        // /api/kiosk/ticket/990696abc tetap sampai ke metode ini. Cast (int) saja TIDAK
+        // cukup: (int)"990696abc" = 990696, jadi input rusak diam-diam dilayani seolah
+        // valid. Tolak yang bukan digit murni, baru cast.
+        if (!ctype_digit((string) $id)) {
+            $this->json_response(['success' => false, 'message' => 'ID tidak valid'], 400);
+        }
+        $id = (int) $id;
+        if ($id <= 0) {
+            $this->json_response(['success' => false, 'message' => 'ID tidak valid'], 400);
+        }
+
         $ticket = $this->db
             ->select('k.id_kunjungan, k.nomor_antrian, k.jenis_layanan, k.date_visit, b.nama')
             ->from('tamdes_kunjungan k')

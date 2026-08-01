@@ -81,6 +81,9 @@ class Deliveries extends Api_base
             if (!$row) {
                 return $this->json_response(['success' => false, 'message' => 'Tidak ditemukan'], 404);
             }
+            // Kepemilikan diperiksa SEBELUM cek status, supaya beda 409-vs-404 tidak
+            // membocorkan keberadaan pengiriman milik operator lain. AUDIT #13.
+            $this->require_delivery_access($row);
             if (!in_array($row->status, ['menunggu_verifikasi', 'revisi'], true)) {
                 return $this->json_response(['success' => false, 'message' => 'Hanya pengiriman berstatus menunggu verifikasi atau revisi yang bisa dibatalkan'], 409);
             }
@@ -109,6 +112,12 @@ class Deliveries extends Api_base
         if (!$row) {
             return $this->json_response(['success' => false, 'message' => 'Tidak ditemukan'], 404);
         }
+        // resubmit MENIMPA link/note/media dan MERESET verif_decision, verif_note,
+        // id_verifikator, verified_at. Tanpa cek ini, salah satu dari lima akun
+        // petugas_pst bisa membajak deliverable operator lain — dan jejak auditnya
+        // tercatat atas nama penyerang. Diperiksa sebelum cek status (bocor 409/404).
+        // AUDIT_2026-08-01 #13.
+        $this->require_delivery_access($row);
         if ($row->status !== 'revisi') {
             return $this->json_response(['success' => false, 'message' => 'Hanya pengiriman berstatus revisi yang bisa diperbaiki & dikirim ulang'], 409);
         }
@@ -327,6 +336,16 @@ class Deliveries extends Api_base
         $filters = [];
         if ($status)       $filters['status']       = $status;
         if ($id_kunjungan) $filters['id_kunjungan'] = (int) $id_kunjungan;
+
+        // Operator hanya melihat pengiriman miliknya sendiri — sejajar dengan
+        // require_delivery_access() yang dipakai ::detail dan ::file. Tanpa ini,
+        // daftar tetap membocorkan id milik operator lain yang bisa dipakai untuk
+        // menebak target ::resubmit / DELETE. verifikator/admin/superadmin melihat
+        // semuanya (memang tugasnya). AUDIT_2026-08-01 #13.
+        $role = $this->current_user->role ?? '';
+        if (!in_array($role, ['admin', 'superadmin', 'verifikator'], true)) {
+            $filters['created_by'] = (int) ($this->current_user->id ?? 0);
+        }
 
         $this->load->model('delivery_model');
         $result = $this->delivery_model->list_filtered($filters, $page, $limit);

@@ -18,6 +18,9 @@ class Responden extends Api_base {
 
     public function index() {
         $this->require_auth();
+        // Sejajarkan dengan ::export dan ::visit_detail di controller yang sama, yang
+        // sudah require_role('admin'). Konsumen FE hanya RespondenTahunanPage. AUDIT #14.
+        $this->require_role('admin');
 
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);

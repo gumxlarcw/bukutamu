@@ -278,7 +278,8 @@ class Consultations extends Api_base {
             $this->audit('call_queue', 'visit', $id, ['nomor' => $nomor, 'status_to' => 'dipanggil']);
         }
 
-        $this->json_response($result);
+        // Amplop wajib {success, data, message} — lihat catatan di ::test_sound. #24d.
+        $this->json_response(['success' => true, 'data' => ['nomor' => $result['nomor'] ?? $nomor], 'message' => $result['message'] ?? 'OK']);
     }
 
     public function test_sound($id) {
@@ -291,7 +292,10 @@ class Consultations extends Api_base {
         $result = $this->proxy_antrian('TES');
         if (!$result['success']) $this->json_response($result, 502); // #14 — reflect proxy failure (no 200-with-success:false)
 
-        $this->json_response($result);
+        // Amplop wajib {success, data, message}. proxy_antrian mengembalikan 'nomor'
+        // di level atas; dibungkus DI SINI, bukan di dalam proxy_antrian, karena
+        // return gagalnya membawa http_code yang dipakai cabang 502 di atas. #24d.
+        $this->json_response(['success' => true, 'data' => ['nomor' => $result['nomor'] ?? null], 'message' => $result['message'] ?? 'OK']);
     }
 
     public function data($id) {
@@ -319,6 +323,22 @@ class Consultations extends Api_base {
                 $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
             }
             $this->require_layanan_role($visit_check->jenis_layanan);
+
+            // Gate DTSEN: jalur ini menutup kunjungan lewat next_status_after_completion
+            // TANPA memeriksa apakah form DTSEN sudah diisi, padahal ketiga endpoint
+            // finalisasi sejenis memeriksanya (Consultations::status, Visits::status,
+            // Dtsen::detail). Tanpa gate ini, petugas_pst yang POST langsung bisa
+            // menutup kunjungan DTSEN murni ke 'selesai' dengan 0 baris dtsen_konsultasi.
+            // Ditolak lebih awal, SEBELUM transaksi dibuka. Invariant SKD tidak terlibat:
+            // kunjungan SKD/campuran tetap berakhir di 'menunggu_evaluasi'.
+            // Aman untuk campuran: validate_no_cross_layanan melarang SKD+DTSEN, dan
+            // ketujuh kunjungan DTSEN di produksi murni. AUDIT_2026-08-01 #23.
+            if ($this->layanan_requires_dtsen_form($visit_check->jenis_layanan)) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Kunjungan DTSEN disimpan lewat form DTSEN, bukan form konsultasi SKD.',
+                ], 400);
+            }
 
             $input            = $this->get_json_input();
             $hasil_konsultasi = trim((string) ($input['hasil_konsultasi'] ?? ''));
@@ -393,7 +413,12 @@ class Consultations extends Api_base {
                               ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
             $status_from = null;
             $status_to   = null;
-            if ($visit && $visit->status !== 'selesai' && $visit->status !== 'menunggu_evaluasi') {
+            // 'evaluasi_selesai' WAJIB ikut dilewati. Tanpa itu, menyimpan ulang form pada
+            // kunjungan WA yang sudah di state tersebut MENURUNKANNYA ke 'menunggu_evaluasi',
+            // tempat tombol tutup di inbox hilang, /api/wa/visits/{id}/selesai balas 409,
+            // dan kedua sweep auto-close melewatinya. AUDIT_2026-08-01 #23.
+            if ($visit && $visit->status !== 'selesai' && $visit->status !== 'menunggu_evaluasi'
+                && $visit->status !== 'evaluasi_selesai') {
                 $next_status = $this->next_status_after_completion($visit->jenis_layanan);
                 $update = ['status' => $next_status];
                 if ($next_status === 'selesai') {

@@ -299,6 +299,11 @@ class Evaluations extends Api_base {
      */
     public function summary() {
         $this->require_auth();
+        // Ringkasan IKM agregat = tier admin. HANYA metode ini yang digate: alur
+        // evaluasi kiosk/WA memakai pending()/pending_list()/detail() yang sengaja
+        // publik (rate-limit + kiosk token) dan TIDAK boleh ikut tergate, atau
+        // pengunjung tidak bisa mengisi evaluasi sama sekali. AUDIT #14.
+        $this->require_role('admin');
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }

@@ -7,6 +7,12 @@ class Queue_stats extends Api_base {
 
     public function index() {
         $this->require_auth();
+        // Laporan agregat = tier admin. Sebelumnya hanya require_auth, padahal
+        // Responden::export & ::visit_detail sudah memakai require_role('admin') —
+        // ketimpangan itu yang membuktikan ini kelupaan, bukan keputusan.
+        // Level 2 = admin + pimpinan (viewer read-only), memblokir tier level 1.
+        // Satu-satunya konsumen FE adalah QueueStatsPage (admin). AUDIT #14.
+        $this->require_role('admin');
 
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);

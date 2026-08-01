@@ -52,6 +52,29 @@ class Api_base extends CI_Controller {
             exit;
         }
         $this->current_user = $decoded;
+
+        // Pencabutan akses. JWT berlaku 4 jam dan TIDAK pernah dicek ulang ke DB,
+        // sehingga akun yang dinonaktifkan, dihapus, atau diturunkan perannya tetap
+        // memegang semua endpoint sampai token kedaluwarsa. /api/auth/check membaca
+        // peran segar dari DB sehingga UI ikut berubah — memberi ilusi pencabutan
+        // yang sebenarnya tidak terjadi. Lihat docs/AUDIT_2026-08-01.md temuan #5.
+        //
+        // require_role() memutuskan izin dari klaim JWT (bukan DB), jadi peran WAJIB
+        // ditimpa di sini — kalau tidak, penurunan peran juga tidak berefek.
+        //
+        // Identitas fallback .env (Auth.php, id=0) TIDAK punya baris admin_users;
+        // ia dikecualikan atau jalur login darurat itu ikut mati.
+        if ((int) ($this->current_user->id ?? 0) !== 0) {
+            $row = $this->db
+                ->select('role, active')
+                ->get_where('admin_users', ['username' => $this->current_user->username])
+                ->row();
+            if (!$row || (int) $row->active !== 1) {
+                $this->json_response(['success' => false, 'message' => 'Akun tidak aktif'], 401);
+                exit;
+            }
+            $this->current_user->role = $row->role; // otoritas = DB, bukan klaim token
+        }
     }
 
     protected function json_response($data, $status = 200) {
@@ -693,7 +716,19 @@ class Api_base extends CI_Controller {
             'rekomendasi kegiatan statistik' => 'R',
             'penjualan produk statistik'     => 'J',
             'konsultasi dtsen'               => 'D',
+            // "Daftar Antrian Offline" jatuh ke fallback huruf pertama = 'D', bentrok
+            // dengan Konsultasi DTSEN. Karena penomoran dihitung PER LAYANAN lewat
+            // JSON_CONTAINS, keduanya mulai dari D001 — dua tamu memegang nomor sama.
+            // Belum pernah terjadi (0 duplikat sejak konsolidasi) tapi hanya sejauh satu
+            // klik di /admin/manual-entry. Lihat docs/AUDIT_2026-08-01.md temuan #22.
+            'daftar antrian offline'         => 'A',
         ];
+        // BELUM DIPERBAIKI (menunggu keputusan pemilik — mengubah prefix layanan yang
+        // dipakai harian mengubah kontrak yang tertulis di AboutPage):
+        //   'Keperluan Pimpinan' -> fallback 'K', bentrok dengan 'Konsultasi Statistik'
+        //   'Lainnya Online'     -> fallback 'L', bentrok dengan 'Lainnya'
+        // Keduanya kelas bug yang sama dengan di atas dan sama-sama aktif dipakai
+        // (Lainnya 158 kunjungan, Keperluan Pimpinan 21). Belum ada duplikat nyata.
         $key    = strtolower(trim($jenis_layanan));
         $prefix = $prefix_map[$key] ?? strtoupper(substr($jenis_layanan, 0, 1));
         $today  = date('Y-m-d');

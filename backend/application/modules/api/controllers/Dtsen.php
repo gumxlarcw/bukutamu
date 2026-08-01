@@ -230,6 +230,16 @@ class Dtsen extends Api_base {
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            // Paritas dengan cabang POST di bawah dan dengan Consultations::data, yang
+            // keduanya memanggil require_layanan_role. Tanpa ini, GET membuka
+            // nik_dirujuk ke peran di luar DTSEN. AUDIT_2026-08-01 #24a.
+            $visit_check = $this->db->select('jenis_layanan')
+                                    ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            if (!$visit_check) {
+                $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+            $this->require_layanan_role($visit_check->jenis_layanan);
+
             $row = $this->db->get_where('dtsen_konsultasi', ['id_kunjungan' => $id])->row();
             $this->json_response(['success' => true, 'data' => $row, 'message' => 'OK']);
 
@@ -274,7 +284,9 @@ class Dtsen extends Api_base {
 
             // Auto-finalize: DTSEN → 'selesai' langsung (next_status_after_completion
             // sudah mengembalikan 'selesai' untuk DTSEN). Skip kalau visit sudah final.
-            if ($visit_check->status !== 'selesai' && $visit_check->status !== 'menunggu_evaluasi') {
+            // 'evaluasi_selesai' ikut dilewati — paritas dengan Consultations::data (#23).
+            if ($visit_check->status !== 'selesai' && $visit_check->status !== 'menunggu_evaluasi'
+                && $visit_check->status !== 'evaluasi_selesai') {
                 $next_status                 = $this->next_status_after_completion($visit_check->jenis_layanan);
                 $update                      = ['status' => $next_status];
                 if ($next_status === 'selesai') {

@@ -168,14 +168,22 @@ class Guests extends Api_base {
 
     /** GET /api/guests/:id/photo — serve photo as image */
     public function photo($id) {
+        // Satu-satunya metode di seluruh API yang tidak memeriksa verb. AUDIT #24c.
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
         $this->require_auth();
+        $id  = (int) $id;
         $row = $this->db->select('foto')->get_where('tamdes_buku', ['id_user' => $id])->row();
         if (!$row || !$row->foto) {
-            http_response_code(404);
-            exit;
+            // Dulu 404 tanpa body dan tanpa Content-Type sama sekali.
+            $this->json_response(['success' => false, 'message' => 'Foto tidak ditemukan'], 404);
         }
         header('Content-Type: image/jpeg');
-        header('Cache-Control: public, max-age=3600');
+        // 'public' pada foto wajah yang butuh autentikasi, tanpa Vary: Cookie, berisiko
+        // bocor antar pengguna lewat cache bersama. Samakan dengan endpoint sejenis.
+        header('Cache-Control: private, max-age=300');
+        header('X-Content-Type-Options: nosniff');
         echo $row->foto;
         exit;
     }

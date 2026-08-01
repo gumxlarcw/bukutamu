@@ -76,6 +76,10 @@ class Delivery_model extends CI_Model
             ->join('konsultasi_pengunjung kp', 'kp.id = d.id_konsultasi',         'left');
         if (!empty($f['status']))       $this->db->where('d.status', $f['status']);
         if (!empty($f['id_kunjungan'])) $this->db->where('d.id_kunjungan', (int) $f['id_kunjungan']);
+        // Scoping kepemilikan (AUDIT #13). WAJIB ditambahkan SEBELUM count_all_results
+        // di bawah — CI3 me-reset query builder pada count, jadi where yang dipasang
+        // setelahnya akan hilang dari fetch berhalaman DAN membuat total tidak cocok.
+        if (!empty($f['created_by']))   $this->db->where('d.created_by', (int) $f['created_by']);
         $total = $this->db->count_all_results('', false); // keep query for the page fetch
         $rows  = $this->db->order_by('d.created_at', 'ASC')
             ->limit($limit, ($page - 1) * $limit)->get()->result();
