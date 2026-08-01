@@ -89,12 +89,21 @@ export default function ConsultationFormPage({ visitIdProp, onClose }: { visitId
     if (existingData.length > 0) {
       if (!hydratedRef.current) {
         setRows(existingData.map(normalizeConsultationRow))
-        // hasil_konsultasi disimpan denormalized di tiap baris. Ambil dari baris
-        // pertama yang punya rincian_data nyata supaya "ghost row" ringkasan
-        // resepsionis (rincian NULL via Visits::summary) tidak menimpa textarea
-        // SKD dengan catatan asing. Kalau tak ada baris nyata → biarkan kosong.
-        const note = existingData.find(r => (r.rincian_data ?? '').trim() !== '')?.hasil_konsultasi
-        setHasilKonsultasi(note ?? '')
+        // hasil_konsultasi disimpan denormalized di tiap baris. Utamakan catatan
+        // milik baris ber-rincian_data nyata, supaya ringkasan SKD menang atas
+        // "ghost row" dari Daftar Kunjungan (rincian NULL via Visits::summary).
+        //
+        // Kalau TIDAK ada baris nyata, pakai catatan ghost itu — JANGAN kosongkan.
+        // Simpan = delete-all + reinsert (Consultations::data) dan ringkasan wajib
+        // non-empty, jadi textarea kosong berarti catatan tersebut ditimpa permanen
+        // oleh ketikan operator yang tak pernah melihatnya. Menampilkannya lebih
+        // dulu adalah satu-satunya cara mencegahnya: backend tidak bisa membedakan
+        // "sengaja diganti" dari "tak pernah terlihat".
+        const noteFromReal = existingData.find(
+          r => (r.rincian_data ?? '').trim() !== '' && (r.hasil_konsultasi ?? '').trim() !== ''
+        )?.hasil_konsultasi
+        const noteAnywhere = existingData.find(r => (r.hasil_konsultasi ?? '').trim() !== '')?.hasil_konsultasi
+        setHasilKonsultasi(noteFromReal ?? noteAnywhere ?? '')
         hydratedRef.current = true
       }
     } else if (rows.length === 0) {
