@@ -10,6 +10,34 @@
 
 **Tech Stack:** CodeIgniter 3 (PHP 7.4, HMVC, JSON-API) · React 19 + TypeScript 5.9 + Vite 8 · Node connectors (wwebjs / web-push / escpos) · MariaDB `db_tamdes` · Apache 2.4 + PM2 + Cloudflare Tunnel.
 
+## Status (per 2026-08-01)
+
+Dicatat di sini, BUKAN dengan mencentang tiap kotak — rencana 2026-07-12
+punya 145 kotak yang semuanya kosong padahal Batch 0-nya sudah dikerjakan,
+dan itu membuat orang menyimpulkan "tidak ada yang jalan". Satu blok status
+lebih sulit basi.
+
+| Batch | Status | Commit |
+| --- | --- | --- |
+| 0 — tangkap state produksi ke git | ✅ selesai | `d433bd7`, `5593210` |
+| 1 — skrip backup host | ✅ selesai | `293d74d` |
+| 2 — backend PHP | ✅ selesai (10/11) | `500b256`, `c26614c` |
+| 3 — Apache `mod_remoteip` + redirect HTTPS | ✅ selesai | vhost di luar repo; `Auth.php` menyusul |
+| 4 — migrasi DB + `Wa.php` | ⬜ belum | |
+| 5 — frontend | ⬜ belum | |
+| 6 — konektor WA (butuh jendela restart) | ⬜ belum | |
+| 7 — hardening endpoint kiosk (#1 biometrik) | ⬜ belum | |
+| 8 — hygiene data & ops | ⬜ belum | |
+
+Catatan Batch 2: Task 7 (flag `Secure`) sempat DITUNDA karena prasyaratnya
+belum ada, lalu dikerjakan bersama Batch 3 setelah redirect http→https
+terpasang.
+
+Temuan baru saat mengerjakan Batch 2 (belum diperbaiki, menunggu keputusan
+pemilik karena mengubah kontrak prefix yang tertulis di AboutPage):
+`Keperluan Pimpinan` → `K` bentrok `Konsultasi Statistik`, dan
+`Lainnya Online` → `L` bentrok `Lainnya`. Audit hanya menangkap bentrok `D`.
+
 ## Global Constraints
 
 - **No automated tests exist.** Verification = `npm run lint` + `npx tsc --noEmit` (FE), `curl` the endpoint (BE), read-end-to-end + `diff` (both), read-only SQL (DB). Never claim "tested" without pasting the command output. (`.claude/rules/testing.md`)

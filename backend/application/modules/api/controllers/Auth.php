@@ -135,7 +135,15 @@ class Auth extends Api_base {
             'path'     => '/',
             'httponly'  => true,
             'samesite' => 'Strict',
-            'secure'   => (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off'),
+            // TLS diterminasi di Cloudflare; Apache menerima plain HTTP dan tidak ada
+            // yang menyetel HTTPS=on, jadi ekspresi lama SELALU false — cookie admin
+            // 4 jam terbit TANPA Secure. Ambil dari config yang sama yang sudah dipakai
+            // CI3 untuk ci_session (diturunkan dari base_url https, bernilai true).
+            // JANGAN turunkan dari X-Forwarded-Proto: header yang bisa dipengaruhi klien
+            // tidak boleh menentukan flag keamanan cookie. Aman dipasang hanya SETELAH
+            // redirect http->https ada di vhost :60, kalau tidak sesi admin yang membuka
+            // lewat http akan diam-diam gagal tersimpan. AUDIT_2026-08-01 #7.
+            'secure'   => (bool) $this->config->item('cookie_secure'),
         ]);
 
         // Audit log
@@ -178,7 +186,15 @@ class Auth extends Api_base {
             'path'     => '/',
             'httponly'  => true,
             'samesite' => 'Strict',
-            'secure'   => (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off'),
+            // TLS diterminasi di Cloudflare; Apache menerima plain HTTP dan tidak ada
+            // yang menyetel HTTPS=on, jadi ekspresi lama SELALU false — cookie admin
+            // 4 jam terbit TANPA Secure. Ambil dari config yang sama yang sudah dipakai
+            // CI3 untuk ci_session (diturunkan dari base_url https, bernilai true).
+            // JANGAN turunkan dari X-Forwarded-Proto: header yang bisa dipengaruhi klien
+            // tidak boleh menentukan flag keamanan cookie. Aman dipasang hanya SETELAH
+            // redirect http->https ada di vhost :60, kalau tidak sesi admin yang membuka
+            // lewat http akan diam-diam gagal tersimpan. AUDIT_2026-08-01 #7.
+            'secure'   => (bool) $this->config->item('cookie_secure'),
         ]);
 
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Logout berhasil']);
