@@ -85,10 +85,21 @@ class Responden extends Api_base {
         $triwulan = $this->input->get('triwulan');
 
         $this->db->select("k.id_kunjungan, k.id_user, k.date_visit, k.nomor_antrian, k.durasi_detik,
-                k.jenis_layanan, k.layanan_lainnya, k.sarana, k.sarana_lainnya, k.hasil_konsultasi, k.rating_pengunjung,
+                k.jenis_layanan, k.layanan_lainnya, k.sarana, k.sarana_lainnya, k.rating_pengunjung,
                 b.tgldatang, b.nama, b.email, b.notel, b.jeniskelamin, b.umur, b.disabilitas, b.jenis_disabilitas,
                 b.pendidikan, b.pekerjaan, b.pekerjaan_lainnya, b.kategori_instansi, b.kategori_lainnya,
                 b.nama_instansi, b.pemanfaatan, b.pemanfaatan_lainnya, b.pengaduan")
+            // hasil_konsultasi diambil dari konsultasi_pengunjung, BUKAN tamdes_kunjungan.
+            // Kolom di tamdes_kunjungan terisi 0 dari 492 baris — setiap penulis
+            // menyimpannya ke konsultasi_pengunjung (374 dari 374 terisi), jadi ekspor
+            // tahunan BPS selama ini SELALU mengirim kolom kosong.
+            // Arg kedua FALSE => CI3 tidak backtick-escape subquery-nya (pola yang sama
+            // dipakai has_konsultasi di Consultations::index). Dipisah ke select() sendiri
+            // supaya kolom lain tetap di-escape seperti biasa. AUDIT_2026-08-01 #21.
+            ->select("(SELECT kp2.hasil_konsultasi FROM konsultasi_pengunjung kp2"
+                   . " WHERE kp2.id_kunjungan = k.id_kunjungan"
+                   . " AND kp2.hasil_konsultasi IS NOT NULL AND TRIM(kp2.hasil_konsultasi) <> ''"
+                   . " ORDER BY kp2.id LIMIT 1) AS hasil_konsultasi", FALSE)
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where('YEAR(k.date_visit)', $year)
