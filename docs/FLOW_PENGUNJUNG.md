@@ -176,7 +176,7 @@ flowchart LR
         direction TB
         D_BUKU[(tamdes_buku<br/>insert: nama, surel, telepon,<br/>foto, face_descriptor 128-dim,<br/>biometric_consent, timestamp)]
         D_KUN[(tamdes_kunjungan<br/>insert: id_user, jenis_layanan,<br/>sarana, nomor_antrian, status=antri,<br/>created_by=kiosk)]
-        D_RESP[(tamdes_responden_tahunan<br/>UPSERT cohort SKD per id_user+tahun)]
+        D_RESP[(tamdes_responden_tahunan<br/>TIDAK DIPAKAI — 154 baris basi)]
     end
 
     subgraph EXT ["Petugas / Sistem Eksternal"]
@@ -207,7 +207,7 @@ flowchart LR
 
 Pengunjung baru mengisi sebelas atribut identitas pada `VisitorForm` (nama, surel, telepon, jenis kelamin, umur, disabilitas, pendidikan, pekerjaan, kategori instansi, nama instansi, pemanfaatan). Validasi sisi-frontend memblokir tombol *Lanjut* bila ada field wajib yang kosong atau opsi "Lainnya" terpilih tanpa keterangan tambahan. Halaman foto memunculkan modal `PhotoDisclaimer` lebih dulu untuk mengamankan persetujuan biometrik secara eksplisit; bila konsumen menolak, alur kembali ke form sehingga foto tidak pernah diambil.
 
-Setelah persetujuan diberikan, kamera mengumpulkan sampel wajah; tombol *Ambil Foto* baru aktif setelah minimal tiga sampel stabil terdeteksi (`MIN_SAMPLES_TO_CAPTURE`), sementara target lima descriptor tetap dikumpulkan untuk dirata-rata. Konfirmasi memicu `POST /api/kiosk/register` yang melakukan `LOCK TABLES` atas `tamdes_buku`, `tamdes_kunjungan`, dan `tamdes_responden_tahunan` untuk mencegah balapan saat dua kiosk berbeda mendaftarkan pengunjung secara bersamaan. Foto disimpan sebagai `LONGBLOB`, descriptor disimpan sebagai teks JSON 128-dimensi. Bila *insert* gagal (mis. nomor antrian bentrok), konsumen tetap di halaman konfirmasi dengan pesan kesalahan; bila berhasil, tiket dicetak ke printer termal lokal langsung dari browser kiosk tanpa melewati backend pusat — ini desain anti *single-point-of-failure* karena print server hidup di komputer kiosk itu sendiri.
+Setelah persetujuan diberikan, kamera mengumpulkan sampel wajah; tombol *Ambil Foto* baru aktif setelah minimal tiga sampel stabil terdeteksi (`MIN_SAMPLES_TO_CAPTURE`), sementara target lima descriptor tetap dikumpulkan untuk dirata-rata. Konfirmasi memicu `POST /api/kiosk/register` yang melakukan `LOCK TABLES` atas `tamdes_buku` dan `tamdes_kunjungan` untuk mencegah balapan saat dua kiosk berbeda mendaftarkan pengunjung secara bersamaan. Foto disimpan sebagai `LONGBLOB`, descriptor disimpan sebagai teks JSON 128-dimensi. Bila *insert* gagal (mis. nomor antrian bentrok), konsumen tetap di halaman konfirmasi dengan pesan kesalahan; bila berhasil, tiket dicetak ke printer termal lokal langsung dari browser kiosk tanpa melewati backend pusat — ini desain anti *single-point-of-failure* karena print server hidup di komputer kiosk itu sendiri.
 
 ---
 
@@ -494,7 +494,7 @@ Format token: `{purpose}.{bound_id}.{exp_unix}.{base64url-hmac-sha256}`. *Purpos
 | Endpoint | Tabel yang disentuh | Operasi | Muncul di |
 |---|---|---|---|
 | `GET /api/services` | (cache aplikasi) | SELECT | 1, 2, 3 |
-| `POST /api/kiosk/register` | `tamdes_buku`, `tamdes_kunjungan`, `tamdes_responden_tahunan` | INSERT (LOCK TABLES) | 2 |
+| `POST /api/kiosk/register` | `tamdes_buku`, `tamdes_kunjungan` | INSERT (LOCK TABLES) | 2 |
 | `POST /api/kiosk/visit` | `tamdes_kunjungan` | INSERT | 1, 3 |
 | `GET /api/kiosk/face-data` | `tamdes_buku`, `tamdes_rate_limit` | SELECT + INSERT (rate count) | 3 |
 | `GET /api/kiosk/guest-list` | `tamdes_buku`, `tamdes_rate_limit` | SELECT + INSERT | 3 |

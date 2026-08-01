@@ -42,6 +42,17 @@ cleanup(){
   Q "DELETE FROM data_deliveries WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
   Q "DELETE FROM wa_messages   WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
   Q "DELETE FROM wa_sessions   WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
+  # Cermin PENUH rantai cascade produksi di Visits::detail (7 tabel anak). Sebelumnya
+  # wa_outbox hanya dibersihkan lewat phone_raw/body, sehingga baris yang terikat ke
+  # kunjungan uji lewat id_kunjungan (mis. verif_request) tertinggal sebagai orphan —
+  # 3 baris seperti itu ada di produksi. konsultasi_pengunjung, dtsen_konsultasi, dan
+  # tamdes_evaluasi_detail juga tidak pernah ikut dibersihkan sama sekali.
+  # WAJIB dijalankan SEBELUM tamdes_kunjungan dihapus — subkuerinya membacanya.
+  # AUDIT_2026-08-01 #24k.
+  Q "DELETE FROM wa_outbox            WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
+  Q "DELETE FROM konsultasi_pengunjung WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
+  Q "DELETE FROM dtsen_konsultasi     WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
+  Q "DELETE FROM tamdes_evaluasi_detail WHERE id_kunjungan IN (SELECT id_kunjungan FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL))"
   Q "DELETE FROM tamdes_kunjungan WHERE id_user IN ($TESTSEL)"
   Q "DELETE FROM tamdes_buku WHERE notel LIKE '0888399%' AND nama LIKE 'Uji Verif%'"
   Q "DELETE FROM wa_outbox WHERE phone_raw LIKE '0888399%' OR phone_raw LIKE '62888399%'"

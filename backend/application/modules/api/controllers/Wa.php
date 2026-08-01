@@ -993,7 +993,9 @@ class Wa extends Api_base {
             // Guest upsert by phone (LOCK pattern from Kiosk::register). wa_sessions ikut
             // dikunci & dicek-ulang DI DALAM lock: double-submit (TOCTOU) tidak boleh membuat
             // kunjungan ganda — hanya request pertama lolos, sisanya kembalikan tiket lama.
-            $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE, wa_sessions WRITE');
+            // tamdes_responden_tahunan dihapus dari daftar kunci — tabel mati, tanpa
+            // pembaca/penulis. Paritas dengan Kiosk::register. AUDIT_2026-08-01 #24h.
+            $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, wa_sessions WRITE');
             $fresh = $this->db->get_where('wa_sessions', ['id' => $id])->row();
             if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan && $fresh->category === $category) {
                 $this->db->query('UNLOCK TABLES');

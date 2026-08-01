@@ -114,7 +114,11 @@ class Kiosk extends Api_base {
         // allocation must both be TOCTOU-safe under concurrent first-time check-ins
         // (mirror Wa::session lock set + order). The reuse SELECT runs INSIDE the lock on
         // the already WRITE-locked tamdes_buku — never reference a table outside this set.
-        $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE');
+        // tamdes_responden_tahunan DIHAPUS dari daftar kunci: tidak ada satu pun
+        // pembaca atau penulisnya di backend/wa/notifier/scripts — 154 baris basi
+        // peninggalan alur lama. Mengunci tabel yang tak pernah disentuh hanya
+        // memperlebar cakupan LOCK TABLES tanpa manfaat. AUDIT_2026-08-01 #24h.
+        $this->db->query('LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE');
 
         // #32 — Re-run the double-tap guard INSIDE the lock (TOCTOU-safe). Two near-simultaneous
         // POSTs both pass the pre-lock guard (neither sees the other's uncommitted row); the WRITE

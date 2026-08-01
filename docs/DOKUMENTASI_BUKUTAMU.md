@@ -390,11 +390,11 @@ Matriks komparasi berikut diadaptasi langsung dari halaman pertama drawio (bagia
 1. Pengunjung mengisi 11 field `VisitorForm`: nama, surel, telepon, jenis kelamin, umur, disabilitas, pendidikan, pekerjaan, kategori instansi, nama instansi, pemanfaatan.
 2. Halaman `/kiosk/capture` menampilkan modal `PhotoDisclaimer` untuk persetujuan biometrik eksplisit.
 3. Kamera mengumpulkan minimal **3 sampel** (`MIN_SAMPLES_TO_CAPTURE`) untuk mengaktifkan tombol **Ambil Foto**; selanjutnya 5 descriptor 128-dim dikumpulkan dan dirata-rata.
-4. Konfirmasi memicu `POST /api/kiosk/register` yang melakukan `LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE` untuk mencegah balapan antar kiosk.
+4. Konfirmasi memicu `POST /api/kiosk/register` yang melakukan `LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE` untuk mencegah balapan antar kiosk.
 5. Foto disimpan sebagai `LONGBLOB`; descriptor disimpan sebagai JSON 128-dim; `biometric_consent` ditandai `1`.
 
 **Endpoint utama**: `POST /api/kiosk/register`
-**Tabel terlibat**: `tamdes_buku`, `tamdes_kunjungan`, `tamdes_responden_tahunan`
+**Tabel terlibat**: `tamdes_buku`, `tamdes_kunjungan`
 
 ## 5.2 Pendaftaran Kunjungan Ulang (Face Recognition)
 
@@ -674,7 +674,7 @@ flowchart LR
         direction TB
         D_BUKU[(tamdes_buku<br/>INSERT: identitas, foto,<br/>face_descriptor 128-dim,<br/>biometric_consent)]
         D_KUN[(tamdes_kunjungan<br/>INSERT: id_user, jenis_layanan,<br/>sarana, nomor_antrian, status=antri)]
-        D_RESP[(tamdes_responden_tahunan<br/>UPSERT cohort SKD)]
+        D_RESP[(tamdes_responden_tahunan<br/>TIDAK DIPAKAI — 154 baris basi)]
     end
 
     subgraph EXT ["Petugas / Sistem Eksternal"]
@@ -1259,7 +1259,7 @@ Setiap transisi status, panggilan TV (sukses maupun gagal), dan operasi penghapu
 
 ## 10.9 LOCK TABLES pada Pendaftaran
 
-`POST /api/kiosk/register` melakukan `LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE, tamdes_responden_tahunan WRITE` untuk mencegah balapan ketika dua kiosk mendaftarkan pengunjung berbeda secara bersamaan dengan nomor antrian yang sama. Lock dilepas di akhir transaksi.
+`POST /api/kiosk/register` melakukan `LOCK TABLES tamdes_buku WRITE, tamdes_kunjungan WRITE` untuk mencegah balapan ketika dua kiosk mendaftarkan pengunjung berbeda secara bersamaan dengan nomor antrian yang sama. Lock dilepas di akhir transaksi.
 
 \pagebreak
 

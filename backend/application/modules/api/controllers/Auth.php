@@ -166,20 +166,34 @@ class Auth extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        // Audit log
-        $username = isset($this->current_user->username) ? $this->current_user->username : 'unknown';
+        // Audit log — HANYA bila pemiliknya bisa diidentifikasi.
+        //
+        // Sengaja TIDAK memakai require_auth(): logout dengan token yang sudah
+        // kedaluwarsa itu sah, dan 401 di sini akan meninggalkan cookie basi di
+        // browser petugas. Yang salah bukan itu, melainkan mencatat baris audit
+        // untuk POST yang sama sekali tanpa identitas: 66 dari 120 baris logout
+        // tercatat 'unknown', yang membuat jejak logout tak bisa dipakai dan
+        // memberi siapa pun cara menulis ke audit log tanpa autentikasi.
+        // Tanpa identitas → tidak ada yang perlu diaudit; cookie tetap dibersihkan.
+        // AUDIT_2026-08-01 #24j.
+        $username = null;
         $token = isset($_COOKIE['jwt_token']) ? $_COOKIE['jwt_token'] : null;
         if ($token) {
             $decoded = $this->jwt_helper->decode($token);
-            if ($decoded) $username = $decoded->username ?? 'unknown';
+            if ($decoded && !empty($decoded->username)) $username = $decoded->username;
+        }
+        if ($username === null && !empty($this->current_user->username)) {
+            $username = $this->current_user->username;
         }
 
-        $this->db->insert('tamdes_audit_log', [
-            'admin_user'  => $username,
-            'action'      => 'logout',
-            'target_type' => 'auth',
-            'ip_address'  => $this->input->ip_address(),
-        ]);
+        if ($username !== null) {
+            $this->db->insert('tamdes_audit_log', [
+                'admin_user'  => $username,
+                'action'      => 'logout',
+                'target_type' => 'auth',
+                'ip_address'  => $this->input->ip_address(),
+            ]);
+        }
 
         setcookie('jwt_token', '', [
             'expires'  => time() - 3600,
