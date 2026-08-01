@@ -23,7 +23,7 @@ lebih sulit basi.
 | 1 — skrip backup host | ✅ selesai | `293d74d` |
 | 2 — backend PHP | ✅ selesai (10/11) | `500b256`, `c26614c` |
 | 3 — Apache `mod_remoteip` + redirect HTTPS | ✅ selesai | vhost di luar repo; `Auth.php` menyusul |
-| 4 — migrasi DB + `Wa.php` | ⬜ belum | |
+| 4 — migrasi DB + `Wa.php` | ✅ selesai | `aa90a9d` |
 | 5 — frontend | ⬜ belum | |
 | 6 — konektor WA (butuh jendela restart) | ⬜ belum | |
 | 7 — hardening endpoint kiosk (#1 biometrik) | ⬜ belum | |

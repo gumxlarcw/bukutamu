@@ -243,7 +243,13 @@ class Wa extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         $this->require_auth();
         $this->require_role_in(['admin', 'superadmin']); // #11 — device unlink is admin-only
-        $this->db->where('id', 1)->update('wa_qr_state', ['command' => 'logout', 'ready' => 0, 'qr' => null, 'number' => null]);
+        // pair_phone & pairing_code WAJIB ikut dikosongkan. Kalau tidak, memutus untuk
+        // pindah ke nomor lain akan mewarisi niat pairing nomor lama dan QR yang muncul
+        // tidak akan pernah bisa discan. AUDIT_2026-08-01 #11.
+        $this->db->where('id', 1)->update('wa_qr_state', [
+            'command' => 'logout', 'ready' => 0, 'qr' => null, 'number' => null,
+            'pair_phone' => null, 'pairing_code' => null,
+        ]);
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Memutuskan koneksi… QR baru akan muncul sebentar lagi.']);
     }
 
@@ -294,10 +300,21 @@ class Wa extends Api_base {
         }
         if ($bids) $this->db->where_in('id', $bids)->update('wa_backfill', ['status' => 'done']);
         // Backfill GAGAL (getChatById/fetchMessages error) → naikkan attempts, retry di poll
-        // berikutnya; menyerah (done) setelah 4 percobaan agar tak loop selamanya.
+        // berikutnya; menyerah setelah 4 percobaan agar tak loop selamanya.
+        //
+        // Dulu baris yang menyerah ditandai 'done' — status yang IDENTIK dengan sukses,
+        // tanpa audit dan tanpa log error. Akibatnya jalur pemulihan pasca-outage sudah
+        // mati total sejak 2026-07-15 tanpa satu pun sinyal: 26 baris attempts=4 semuanya
+        // mengaku 'done'. Sekarang ditandai 'failed' dan diteriakkan. AUDIT #10.
         if ($bfail) {
             $this->db->where_in('id', $bfail)->set('attempts', 'attempts+1', false)->update('wa_backfill');
-            $this->db->where_in('id', $bfail)->where('attempts >=', 4)->update('wa_backfill', ['status' => 'done']);
+            $this->db->where_in('id', $bfail)->where('attempts >=', 4)
+                     ->update('wa_backfill', ['status' => 'failed']);
+            $gaveup = $this->db->affected_rows();
+            if ($gaveup > 0) {
+                log_message('error', "wa_backfill: {$gaveup} baris menyerah setelah 4 percobaan (wa_chat_id basi?)");
+                $this->audit_system('wa_backfill_failed', 'wa_backfill', null, ['count' => $gaveup]);
+            }
         }
         // Outbox GAGAL kirim (connector menyerah setelah MAX_SEND_ATTEMPTS) → naikkan attempts &
         // tandai 'failed' setelah N kali. Tanpa ini baris tetap 'pending' selamanya → terkirim BASI
@@ -705,9 +722,20 @@ class Wa extends Api_base {
         if ($v->status !== 'evaluasi_selesai') {
             $this->json_response(['success' => false, 'message' => 'Belum bisa diselesaikan — evaluasi belum diisi pengunjung.'], 409);
         }
-        $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', ['status' => 'selesai']);
-        $this->wa_closing_enqueue($id);
-        $this->audit('wa_close', 'visit', $id, ['from' => 'evaluasi_selesai', 'to' => 'selesai']);
+        // Transisi ATOMIK: status jadi bagian dari WHERE, jadi hanya SATU jalur yang
+        // menang antara penutupan manual operator di sini dan sapuan auto-close 3 jam.
+        // Dedup di wa_closing_enqueue() adalah baca-lalu-tulis (count_all_results
+        // kemudian insert) — dua pemanggil bersamaan bisa sama-sama melihat 0 dan
+        // sama-sama menyisipkan pesan penutup. Pola ini sama dengan klaim atomik
+        // yang sudah dipakai wa_sessions assign. AUDIT_2026-08-01 #12.
+        $this->db->where('id_kunjungan', $id)->where('status', 'evaluasi_selesai')
+                 ->update('tamdes_kunjungan', ['status' => 'selesai']);
+        if ($this->db->affected_rows() === 1) {
+            $this->wa_closing_enqueue($id);
+            $this->audit('wa_close', 'visit', $id, ['from' => 'evaluasi_selesai', 'to' => 'selesai']);
+        }
+        // Kalah balapan tetap dijawab sukses — kunjungannya memang sudah tertutup,
+        // dan jalur yang menang sudah mengantre pesan penutup + menulis audit.
         $this->json_response(['success' => true, 'data' => ['status' => 'selesai'], 'message' => 'Sesi ditutup & pesan penutup dikirim']);
     }
 
@@ -1161,6 +1189,17 @@ class Wa extends Api_base {
             if (array_key_exists('number', $in))       $upd['number']       = $in['number'];
             if (array_key_exists('qr', $in))           $upd['qr']           = $in['qr']; // data-URL, or null to clear
             if (array_key_exists('pairing_code', $in)) $upd['pairing_code'] = $in['pairing_code'];
+            // Tertaut = niat pairing selesai. Tanpa membersihkan di sini, pair_phone
+            // bertahan SELAMANYA (pair() satu-satunya penulisnya, tidak ada yang
+            // menghapus), lalu dikembalikan ke konektor tiap poll — sehingga saat
+            // "Putuskan & Ganti Nomor" ke nomor LAIN, konektor langsung meminta
+            // pairing code untuk nomor LAMA dan WhatsApp Web pindah ke mode
+            // ALT_DEVICE_LINKING. Admin lalu memandangi QR yang tidak akan pernah
+            // berhasil, di tengah outage. AUDIT_2026-08-01 #11.
+            if (!empty($in['ready'])) {
+                $upd['pair_phone']   = null;
+                $upd['pairing_code'] = null;
+            }
             $this->db->where('id', 1)->update('wa_qr_state', $upd);
             // Balikkan pair_phone ke connector → kalau ada, connector minta pairing code utk nomor itu.
             $st = $this->db->select('pair_phone')->get_where('wa_qr_state', ['id' => 1])->row();
@@ -1298,7 +1337,12 @@ class Wa extends Api_base {
         )->result();
         foreach ($stale_done as $v) {
             $idk = (int) $v->id_kunjungan;
-            $this->db->where('id_kunjungan', $idk)->update('tamdes_kunjungan', ['status' => 'selesai']);
+            // Transisi ATOMIK — lihat catatan di jalur penutupan manual (#12). Baris
+            // ini dipilih oleh query di atas, tapi operator bisa menutupnya manual
+            // di sela-sela; hanya pemenang yang mengantre pesan penutup.
+            $this->db->where('id_kunjungan', $idk)->where('status', 'evaluasi_selesai')
+                     ->update('tamdes_kunjungan', ['status' => 'selesai']);
+            if ($this->db->affected_rows() !== 1) continue;
             $this->wa_closing_enqueue($idk);
             $this->audit_system('auto_close_wa_done', 'visit', $idk, ['from' => 'evaluasi_selesai', 'to' => 'selesai']);
         }
