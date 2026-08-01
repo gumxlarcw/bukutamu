@@ -78,7 +78,21 @@ class Evaluations extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
-        $this->require_rate_limit('eval/pending', 60); // #18 — throttle id-enumeration on this no-auth endpoint
+
+        // GERBANG. Endpoint ini mengembalikan NAMA + INSTANSI + layanan + jam tiap
+        // tamu yang sedang menunggu evaluasi, dan sebelum ini terbuka penuh ke
+        // internet tanpa autentikasi: 11 orang terpapar selama 18 hari. Kombinasi
+        // nama + instansi + layanan mengungkap siapa berkonsultasi apa dan kapan.
+        // Lihat docs/AUDIT_PDP_2026-08-01.md temuan #1.
+        //
+        // require_auth() aman untuk alur yang BERJALAN: satu-satunya konsumen
+        // adalah EvaluationStandbyPage (/kiosk/evaluasi), dan sejak 2026-07-31
+        // evaluasi dibuka lewat tombol "Buka Evaluasi" per-kunjungan di panel
+        // admin (tab baru, layar ke-2 menghadap tamu) — tab itu membawa cookie
+        // admin, jadi gerbang ini lolos. Tablet standby lobi sudah tidak dipakai.
+        $this->require_auth();
+
+        $this->require_rate_limit('eval/pending', 60); // #18 — throttle id-enumeration
 
         $candidates = $this->db
             ->select('k.id_kunjungan, k.jenis_layanan, k.nomor_antrian, k.date_visit, b.nama, b.nama_instansi')
