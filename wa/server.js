@@ -113,19 +113,34 @@ let lastPairPhone = null; // nomor yang terakhir diminta pairing code-nya (hinda
 // Readiness watchdog: kalau 'ready' tak tercapai dalam batas waktu (init nge-hang / stall pasca-QR
 // yang TIDAK menolak promise initialize), exit(1) → PM2 restart bersih. Ini menutup SEMUA jalur
 // silent-hang menuju "tak pernah ready". Di-clear saat 'ready'.
+// NUANSA QR (insiden 2026-07-15): saat sesi hilang (hard-crash host → chromium wipe IndexedDB),
+// konektor menunggu MANUSIA scan QR — itu bukan hang. Event 'qr'/'code' yang terus ter-emit adalah
+// bukti hidup, jadi tiap event me-re-arm watchdog dengan deadline longgar (qrDeadlineMs) alih-alih
+// exit(1) tiap 180s (dulu: loop restart ~3 menit tanpa henti, 132× dalam 6 jam, QR ikut ter-reset).
+// Kalau chromium benar-benar wedge (qr berhenti ter-emit, ready tak datang), deadline longgar
+// tetap memulihkan lewat restart. 'authenticated' (QR discan) mengembalikan deadline ketat.
 const READY_DEADLINE_MS = cfg.readyDeadlineMs || 180000;
+const QR_DEADLINE_MS = cfg.qrDeadlineMs || 1800000; // 30 menit per QR/kode segar
 let readyWatchdog = null;
-function armReadyWatchdog() {
+let watchdogPhase = null; // 'boot' | 'qr' | 'auth' — log hanya saat fase berganti (qr tiap ~20s = spam)
+function armReadyWatchdog(ms, phase) {
+  ms = ms || READY_DEADLINE_MS; phase = phase || 'boot';
+  if (watchdogPhase !== phase) {
+    watchdogPhase = phase;
+    if (phase === 'qr') log('menunggu scan QR — watchdog dilonggarkan ke', ms, 'ms (proses TIDAK di-restart selama QR terus di-refresh)');
+    if (phase === 'auth') log('QR discan (authenticated) — watchdog kembali ketat', ms, 'ms sampai ready');
+  }
   if (readyWatchdog) clearTimeout(readyWatchdog);
   readyWatchdog = setTimeout(() => {
-    log('FATAL: tidak mencapai ready dalam', READY_DEADLINE_MS, 'ms — exit(1) untuk restart PM2');
+    log('FATAL: tidak mencapai ready dalam', ms, 'ms (fase ' + phase + ') — exit(1) untuk restart PM2');
     process.exit(1);
-  }, READY_DEADLINE_MS);
+  }, ms);
   if (readyWatchdog.unref) readyWatchdog.unref();
 }
 armReadyWatchdog();
 
 client.on('qr', async (qr) => {
+  armReadyWatchdog(QR_DEADLINE_MS, 'qr'); // QR segar = bukti hidup — jangan restart selagi menunggu scan
   log('QR baru — buka halaman admin "Layanan Online" untuk scan (ASCII di bawah sebagai cadangan):');
   qrcode.generate(qr, { small: true });
   try {
@@ -147,7 +162,10 @@ client.on('qr', async (qr) => {
   } catch (e) { log('qr dataurl error', e.message); }
 });
 // Kode pairing di-refresh wwebjs tiap ~3 menit → dorong ke halaman admin.
-client.on('code', (code) => { log('pairing code refreshed = ' + code); pushQrState({ pairing_code: code }); });
+client.on('code', (code) => { armReadyWatchdog(QR_DEADLINE_MS, 'qr'); log('pairing code refreshed = ' + code); pushQrState({ pairing_code: code }); });
+// QR discan / sesi tervalidasi → 'ready' harus menyusul cepat; kembalikan deadline ketat supaya
+// stall pasca-auth tetap dipulihkan restart (aman: sesi baru sudah tersimpan, reconnect tanpa QR).
+client.on('authenticated', () => { armReadyWatchdog(READY_DEADLINE_MS, 'auth'); });
 client.on('ready', () => {
   if (readyWatchdog) { clearTimeout(readyWatchdog); readyWatchdog = null; } // sehat → batalkan watchdog
   ready = true;
@@ -542,7 +560,8 @@ const isTransientNav = (e) => {
   const m = (e && e.message) || '';
   return (e && e.name === 'TimeoutError') ||
     /net::ERR_(NETWORK_CHANGED|CONNECTION_(RESET|REFUSED|CLOSED)|INTERNET_DISCONNECTED|NETWORK_IO_SUSPENDED|NAME_NOT_RESOLVED|TIMED_OUT)/.test(m) ||
-    /Target closed|Execution context was destroyed|Navigation failed|Protocol error/.test(m);
+    /Target closed|Execution context was destroyed|Navigation failed|Protocol error/.test(m) ||
+    /browser is already running/i.test(m); // lock profil dari chromium sisa attempt sebelumnya — pulih setelah reap
 };
 async function connect() {
   for (let attempt = 1; attempt <= INIT_MAX_RETRY; attempt++) {
@@ -552,6 +571,10 @@ async function connect() {
       if (!isTransientNav(e) || attempt === INIT_MAX_RETRY) {
         log('initialize tak terpulihkan — exit(1) untuk restart PM2'); process.exit(1);
       }
+      // initialize yang gagal pasca-launch MENINGGALKAN chromium hidup memegang SingletonLock profil
+      // → tanpa reap, attempt berikutnya pasti "browser is already running" (insiden 2026-07-15:
+      // retry 5x efektif cuma 2x lalu exit). Bunuh dulu supaya retry benar-benar bersih.
+      killBrowserSync();
       const wait = Math.min(INIT_BACKOFF_MS * Math.pow(2, attempt - 1), 60000);
       log('retry initialize dalam ' + wait + ' ms'); await sleep(wait);
     }
