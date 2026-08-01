@@ -249,7 +249,15 @@ export default function ConsultationFormPage({ visitIdProp, onClose }: { visitId
 
       {/* Save button */}
       <div className="flex justify-end gap-3 pb-6">
-        <Button variant="outline" onClick={() => navigate('/admin/consultations')}>
+        {/* goClose, BUKAN navigate: dalam mode modal (dibuka dari inbox Layanan
+            Online) navigate meng-unmount inbox — daftar `chats` adalah state
+            komponen biasa tanpa persistensi, dan tiap ChatPopup memegang teks
+            yang belum terkirim plus berkas "Kirim Data" yang sudah dipilih.
+            Semuanya hilang, dan closeProses (beserta invalidasi ['wa-inbox'])
+            tidak pernah jalan. Ini SATU-SATUNYA jalur tutup yang melewatinya;
+            simpan, panah kembali, X, Esc, dan klik overlay semuanya sudah benar.
+            AUDIT_2026-08-01 #20. */}
+        <Button variant="outline" onClick={goClose}>
           Batal
         </Button>
         <Button

@@ -8,6 +8,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useInactivityTimeout } from '@/hooks/useInactivityTimeout'
 import { STORAGE_KEY } from '@/components/kiosk/VisitorForm'
 import type { GuestFormData } from '@/types/guest'
+import { getApiErrorMessage } from '@/lib/apiError'
 
 export default function FaceCapturePage() {
   const navigate = useNavigate()
@@ -43,7 +44,11 @@ export default function FaceCapturePage() {
       navigate(`/kiosk/ticket/${visitId}`)
     },
     onError: (err: Error) => {
-      setSubmitError(err.message || 'Terjadi kesalahan. Silakan coba lagi.')
+      // err.message dari axios berbahasa Inggris dan teknis ("Request failed with
+      // status code 500") — persis di detik pengunjung butuh arahan. Backend sudah
+      // mengirim pesan Indonesia di amplop {success,data,message}; ambil itu.
+      // WaCheckInPage sudah melakukannya. AUDIT_2026-08-01 #24e.
+      setSubmitError(getApiErrorMessage(err, 'Terjadi kesalahan. Silakan coba lagi.'))
     },
   })
 

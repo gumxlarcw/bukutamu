@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/apiError'
+import { useAuth } from '@/providers/AuthProvider'
 import { deliveriesApi } from '@/api/deliveries'
 import type { DataDeliveryDetail, DeliveryStatus, VerifDecision } from '@/types/delivery'
 import { cn } from '@/lib/utils'
@@ -270,6 +271,13 @@ function DeliveryCard({
 type ActionState = { id: number; decision: 'revisi' | 'setuju_catatan'; note: string } | null
 
 export default function VerifikasiPage() {
+  // Backend: require_role_in(['verifikator','admin','superadmin']) di Deliveries::verify.
+  // showActions dulu di-hardcode true, jadi petugas_pst/operator melihat tombol
+  // Setuju/Revisi yang tampak hidup lalu balas 403. RequireRole tidak bisa
+  // menyatakan ini (verifikator level 1, sama dengan petugas_pst), jadi dipakai
+  // daftar peran eksplisit. AUDIT_2026-08-01 #24b.
+  const { user } = useAuth()
+  const canDecide = ['verifikator', 'admin', 'superadmin'].includes(user?.role ?? '')
   const qc = useQueryClient()
   const [action, setAction] = useState<ActionState>(null)
 
@@ -347,7 +355,7 @@ export default function VerifikasiPage() {
               <DeliveryCard
                 key={item.id}
                 item={item}
-                showActions={true}
+                showActions={canDecide}
                 actionOpen={action?.id === item.id}
                 actionDecision={action?.id === item.id ? action.decision : null}
                 actionNote={action?.id === item.id ? action.note : ''}

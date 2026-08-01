@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { guestsApi } from '@/api/guests'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
@@ -42,9 +42,17 @@ export default function GuestAddPage() {
     formData.nama_instansi.trim() !== '' &&
     formData.pemanfaatan > 0
 
+  const qc = useQueryClient()
+
   const createMutation = useMutation({
     mutationFn: () => guestsApi.create(formData),
     onSuccess: () => {
+      // Tanpa invalidasi, daftar tujuan menampilkan snapshot SEBELUM create.
+      // QueryProvider memasang staleTime 30 detik DAN refetchOnWindowFocus false,
+      // jadi begitu daftar ter-render basi tidak ada yang menjadwalkan refetch —
+      // salah terus sampai operator ganti filter/halaman atau reload.
+      // AUDIT_2026-08-01 #19.
+      qc.invalidateQueries({ queryKey: ['guests'] })
       toast.success('Tamu berhasil ditambahkan')
       navigate('/admin/guests')
     },

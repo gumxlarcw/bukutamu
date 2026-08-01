@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { guestsApi } from '@/api/guests'
 import type { Guest } from '@/types/guest'
@@ -32,6 +33,7 @@ function parseCsv(text: string): ParsedRow[] {
 
 export default function GuestImportPage() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const [rows, setRows] = useState<ParsedRow[]>([])
   const [fileName, setFileName] = useState('')
@@ -70,6 +72,10 @@ export default function GuestImportPage() {
     setResults({ success, failed })
     setImporting(false)
     setDone(true)
+    // Import massal adalah create-flow terbesar di aplikasi ini — tanpa invalidasi,
+    // Daftar Tamu tetap menampilkan jumlah lama sampai operator ganti filter.
+    // AUDIT_2026-08-01 #19.
+    if (success > 0) qc.invalidateQueries({ queryKey: ['guests'] })
     if (success > 0) toast.success(`${success} tamu berhasil diimport`)
     if (failed > 0) toast.error(`${failed} tamu gagal diimport`)
   }

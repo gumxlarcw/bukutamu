@@ -5,12 +5,22 @@ import { kioskApi } from '@/api/kiosk'
 import { QueueTicket } from '@/components/kiosk/QueueTicket'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { usePrint } from '@/hooks/usePrint'
+import { useInactivityTimeout } from '@/hooks/useInactivityTimeout'
 import { Home } from 'lucide-react'
 
 export default function TicketPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { printTicket, isPrinting } = usePrint()
+
+  // Satu-satunya halaman kiosk dalam grup KioskLayout yang TIDAK punya timeout —
+  // tujuh saudaranya semua memasangnya. Padahal salinannya sendiri berbunyi
+  // "Silakan tunggu panggilan", yang justru mengundang pengunjung pergi, sehingga
+  // kiosk terparkir menampilkan nama lengkap + nomor antrian pengunjung sebelumnya
+  // tanpa batas. 45 detik, lebih pendek dari 120 detik di halaman lain: layar ini
+  // memuat data pribadi dan pengunjung hanya perlu membaca satu nomor.
+  // AUDIT_2026-08-01 #16.
+  useInactivityTimeout(() => navigate('/kiosk'), 45000)
 
   const { data: ticket, isLoading, isError } = useQuery({
     queryKey: ['ticket', id],

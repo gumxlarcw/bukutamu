@@ -160,6 +160,21 @@ class Dtsen extends Api_base {
             $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
             if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+                // Soft-correct hanya masuk akal saat kunjungan BELUM di 'menunggu_evaluasi'
+                // (mis. proses -> selesai): itu memang gerbang yang dirancang. Kalau sudah
+                // DI SANA, koreksi ini menghasilkan update tanpa perubahan yang tetap
+                // dijawab 200 "Status berhasil diupdate" — tombol yang tidak melakukan
+                // apa-apa tapi memunculkan toast hijau. Jejaknya di audit id 470-473:
+                // empat no-op menunggu_evaluasi -> menunggu_evaluasi dalam 8 detik.
+                // Katakan alasannya, jangan berpura-pura berhasil. AUDIT_2026-08-01 #17.
+                if ($visit->status === 'menunggu_evaluasi') {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Kunjungan ini menunggu evaluasi pengunjung. Gunakan "Buka Evaluasi" '
+                                   . 'untuk membuka form di layar yang menghadap tamu; status akan otomatis '
+                                   . 'menjadi selesai setelah evaluasi dikirim.',
+                    ], 409);
+                }
                 $status = 'menunggu_evaluasi';
             }
         }

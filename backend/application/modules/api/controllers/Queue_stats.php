@@ -103,10 +103,14 @@ class Queue_stats extends Api_base {
                                 ->where('YEAR(date_visit)', $tahun)
                                 ->group_by('created_by')
                                 ->get('tamdes_kunjungan')->result();
-        $sources_map = ['Kiosk' => 0, 'Manual (Admin)' => 0, 'WhatsApp' => 0, 'Lainnya' => 0];
+        // 'wa_kiosk' = kunjungan WA yang dipromosikan ke antrian fisik lewat tombol
+        // "Sudah Daftar via WhatsApp" di kiosk. Tanpa ember sendiri ia jatuh ke
+        // 'Lainnya' dan menghilang dari laporan sumber. AUDIT_2026-08-01 #24f.
+        $sources_map = ['Kiosk' => 0, 'WhatsApp (Kiosk)' => 0, 'Manual (Admin)' => 0, 'WhatsApp' => 0, 'Lainnya' => 0];
         foreach ($source_rows as $r) {
             $cb = (string) $r->created_by;
-            if ($cb === 'kiosk')                 $sources_map['Kiosk']           += (int) $r->jumlah;
+            if ($cb === 'kiosk')                 $sources_map['Kiosk']            += (int) $r->jumlah;
+            elseif ($cb === 'wa_kiosk')          $sources_map['WhatsApp (Kiosk)'] += (int) $r->jumlah;
             elseif ($cb === 'whatsapp')          $sources_map['WhatsApp']        += (int) $r->jumlah;
             elseif (strpos($cb, 'admin:') === 0) $sources_map['Manual (Admin)'] += (int) $r->jumlah;
             else                                  $sources_map['Lainnya']        += (int) $r->jumlah;

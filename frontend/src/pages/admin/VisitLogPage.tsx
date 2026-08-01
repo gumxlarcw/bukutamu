@@ -375,10 +375,21 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
   // - 'proses'             → tergantung layanan: SKD → 'menunggu_evaluasi', lainnya → 'selesai'
   // - 'menunggu_evaluasi'  → 'selesai' (admin only — biasanya transit otomatis dari tablet eval)
   // - 'selesai'/null       → tidak ada next
+  // Peran bypass = admin/superadmin (cermin daftar bypass require_layanan_role di
+  // Api_base). Hanya mereka yang boleh memaksa 'selesai' dari 'menunggu_evaluasi'.
+  const isBypassRole = role === 'admin' || role === 'superadmin'
+
   const nextStatus: VisitStatus | undefined =
     visit.status === 'antri'             ? 'proses' :
     visit.status === 'proses'            ? nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)) :
-    visit.status === 'menunggu_evaluasi' ? 'selesai' :
+    // 'menunggu_evaluasi' → 'selesai' HANYA untuk peran bypass. Untuk peran lain
+    // backend melakukan soft-correct 'selesai' kembali ke 'menunggu_evaluasi' lalu
+    // TETAP menjawab 200 "Status berhasil diupdate" — tombolnya tidak melakukan
+    // apa-apa tapi memunculkan toast hijau. Jejaknya ada di audit id 470-473: user
+    // irma menekannya empat kali dalam 8 detik, semuanya
+    // menunggu_evaluasi → menunggu_evaluasi. Jalan keluar yang benar adalah
+    // "Buka Evaluasi" di bawah. AUDIT_2026-08-01 #17.
+    visit.status === 'menunggu_evaluasi' ? (isBypassRole ? 'selesai' : undefined) :
     undefined
 
   // Popup state: tampil saat petugas klik Selesai tapi keterangan kosong (layanan resepsionis).
@@ -412,6 +423,12 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
           <p className="font-medium">
             {visit.created_by === 'kiosk' ? (
               <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Kiosk</span>
+            ) : visit.created_by === 'wa_kiosk' ? (
+              /* Promosi WA -> antrian fisik. Tanpa cabang ini chip-nya abu-abu
+                 bertuliskan "wa_kiosk" mentah. AUDIT_2026-08-01 #24f. */
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">WhatsApp → Kiosk</span>
+            ) : visit.created_by === 'whatsapp' ? (
+              <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 text-xs font-medium">WhatsApp</span>
             ) : visit.created_by?.startsWith('admin:') ? (
               <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Admin ({visit.created_by.replace('admin:', '')})</span>
             ) : (
@@ -474,6 +491,26 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
             Read-only: layanan visit ini di luar kewenangan role Anda. Hanya petugas
             yang berwenang yang bisa mengubah data, status, atau ringkasan.
           </span>
+        </div>
+      )}
+
+      {/* Kunjungan yang menunggu evaluasi: aksi yang benar adalah membuka form
+          evaluasi di layar kedua yang menghadap tamu (sejak perubahan dua-layar
+          2026-07-31), bukan memaksa status. Cermin ConsultationQueuePage:195. */}
+      {visit.status === 'menunggu_evaluasi' && canEdit && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground">Menunggu evaluasi pengunjung:</span>
+          <a
+            href={`/kiosk/evaluasi/${visit.id_kunjungan}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Buka form evaluasi untuk pengunjung INI di tab baru. Pengunjung mengonfirmasi identitasnya di layar sebelum mengisi."
+          >
+            <Button size="sm" variant="outline" className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 border-amber-300">
+              <ClipboardList className="w-3.5 h-3.5 mr-1" />
+              Buka Evaluasi
+            </Button>
+          </a>
         </div>
       )}
 

@@ -358,7 +358,12 @@ export default function EvaluationSummaryPage() {
             exportCsv('evaluasi-ikm', data.indicators.map(ind => ({
               indikator_id: ind.indikator_id,
               indikator: data.labels[ind.indikator_id] ?? `Indikator ${ind.indikator_id}`,
-              avg_kepentingan: Number(ind.avg_kepentingan).toFixed(2),
+              // Kolom `kepentingan` 208/208 NULL — tidak pernah dikumpulkan sejak
+              // indikator kepentingan di-deprecate. Number(null).toFixed(2) mencetak
+              // "0.00", yaitu MENGARANG angka dalam laporan IKM resmi. Kosongkan saja;
+              // sel kosong jujur, "0.00" tidak. Menghapus kolomnya sama sekali mengubah
+              // format laporan resmi, jadi itu keputusan pemilik. AUDIT_2026-08-01 #24g.
+              avg_kepentingan: ind.avg_kepentingan == null ? '' : Number(ind.avg_kepentingan).toFixed(2),
               avg_kepuasan: Number(ind.avg_kepuasan).toFixed(2),
               responden: ind.responden,
             })))

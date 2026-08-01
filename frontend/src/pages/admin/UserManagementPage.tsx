@@ -113,12 +113,12 @@ export default function UserManagementPage() {
                 <p className="font-semibold text-sm">{u.nama} <span className="text-muted-foreground font-normal">@{u.username}</span></p>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${ROLE_COLORS[u.role]}`}>{ROLE_LABELS[u.role]}</span>
-                  {!u.active && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-600">Nonaktif</span>}
+                  {Number(u.active) !== 1 && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-600">Nonaktif</span>}
                   {u.last_login && <span className="text-xs text-muted-foreground">Login terakhir: {new Date(u.last_login).toLocaleDateString('id-ID')}</span>}
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
-                <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditForm({ nama: u.nama, notel: u.notel ?? '', role: u.role, password: '', active: !!u.active }) }}>
+                <Button size="sm" variant="outline" onClick={() => { setEditUser(u); setEditForm({ nama: u.nama, notel: u.notel ?? '', role: u.role, password: '', active: Number(u.active) === 1 }) }}>
                   <Pencil className="w-3.5 h-3.5" />
                 </Button>
                 <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteId(u.id)}>

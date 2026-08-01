@@ -96,11 +96,11 @@ function App() {
                   <Route path="/admin/dtsen/:id/form" element={<DtsenFormPage />} />
                   <Route path="/admin/visits" element={<VisitLogPage />} />
                   <Route path="/admin/manual-entry" element={<ManualEntryPage />} />
-                  <Route path="/admin/evaluations" element={<EvaluationSummaryPage />} />
-                  <Route path="/admin/responden" element={<RespondenTahunanPage />} />
+                  <Route path="/admin/evaluations" element={<RequireRole min="admin"><EvaluationSummaryPage /></RequireRole>} />
+                  <Route path="/admin/responden" element={<RequireRole min="admin"><RespondenTahunanPage /></RequireRole>} />
                   <Route path="/admin/audit" element={<RequireRole min="admin"><AuditLogPage /></RequireRole>} />
                   <Route path="/admin/users" element={<RequireRole min="superadmin"><UserManagementPage /></RequireRole>} />
-                  <Route path="/admin/queue-stats" element={<QueueStatsPage />} />
+                  <Route path="/admin/queue-stats" element={<RequireRole min="admin"><QueueStatsPage /></RequireRole>} />
                   <Route path="/admin/tentang" element={<AboutPage />} />
                   <Route path="/admin/verifikasi" element={<VerifikasiPage />} />
                 </Route>

@@ -1,6 +1,7 @@
 import { Printer, Clock, User, LayoutGrid } from 'lucide-react'
 import { useEffect, useState, useRef } from 'react'
 import type { TicketData } from '@/api/kiosk'
+import { parseLayanan } from '@/types/visit'
 
 interface QueueTicketProps {
   ticket: TicketData
@@ -104,7 +105,10 @@ export function QueueTicket({ ticket, onPrint, isPrinting }: QueueTicketProps) {
           <LayoutGrid className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
           <div className="min-w-0">
             <p className="text-[10px] text-gray-500 font-medium uppercase">Layanan</p>
-            <p className="font-semibold text-gray-800 text-xs break-words leading-snug">{ticket.jenis_layanan}</p>
+            {/* jenis_layanan datang sebagai JSON string, mis. '["Perpustakaan"]'.
+                Dirender mentah, setiap pengunjung kiosk melihat tanda kurung dan
+                tanda kutip di layar konfirmasi. AUDIT_2026-08-01 #15. */}
+            <p className="font-semibold text-gray-800 text-xs break-words leading-snug">{parseLayanan(ticket.jenis_layanan).join(', ')}</p>
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { guestsApi } from '@/api/guests'
 import { visitsApi } from '@/api/visits'
@@ -16,9 +16,13 @@ export default function ManualEntryPage() {
   const [layananLainnya, setLayananLainnya] = useState('')
   const [selectedSarana, setSelectedSarana] = useState<number[]>([])
   const [saranaLainnya, setSaranaLainnya] = useState('')
+  const qc = useQueryClient()
 
   const { data: guestsData, isLoading: guestsLoading } = useQuery({
-    queryKey: ['guests-all'],
+    // ['guests','all'] BUKAN ['guests-all']: react-query mencocokkan queryKey per
+    // ELEMEN, jadi invalidateQueries({queryKey:['guests']}) tidak akan pernah
+    // menjangkau string tunggal 'guests-all'. AUDIT_2026-08-01 #19.
+    queryKey: ['guests', 'all'],
     queryFn: () => guestsApi.list({ limit: 1000 }).then(r => r.data.data),
   })
 
@@ -34,6 +38,10 @@ export default function ManualEntryPage() {
         sarana_lainnya: saranaLainnya || undefined,
       }),
     onSuccess: () => {
+      // Lihat catatan di GuestAddPage — tanpa ini Daftar Kunjungan menampilkan
+      // snapshot pra-create sampai operator mengubah filter. Konsekuensi nyata:
+      // entri manual ganda. AUDIT_2026-08-01 #19.
+      qc.invalidateQueries({ queryKey: ['visits'] })
       toast.success('Kunjungan manual berhasil ditambahkan')
       navigate('/admin/visits')
     },

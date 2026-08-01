@@ -34,6 +34,17 @@ export default function WaCheckInPage() {
   } | null>(null)
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  // Batas percobaan verifikasi wajah. Ternary isPending di render menukar <div>
+  // dengan Fragment pada posisi anak yang SAMA, jadi React meng-unmount FaceCapture
+  // dan memasang instance BARU tiap kali mutasi selesai — state `submitted` di
+  // dalamnya tidak bisa bertahan dan efek auto-kirim menyala lagi begitu
+  // stableDescriptor siap. Siklusnya ~2,1 detik dan wa_promote tidak punya rate
+  // limit. Timeout inaktivitas 120 detik memang membatasinya (~40 POST) dan tombol
+  // "Ganti Nomor" tetap bisa ditekan, jadi bukan jebakan permanen — tapi mengulang
+  // tanpa henti juga bukan yang diinginkan pengunjung. Auto-retry DIPERTAHANKAN
+  // (berguna untuk kasus umum), hanya dibatasi. AUDIT_2026-08-01 #18.
+  const [faceAttempts, setFaceAttempts] = useState(0)
+  const MAX_FACE_ATTEMPTS = 2
   const [promoteResult, setPromoteResult] = useState<{
     mode: 'queue' | 'resepsionis'
     id_kunjungan: number
@@ -77,7 +88,10 @@ export default function WaCheckInPage() {
         setPromoteResult({ mode: 'resepsionis', id_kunjungan, nomor_antrian })
       }
     },
-    onError: (err) => setErrorMsg(errText(err, 'Gagal menyimpan check-in. Silakan coba lagi.')),
+    onError: (err) => {
+      setFaceAttempts(a => a + 1)
+      setErrorMsg(errText(err, 'Gagal menyimpan check-in. Silakan coba lagi.'))
+    },
   })
 
   function submitPhone(e: FormEvent) {
@@ -89,6 +103,7 @@ export default function WaCheckInPage() {
   }
 
   function resetToPhone() {
+    setFaceAttempts(0)
     setMatched(null)
     setConsentAccepted(false)
     setErrorMsg(null)
@@ -143,11 +158,25 @@ export default function WaCheckInPage() {
             </div>
           ) : (
             <>
-              {(verify || consentAccepted) && (
+              {(verify || consentAccepted) && faceAttempts < MAX_FACE_ATTEMPTS && (
                 <FaceCapture
                   scanOnly={verify}
                   onConfirm={(photo, descriptor) => { setErrorMsg(null); promoteMutation.mutate({ photo, descriptor }) }}
                 />
+              )}
+              {faceAttempts >= MAX_FACE_ATTEMPTS && (
+                <div className="mt-4 flex flex-col items-center gap-3">
+                  <p className="text-center text-sm text-gray-600 max-w-sm">
+                    Verifikasi wajah belum berhasil setelah {MAX_FACE_ATTEMPTS} percobaan.
+                    Silakan coba lagi, atau hubungi petugas Resepsionis untuk dibantu.
+                  </p>
+                  <button
+                    onClick={() => { setFaceAttempts(0); setErrorMsg(null) }}
+                    className="px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-base font-bold shadow-lg transition-all active:scale-95"
+                  >
+                    Coba Lagi
+                  </button>
+                </div>
               )}
               {errorMsg && (
                 <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-center text-sm overflow-hidden">

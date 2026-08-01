@@ -6,6 +6,7 @@ import { FaceRecognize } from '@/components/kiosk/FaceRecognize'
 import { GuestPickerModal } from '@/components/kiosk/GuestPickerModal'
 import { ProfileGapsModal } from '@/components/kiosk/ProfileGapsModal'
 import { useInactivityTimeout } from '@/hooks/useInactivityTimeout'
+import { getApiErrorMessage } from '@/lib/apiError'
 
 interface MatchedGuest {
   id: number
@@ -66,7 +67,11 @@ export default function FaceRecognizePage() {
       navigate(`/kiosk/ticket/${res.data.data.id_kunjungan}`)
     },
     onError: (err: Error) => {
-      setSubmitError(err.message || 'Terjadi kesalahan. Silakan coba lagi.')
+      // err.message dari axios berbahasa Inggris dan teknis ("Request failed with
+      // status code 500") — persis di detik pengunjung butuh arahan. Backend sudah
+      // mengirim pesan Indonesia di amplop {success,data,message}; ambil itu.
+      // WaCheckInPage sudah melakukannya. AUDIT_2026-08-01 #24e.
+      setSubmitError(getApiErrorMessage(err, 'Terjadi kesalahan. Silakan coba lagi.'))
     },
   })
 

@@ -8,7 +8,12 @@ export interface AdminUser {
   nama: string
   role: Exclude<UserRole, 'resepsionis' | 'petugas_pst'>
   notel: string | null
-  active: number
+  // CI3 mysqli mengembalikan angka sebagai STRING ("0"/"1"). Tipe `number` di sini
+  // adalah kebohongan yang membuat tsc TIDAK bisa menangkap `!u.active` — dan `!"0"`
+  // bernilai false, sehingga badge "Nonaktif" tidak pernah muncul dan edit berikutnya
+  // diam-diam mengaktifkan lagi akun yang baru dinonaktifkan.
+  // Selalu bandingkan lewat Number(). Lihat docs/AUDIT_2026-08-01.md temuan #5.
+  active: number | string
   last_login: string | null
   created_at: string
 }
