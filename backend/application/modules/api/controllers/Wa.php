@@ -372,6 +372,41 @@ class Wa extends Api_base {
             if ($dup) $this->json_response(['success' => true, 'data' => ['stored' => false, 'id' => (int) $dup->id], 'message' => 'duplicate']);
         }
 
+        // Cadangan dedup untuk pesan MASUK yang datang TANPA wa_msg_id.
+        //
+        // Saat reconnect, wwebjs memutar ulang pesan yang tertahan, dan sebagian
+        // event tidak membawa msg.id._serialized sama sekali — konektor sudah
+        // mengirim apa yang ada (server.js:302), jadi ini bukan bug konektor.
+        // Akibatnya dedup-id di atas terlewat total: 7 dari 88 baris masuk (8%)
+        // tersimpan tanpa id. Pada restart 2026-08-01 satu pesan yang sama masuk
+        // TIGA kali dalam 1 detik dan mesin intake membalas ketiganya — satu orang
+        // sungguhan menerima menu sambutan plus dua prompt kembar.
+        //
+        // Jendelanya sengaja SANGAT pendek (15 detik). Replay terjadi dalam
+        // hitungan milidetik; manusia yang mengirim teks identik dua kali dalam
+        // 15 detik pun sudah ditindak oleh balasan pertama, jadi menjatuhkan yang
+        // kedua justru benar. Jendela panjang (mis. 60 detik) BERBAHAYA: pengunjung
+        // sah bisa membalas "1" lalu "1" lagi di langkah wizard berikutnya, dan
+        // membuangnya berarti menelan pesan pelanggan — lebih buruk daripada
+        // prompt kembar.
+        //
+        // Teks saja, sejajar dengan dedup-konten untuk pesan keluar di bawah:
+        // untuk media, body adalah caption dan tidak cukup unik.
+        // Lihat docs/AUDIT_2026-08-01.md (temuan tambahan, ditemukan saat Batch 6).
+        $body_in = isset($in['body']) ? (string) $in['body'] : '';
+        if ($wa_msg_id === '' && !$from_me && ($in['type'] ?? 'text') === 'text' && trim($body_in) !== '') {
+            $dup = $this->db->select('id')
+                            ->where('phone_norm', $phone_norm)
+                            ->where('direction', 'in')
+                            ->where('body', $body_in)
+                            ->where('created_at >=', date('Y-m-d H:i:s', time() - 15))
+                            ->limit(1)->get('wa_messages')->row();
+            if ($dup) {
+                log_message('error', "wa chat_ingest: replay tanpa wa_msg_id dari {$phone_norm} — dibuang (kembar dari id {$dup->id})");
+                $this->json_response(['success' => true, 'data' => ['stored' => false, 'id' => (int) $dup->id], 'message' => 'duplicate (replay tanpa id)']);
+            }
+        }
+
         $type = in_array(($in['type'] ?? 'text'), ['text', 'image', 'document', 'audio', 'video', 'sticker', 'location', 'contact'], true) ? $in['type'] : 'text';
         $body = isset($in['body']) ? mb_substr((string) $in['body'], 0, 8000) : null;
 
