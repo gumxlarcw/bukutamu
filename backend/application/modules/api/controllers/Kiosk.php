@@ -10,10 +10,18 @@ class Kiosk extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        // Rate-limit this enumeration endpoint. Normal kiosk fetches once per
-        // page-load → way under 30/min. Scrapers get 429'd after a few bursts.
-        // Not a hard perimeter (only Apache-level IP allowlist is); just slows
-        // mass extraction of names + face descriptors.
+        // GERBANG UTAMA. Endpoint ini mengembalikan nama + descriptor wajah 128
+        // dimensi SELURUH tamu terdaftar; sebelum ini siapa pun di internet bisa
+        // mengunduhnya dalam satu permintaan anonim (AUDIT_2026-08-01 #1).
+        // Token perangkat diterbitkan sekali per mesin lewat /admin/kiosk-aktivasi.
+        //
+        // Ditaruh SEBELUM rate-limit dengan sengaja: pemanggil tanpa token ditolak
+        // tanpa menulis satu baris pun ke tamdes_rate_limit. Kiosk asli hanya
+        // mengambil sekali per muat halaman, jadi tidak akan pernah terkena batas.
+        $this->require_kiosk_token('kiosk-device', 0);
+
+        // Rate-limit tetap dipertahankan sebagai lapis kedua: membatasi perangkat
+        // yang tokennya sah tapi disalahgunakan (mis. token bocor dari satu mesin).
         $this->require_rate_limit('kiosk/face-data', 30);
 
         $guests = $this->db
@@ -36,6 +44,10 @@ class Kiosk extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+
+        // Gerbang sama dengan face-data — endpoint ini juga mengembalikan SELURUH
+        // himpunan tamu (243 nama + instansi). AUDIT_2026-08-01 #1.
+        $this->require_kiosk_token('kiosk-device', 0);
 
         // Same rate-limit as face-data — both endpoints return the full guest set.
         $this->require_rate_limit('kiosk/guest-list', 30);
