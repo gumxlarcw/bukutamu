@@ -25,6 +25,13 @@ restart everything at once.
 ## Pre-flight (always)
 
 1. Confirm `git status` is clean and `git branch` shows `main`.
+   **If it is NOT clean, investigate before discarding.** Production may be
+   running an uncommitted file: `wa/server.js` ran live and untracked from
+   2026-07-15 to 2026-08-01, and its `.backup` was the *pre-fix* version, so
+   "restoring" it would have reintroduced the bug. Compare the file's mtime
+   against the running process (`ps -o lstart= -p $(pgrep -f wa/server.js)`)
+   before assuming a modified file is stale. **Never** run `git checkout --`,
+   `git restore`, `git stash` or `git clean -fd` to make the tree clean.
 2. `git log --oneline origin/main..HEAD` should be empty — you're deploying
    what's already on `main`.
 3. Read `deploy-config.md` (sibling file) for the env vars and rollback
