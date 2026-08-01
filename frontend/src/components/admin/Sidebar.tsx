@@ -24,6 +24,7 @@ import {
   BadgeCheck,
   PanelLeftClose,
   PanelLeftOpen,
+  MonitorCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -98,6 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Sistem',
     items: [
       { to: '/admin/users', label: 'Manajemen Pengguna', icon: UserCog, minRole: 'superadmin' },
+      { to: '/admin/kiosk-aktivasi', label: 'Aktivasi Kiosk', icon: MonitorCheck, minRole: 'admin' },
       { to: '/admin/audit', label: 'Log Audit', icon: Shield, minRole: 'admin' },
       { to: '/admin/tentang', label: 'Tentang', icon: Info, minRole: 'operator' },
     ],

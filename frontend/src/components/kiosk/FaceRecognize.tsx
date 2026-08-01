@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { kioskApi } from '@/api/kiosk'
+import { isKioskNotActivated } from '@/lib/kioskDevice'
 import { useCamera } from '@/hooks/useCamera'
 import { matchFace, type KnownFace } from '@/lib/face-detection'
 import { Loader2, UserCheck, User, RefreshCw, Search } from 'lucide-react'
@@ -32,10 +33,17 @@ export function FaceRecognize({ onMatch, onNoMatch, onManualSelect }: FaceRecogn
   } = useCamera()
 
   const [matched, setMatched] = useState<MatchResult | null>(null)
-  const { data: faceData, isLoading: isFaceDataLoading } = useQuery({
+  const { data: faceData, isLoading: isFaceDataLoading, error: faceDataError } = useQuery({
     queryKey: ['face-data'],
     queryFn: () => kioskApi.getFaceData().then(r => r.data.data),
+    // Mesin yang belum diaktifkan akan SELALU 401 — mengulang hanya menunda
+    // pesan yang benar dan membebani endpoint.
+    retry: (count, err) => !isKioskNotActivated(err) && count < 2,
   })
+  // Dibedakan dari galat jaringan biasa: 401/403 di sini berarti mesin ini belum
+  // terdaftar sebagai kiosk, dan yang dibutuhkan adalah tindakan ADMIN, bukan
+  // "coba lagi". Lihat lib/kioskDevice.ts + AUDIT_2026-08-01 #1.
+  const notActivated = isKioskNotActivated(faceDataError)
 
   useEffect(() => {
     startCamera()
@@ -82,6 +90,24 @@ export function FaceRecognize({ onMatch, onNoMatch, onManualSelect }: FaceRecogn
   const samplingActive = !isWarmingUp && faceDetected && !stableDescriptor && !matched
   const samplingDone = !!stableDescriptor && !matched
   const noMatchFound = samplingDone  // stable ready tapi matched=null → tidak ada match
+
+  if (notActivated) {
+    return (
+      <div className="flex flex-col items-center gap-5 text-center px-6">
+        <div className="w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center">
+          <span className="text-4xl">🔒</span>
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Kiosk belum diaktifkan</h2>
+          <p className="text-gray-500 text-sm mt-2 max-w-md">
+            Komputer ini belum terdaftar sebagai perangkat kiosk, sehingga pengenalan wajah
+            tidak dapat dijalankan. Mohon hubungi petugas admin untuk mengaktifkannya melalui
+            menu <strong>Aktivasi Perangkat Kiosk</strong>.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   if (error) {
     return (

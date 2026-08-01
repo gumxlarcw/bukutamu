@@ -724,4 +724,43 @@ class Kiosk extends Api_base {
         ], 200);
     }
 
+    /**
+     * POST /api/kiosk/device-token — terbitkan token perangkat kiosk (admin only).
+     *
+     * Dipakai sekali per mesin kiosk: admin login di mesin itu, membuka halaman
+     * aktivasi, lalu token disimpan di localStorage mesin tersebut. Setelah itu
+     * kiosk mengirimkannya sebagai X-Kiosk-Token pada face-data & guest-list.
+     *
+     * Kenapa TIDAK ditanam di bundle: berkas JS kiosk disajikan publik di
+     * /kiosk, jadi rahasia apa pun di dalamnya bisa dibaca siapa saja yang
+     * membuka halaman itu — sama saja dengan tidak ada penjagaan.
+     *
+     * Kenapa endpoint ini butuh login admin: kalau ia publik, penyerang tinggal
+     * meminta token lalu memakainya, dan seluruh gerbangnya sia-sia.
+     *
+     * TTL 180 hari: cukup lama supaya kiosk tidak mati mendadak di tengah jam
+     * layanan, cukup pendek supaya token yang bocor tidak berlaku selamanya.
+     * Mencabut satu perangkat = putar JWT_SECRET (mencabut SEMUA token) atau
+     * biarkan kedaluwarsa; pencabutan per-perangkat butuh tabel sendiri dan
+     * sengaja belum dibuat. Lihat docs/AUDIT_2026-08-01.md temuan #1.
+     */
+    public function device_token() {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+        $this->require_auth();
+        $this->require_role('admin');
+
+        $ttl   = 180 * 24 * 3600;
+        $token = $this->mint_kiosk_token('kiosk-device', 0, $ttl);
+
+        $this->audit('mint_kiosk_device_token', 'kiosk', null, ['ttl_days' => 180]);
+
+        $this->json_response([
+            'success' => true,
+            'data'    => ['kiosk_token' => $token, 'expires_at' => date('Y-m-d H:i:s', time() + $ttl)],
+            'message' => 'Token perangkat kiosk diterbitkan',
+        ]);
+    }
+
 }

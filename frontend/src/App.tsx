@@ -53,6 +53,7 @@ const EvaluationSummaryPage = lazyRetry(() => import('@/pages/admin/EvaluationSu
 const RespondenTahunanPage = lazyRetry(() => import('@/pages/admin/RespondenTahunanPage'))
 const AuditLogPage = lazyRetry(() => import('@/pages/admin/AuditLogPage'))
 const UserManagementPage = lazyRetry(() => import('@/pages/admin/UserManagementPage'))
+const KioskActivationPage = lazyRetry(() => import('@/pages/admin/KioskActivationPage'))
 const GuestImportPage = lazyRetry(() => import('@/pages/admin/GuestImportPage'))
 const QueueStatsPage = lazyRetry(() => import('@/pages/admin/QueueStatsPage'))
 const AboutPage = lazyRetry(() => import('@/pages/admin/AboutPage'))
@@ -100,6 +101,8 @@ function App() {
                   <Route path="/admin/responden" element={<RequireRole min="admin"><RespondenTahunanPage /></RequireRole>} />
                   <Route path="/admin/audit" element={<RequireRole min="admin"><AuditLogPage /></RequireRole>} />
                   <Route path="/admin/users" element={<RequireRole min="superadmin"><UserManagementPage /></RequireRole>} />
+                  {/* Aktivasi perangkat kiosk — harus dibuka DI mesin kiosk (AUDIT #1). */}
+                  <Route path="/admin/kiosk-aktivasi" element={<RequireRole min="admin"><KioskActivationPage /></RequireRole>} />
                   <Route path="/admin/queue-stats" element={<RequireRole min="admin"><QueueStatsPage /></RequireRole>} />
                   <Route path="/admin/tentang" element={<AboutPage />} />
                   <Route path="/admin/verifikasi" element={<VerifikasiPage />} />

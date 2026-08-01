@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { kioskDeviceHeader } from '@/lib/kioskDevice'
 import type { ApiResponse } from '@/types/api'
 import type { GuestFormData } from '@/types/guest'
 
@@ -30,8 +31,18 @@ interface VisitContext {
 }
 
 export const kioskApi = {
-  getFaceData: () => apiClient.get<ApiResponse<FaceData[]>>('/api/kiosk/face-data'),
-  getGuestList: () => apiClient.get<ApiResponse<GuestListItem[]>>('/api/kiosk/guest-list'),
+  // Keduanya mengembalikan SELURUH himpunan tamu (face-data termasuk descriptor
+  // biometrik), jadi dijaga token perangkat kiosk — lihat lib/kioskDevice.ts dan
+  // docs/AUDIT_2026-08-01.md temuan #1. Header dihilangkan bila mesin ini belum
+  // diaktifkan; backend yang menolak, supaya pesannya jujur.
+  getFaceData: () =>
+    apiClient.get<ApiResponse<FaceData[]>>('/api/kiosk/face-data', { headers: kioskDeviceHeader() }),
+  getGuestList: () =>
+    apiClient.get<ApiResponse<GuestListItem[]>>('/api/kiosk/guest-list', { headers: kioskDeviceHeader() }),
+
+  // Diterbitkan sekali per mesin kiosk oleh admin yang login DI mesin itu.
+  mintDeviceToken: () =>
+    apiClient.post<ApiResponse<{ kiosk_token: string; expires_at: string }>>('/api/kiosk/device-token'),
   register: (data: GuestFormData & VisitContext & { foto: string; face_descriptor: number[]; biometric_consent: boolean; consent_timestamp: string }) =>
     apiClient.post<ApiResponse<{ id_kunjungan: number; id_user: number; nomor_antrian: string | null }>>('/api/kiosk/register', data),
   visit: (data: { id_user: number } & VisitContext) =>

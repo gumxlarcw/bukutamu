@@ -76,6 +76,7 @@ $route['api/dashboard/events']         = 'api/dashboard/events';
 
 $route['api/services']                 = 'api/services/index';
 
+$route['api/kiosk/device-token']             = 'api/kiosk/device_token'; // POST (admin) mint per-kiosk device token — see AUDIT_2026-08-01 #1
 $route['api/kiosk/face-data']                = 'api/kiosk/face_data';
 $route['api/kiosk/guest-list']               = 'api/kiosk/guest_list';
 $route['api/kiosk/register']                 = 'api/kiosk/register';
