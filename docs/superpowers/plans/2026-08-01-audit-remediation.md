@@ -25,7 +25,7 @@ lebih sulit basi.
 | 3 — Apache `mod_remoteip` + redirect HTTPS | ✅ selesai | vhost di luar repo; `Auth.php` menyusul |
 | 4 — migrasi DB + `Wa.php` | ✅ selesai | `aa90a9d` |
 | 5 — frontend | ✅ selesai | `32800d7` |
-| 6 — konektor WA (butuh jendela restart) | ⬜ belum | |
+| 6 — konektor WA (butuh jendela restart) | ✅ selesai | `9d3a08d` |
 | 7 — hardening endpoint kiosk (#1 biometrik) | ⬜ belum | |
 | 8 — hygiene data & ops | ⬜ belum | |
 

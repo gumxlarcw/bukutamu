@@ -157,7 +157,15 @@ client.on('qr', async (qr) => {
         await pushQrState({ pairing_code: code });
       } catch (e) { log('requestPairingCode err', e.message); lastPairPhone = null; }
     } else if (!pairPhone) {
-      lastPairPhone = null; // pairing dibatalkan → reset
+      // Pairing dibatalkan (backend mengosongkan pair_phone). cancelPairingCode() TIDAK
+      // pernah dipanggil di mana pun, jadi tombol "Batal / kembali ke QR" hanya kosmetik:
+      // WhatsApp Web tetap di mode ALT_DEVICE_LINKING sampai proses di-restart.
+      // AUDIT_2026-08-01 #11.
+      if (lastPairPhone) {
+        try { await client.cancelPairingCode(); log('pairing dibatalkan — kembali ke mode QR'); }
+        catch (e) { log('cancelPairingCode err', e.message); }
+      }
+      lastPairPhone = null;
     }
   } catch (e) { log('qr dataurl error', e.message); }
 });
@@ -512,7 +520,42 @@ async function tick() {
         }
         log('backfill done phone=' + bf.phone + ' msgs=' + msgs.length);
         ok = true;
-      } catch (e) { log('backfill err phone=' + bf.phone, e.message); }
+      } catch (e) {
+        log('backfill err phone=' + bf.phone, e.message);
+        // wa_chat_id BASI (mis. setelah sesi di-relink 2026-07-15) → getChatById melempar
+        // selamanya, jadi backfill tidak pernah pulih dengan sendirinya: 26 baris menyerah
+        // di attempts=4 dan seluruh jalur pemulihan pasca-outage mati ~2,5 minggu tanpa
+        // sinyal. Resolve ulang id dari nomor lalu coba SEKALI lagi. AUDIT_2026-08-01 #10.
+        try {
+          const nid = await withTimeout(client.getNumberId(bf.phone), WA_OP_TIMEOUT_MS, 'getNumberId-bf');
+          const fresh = nid && nid._serialized;
+          if (fresh && fresh !== bf.wa_chat_id) {
+            log('backfill chat-id basi ' + bf.wa_chat_id + ' -> ' + fresh + ' (coba ulang)');
+            const chat2 = await withTimeout(client.getChatById(fresh), WA_OP_TIMEOUT_MS, 'getChatById-retry');
+            const msgs2 = await withTimeout(chat2.fetchMessages({ limit: BACKFILL_LIMIT }), WA_OP_TIMEOUT_MS, 'fetchMessages-retry');
+            // Ingest teks saja pada jalur pemulihan ini — media ditangani percobaan normal
+            // berikutnya, dan yang penting di sini adalah tidak kehilangan riwayat percakapan.
+            for (const m2 of msgs2) {
+              if (m2.isStatus || (m2.type && IGNORED_TYPES.has(m2.type))) continue;
+              if (m2.hasMedia) continue;
+              try {
+                await bfetch(CHAT_INGEST_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': cfg.internalSecret },
+                  body: JSON.stringify({
+                    phone: bf.phone, wa_chat_id: fresh,
+                    wa_msg_id: (m2.id && m2.id._serialized) || null,
+                    from_me: !!m2.fromMe, ts: m2.timestamp || 0, backfill: true,
+                    type: 'text', body: m2.body || '',
+                  }),
+                });
+              } catch (e3) { log('backfill retry ingest err', e3.message); }
+            }
+            log('backfill pulih via chat-id baru phone=' + bf.phone + ' msgs=' + msgs2.length);
+            ok = true;
+          }
+        } catch (e2) { log('backfill chat-id resolve gagal', e2.message); }
+      }
       // Sukses → done. Gagal (chat tak ada / timeout) → retry via poll berikutnya;
       // backend menyerah setelah 4 percobaan supaya tak loop selamanya. (anti data-loss)
       if (ok) backfillDone.push(bf.id); else backfillFailed.push(bf.id);
