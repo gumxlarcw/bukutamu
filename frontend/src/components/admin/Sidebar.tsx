@@ -99,7 +99,11 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Sistem',
     items: [
       { to: '/admin/users', label: 'Manajemen Pengguna', icon: UserCog, minRole: 'superadmin' },
-      { to: '/admin/kiosk-aktivasi', label: 'Aktivasi Kiosk', icon: MonitorCheck, minRole: 'admin' },
+      // Resepsionis ikut diberi akses: merekalah yang berada di dekat kiosk dan
+      // paling mungkin perlu mengaktifkan ulang mesin. Daftar eksplisit, BUKAN
+      // minRole: resepsionis selevel dengan petugas_pst/verifikator/operator,
+      // jadi gerbang berjenjang akan ikut membuka untuk ketiganya.
+      { to: '/admin/kiosk-aktivasi', label: 'Aktivasi Kiosk', icon: MonitorCheck, minRole: 'operator', allowedRoles: ['resepsionis', 'admin', 'superadmin'] },
       { to: '/admin/audit', label: 'Log Audit', icon: Shield, minRole: 'admin' },
       { to: '/admin/tentang', label: 'Tentang', icon: Info, minRole: 'operator' },
     ],

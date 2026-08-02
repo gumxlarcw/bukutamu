@@ -812,7 +812,17 @@ class Kiosk extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
         $this->require_auth();
-        $this->require_role('admin');
+        // Daftar peran EKSPLISIT, bukan require_role('admin') berjenjang: resepsionis
+        // berada di level 1 yang sama dengan petugas_pst, verifikator, dan operator,
+        // jadi menurunkan ambang berjenjang akan ikut membuka untuk ketiganya.
+        // Resepsionis sengaja diberi akses — merekalah yang berada di dekat kiosk dan
+        // paling mungkin perlu mengaktifkan ulang mesin tanpa menunggu admin.
+        //
+        // Konsekuensi yang disadari: pemegang peran ini dapat menerbitkan token
+        // 180 hari yang membuka /api/kiosk/face-data, yaitu seluruh himpunan
+        // template biometrik. Itu memperluas akses ke data pribadi spesifik dari
+        // 2 akun (admin/superadmin) menjadi 3. Penerbitan tetap tercatat di audit.
+        $this->require_role_in(['resepsionis', 'admin', 'superadmin']);
 
         $ttl   = 180 * 24 * 3600;
         $token = $this->mint_kiosk_token('kiosk-device', 0, $ttl);

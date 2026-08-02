@@ -19,7 +19,16 @@ const ROLE_LEVEL: Record<UserRole, number> = {
 }
 
 interface Props {
-  min: UserRole
+  /** Gerbang berjenjang: peran dengan level >= level ini diizinkan. */
+  min?: UserRole
+  /**
+   * Daftar peran eksplisit. Dipakai ketika gerbang berjenjang TIDAK bisa
+   * menyatakan maksudnya — mis. resepsionis selevel dengan petugas_pst,
+   * verifikator, dan operator, sehingga min="resepsionis" akan ikut memberi
+   * akses ke ketiganya. Cermin allowedRoles di Sidebar dan require_role_in()
+   * di backend. Kalau diisi, daftar ini yang berlaku, bukan `min`.
+   */
+  allowedRoles?: UserRole[]
   children: React.ReactNode
 }
 
@@ -28,17 +37,25 @@ interface Props {
  * the protected page (which would just hit a backend 403 and show empty UI).
  * Backend remains authoritative — this is UX, not security.
  */
-export function RequireRole({ min, children }: Props) {
+export function RequireRole({ min, allowedRoles, children }: Props) {
   const { user } = useAuth()
   const userLvl = user?.role ? ROLE_LEVEL[user.role] : 0
-  const minLvl = ROLE_LEVEL[min]
-  const allowed = userLvl >= minLvl
+  // Gagal TERTUTUP bila pemanggil tidak memberi kriteria apa pun.
+  const allowed = allowedRoles
+    ? !!user?.role && allowedRoles.includes(user.role)
+    : min
+      ? userLvl >= ROLE_LEVEL[min]
+      : false
 
   useEffect(() => {
     if (user && !allowed) {
-      toast.error(`Halaman ini hanya untuk role ${min} atau lebih tinggi.`)
+      toast.error(
+        allowedRoles
+          ? `Halaman ini hanya untuk role: ${allowedRoles.join(', ')}.`
+          : `Halaman ini hanya untuk role ${min} atau lebih tinggi.`
+      )
     }
-  }, [user, allowed, min])
+  }, [user, allowed, min, allowedRoles])
 
   if (!user) return null // AdminLayout handles unauth redirect
   if (!allowed) return <Navigate to="/admin" replace />
