@@ -98,7 +98,7 @@ export interface DtsenDataRow {
 export const JENIS_KONSULTASI_DTSEN_OPTIONS = [
   { value: 1, label: 'Verifikasi Data Penerima' },
   { value: 2, label: 'Pengaduan Data' },
-  { value: 3, label: 'Permintaan Pemutakhiran' },
+  { value: 3, label: 'Permintaan Pemutakhiran Data (Desil)' },
   { value: 4, label: 'Sanggahan/Keberatan' },
   { value: 5, label: 'Lainnya' },
 ] as const
@@ -107,6 +107,7 @@ export const HASIL_DTSEN_OPTIONS = [
   { value: 1, label: 'Selesai di tempat' },
   { value: 2, label: 'Perlu follow-up' },
   { value: 3, label: 'Data tidak ditemukan' },
+  { value: 4, label: 'Persyaratan belum lengkap' },
 ] as const
 
 export const LEVEL_DATA_OPTIONS = [

@@ -274,8 +274,8 @@ class Dtsen extends Api_base {
             if ($jenis < 1 || $jenis > 5) {
                 $this->json_response(['success' => false, 'message' => 'jenis_konsultasi_dtsen tidak valid (1-5).'], 400);
             }
-            if ($hasil < 1 || $hasil > 3) {
-                $this->json_response(['success' => false, 'message' => 'hasil tidak valid (1-3).'], 400);
+            if ($hasil < 1 || $hasil > 4) {
+                $this->json_response(['success' => false, 'message' => 'hasil tidak valid (1-4).'], 400);
             }
             // Form-lengkap gate: catatan wajib non-empty. Tanpa ini visit DTSEN auto-finalize
             // ke 'selesai' tanpa jejak konteks. Sama strict-nya dengan FE isValid.
