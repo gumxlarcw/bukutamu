@@ -271,8 +271,8 @@ class Dtsen extends Api_base {
             $jenis   = isset($input['jenis_konsultasi_dtsen']) ? (int)$input['jenis_konsultasi_dtsen'] : 0;
             $hasil   = isset($input['hasil']) ? (int)$input['hasil'] : 0;
             $catatan = trim((string)($input['catatan'] ?? ''));
-            if ($jenis < 1 || $jenis > 5) {
-                $this->json_response(['success' => false, 'message' => 'jenis_konsultasi_dtsen tidak valid (1-5).'], 400);
+            if ($jenis < 1 || $jenis > 6) {
+                $this->json_response(['success' => false, 'message' => 'jenis_konsultasi_dtsen tidak valid (1-6).'], 400);
             }
             if ($hasil < 1 || $hasil > 4) {
                 $this->json_response(['success' => false, 'message' => 'hasil tidak valid (1-4).'], 400);

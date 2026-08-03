@@ -100,6 +100,11 @@ export const JENIS_KONSULTASI_DTSEN_OPTIONS = [
   { value: 2, label: 'Pengaduan Data' },
   { value: 3, label: 'Permintaan Pemutakhiran Data (Desil)' },
   { value: 4, label: 'Sanggahan/Keberatan' },
+  // value 6 sengaja muncul sebelum 5: urutan array = urutan dropdown, tapi yang
+  // tersimpan adalah `value`. Opsi baru selalu ambil nomor berikutnya (append-only,
+  // jangan renumber — nomor lama sudah ada di dtsen_konsultasi.jenis_konsultasi_dtsen),
+  // sementara 'Lainnya' tetap di posisi terakhir.
+  { value: 6, label: 'Pengecekan Desil' },
   { value: 5, label: 'Lainnya' },
 ] as const
 
