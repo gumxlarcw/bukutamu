@@ -395,10 +395,26 @@ async function tick() {
       setTimeout(() => process.exit(0), 1200); // PM2 autorestart → init bersih → QR baru
       return;
     }
-    // Heartbeat liveness: poll sukses = bukti hidup. Backend cap updated_at tiap detak; UI/monitor
-    // anggap "online" hanya bila now - updated_at < TTL → status mati tak bisa basi seperti dulu.
+    // Heartbeat liveness: backend cap updated_at tiap detak; UI/monitor anggap "online" hanya bila
+    // now - updated_at < TTL → status mati tak bisa basi seperti dulu.
     // (Fire-and-forget; pushQrState menelan error sendiri & sudah ber-timeout via bfetch.)
-    pushQrState({ ready: true, number: linkedNumber, heartbeat: true });
+    //
+    // Bukti hidup harus menyentuh WhatsApp. Dulu heartbeat didorong tiap poll HTTP sukses —
+    // poll itu murni HTTP ke backend, jadi ia membuktikan proses Node hidup, BUKAN bahwa
+    // WhatsApp berfungsi. Itulah sebabnya renderer mati 3 Agu 2026 lolos 8j14m tanpa alert.
+    // Operasi WA nyata yang baru saja sukses sudah cukup jadi bukti; selain itu, probe.
+    const alive = (Date.now() - lastWaOkAt < PROBE_SKIP_MS) || (await probeRenderer());
+    const act   = wedgePolicy(alive, wedgeStreak, WEDGE_RESTART_TICKS);
+    wedgeStreak = act.streak;
+    if (act.heartbeat) {
+      pushQrState({ ready: true, number: linkedNumber, heartbeat: true });
+    } else {
+      log('renderer tak responsif — heartbeat ditahan (deret ' + wedgeStreak + '/' + WEDGE_RESTART_TICKS + ')');
+    }
+    if (act.restart && !shuttingDown) {
+      log('FATAL: renderer tak responsif ' + wedgeStreak + ' tick berturut — exit(1) untuk restart PM2');
+      process.exit(1);
+    }
     const messages = (body.data && body.data.messages) || [];
     const sentOutbox = []; // wa_outbox ids (templated)
     const chatSent = [];   // [{id, wa_msg_id}] live chat — simpan WA id agar backfill/recovery tak menggandakan
