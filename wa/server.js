@@ -38,11 +38,14 @@ const FETCH_TIMEOUT_MS = cfg.fetchTimeoutMs || 15000; // loopback ke backend tak
 const WA_OP_TIMEOUT_MS = cfg.waOpTimeoutMs || 45000;  // panggilan wwebjs (send/fetch/download) berbatas waktu
 // Liveness pasca-`ready`: probe renderer chromium. Sengaja jauh lebih pendek dari
 // WA_OP_TIMEOUT_MS — pada renderer sehat, evaluate(() => 1) kembali dalam milidetik.
-const PROBE_TIMEOUT_MS    = cfg.probeTimeoutMs || 5000;
-const PROBE_SKIP_MS       = cfg.probeSkipMs || 30000;      // lewati probe bila ada operasi WA nyata sebaru ini
-const WEDGE_RESTART_TICKS = cfg.wedgeRestartTicks || 60;   // ~10 menit pada tick 10 detik
-let lastWaOkAt  = Date.now();  // operasi WhatsApp NYATA terakhir yang sukses
-let wedgeStreak = 0;           // kegagalan probe berturut-turut
+const PROBE_TIMEOUT_MS = cfg.probeTimeoutMs || 5000;
+const PROBE_SKIP_MS    = cfg.probeSkipMs || 30000;         // lewati probe bila ada operasi WA nyata sebaru ini
+// JAM DINDING, bukan hitungan tick: saat wedge satu tick bisa makan ~100 detik karena
+// terhenti di WA_OP_TIMEOUT_MS berkali-kali (terukur 2026-08-04), jadi ambang berbasis
+// tick meleset sampai 10x. Lihat wa/lib/wedge-policy.js.
+const WEDGE_RESTART_MS = cfg.wedgeRestartMs || 600000;     // 10 menit wedge → exit(1)
+let lastWaOkAt = Date.now();   // operasi WhatsApp NYATA terakhir yang sukses
+let wedgeSince = null;         // epoch ms kegagalan probe pertama dari deret berjalan
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 if (typeof fetch !== 'function') { log('FATAL: need Node >= 18 (global fetch)'); process.exit(1); }
@@ -404,15 +407,17 @@ async function tick() {
     // WhatsApp berfungsi. Itulah sebabnya renderer mati 3 Agu 2026 lolos 8j14m tanpa alert.
     // Operasi WA nyata yang baru saja sukses sudah cukup jadi bukti; selain itu, probe.
     const alive = (Date.now() - lastWaOkAt < PROBE_SKIP_MS) || (await probeRenderer());
-    const act   = wedgePolicy(alive, wedgeStreak, WEDGE_RESTART_TICKS);
-    wedgeStreak = act.streak;
+    const now   = Date.now();
+    const act   = wedgePolicy(alive, wedgeSince, now, WEDGE_RESTART_MS);
+    wedgeSince  = act.wedgeSince;
     if (act.heartbeat) {
       pushQrState({ ready: true, number: linkedNumber, heartbeat: true });
     } else {
-      log('renderer tak responsif — heartbeat ditahan (deret ' + wedgeStreak + '/' + WEDGE_RESTART_TICKS + ')');
+      const lama = Math.round((now - act.wedgeSince) / 1000);
+      log('renderer tak responsif — heartbeat ditahan (' + lama + 's/' + Math.round(WEDGE_RESTART_MS / 1000) + 's)');
     }
     if (act.restart && !shuttingDown) {
-      log('FATAL: renderer tak responsif ' + wedgeStreak + ' tick berturut — exit(1) untuk restart PM2');
+      log('FATAL: renderer tak responsif ' + Math.round((now - act.wedgeSince) / 1000) + ' detik — exit(1) untuk restart PM2');
       process.exit(1);
     }
     const messages = (body.data && body.data.messages) || [];
