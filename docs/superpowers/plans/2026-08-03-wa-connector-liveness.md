@@ -486,4 +486,41 @@ Setelah Task 4 selesai, perbarui memori proyek `wa_connector_resilience.md`: mod
 Dua hal yang **tidak** disentuh rencana ini dan tetap terbuka:
 
 1. **Drift wwebjs** — backfill mati sejak 2026-07-14 (47 gagal berturut), `sendSeen` rusak, `sendMessage` mengembalikan objek tanpa `id._serialized` sehingga `wa_msg_id` tersimpan NULL dan `ack` tak pernah naik. Butuh spesifikasi sendiri; kemungkinan upgrade wwebjs.
-2. **Pesan `failed` tidak pernah dicoba ulang** — `poll()` hanya menyajikan `status='pending'`. Setelah outage, baris `failed` harus diantrikan ulang manual. Layak dipertimbangkan sebagai perbaikan terpisah.
+2. **Pesan `failed` tidak pernah dicoba ulang** — `poll()` hanya menyajikan `status='pending'`. Layak dipertimbangkan sebagai perbaikan terpisah, **tetapi jangan berupa antre-ulang membabi buta** — lihat triase di bawah.
+
+## Triase pesan mati 3 Agustus (2026-08-04) — KESIMPULAN: TIDAK ADA yang dikirim
+
+Lima baris `failed` di `wa_outbox` (id 2055, 2103, 2104, 2105, 2106; `wa_messages`
+nol) semuanya sudah basi. Mengirim ulang justru merusak, bukan memperbaiki.
+
+| id | Pesan | Alasan tidak dikirim |
+| --- | --- | --- |
+| 2104 | verif_request **V12** | Sudah disetujui 3 Agu 10:32 lewat panel admin; `data_deliveries` 12 = `terkirim` |
+| 2106 | verif_request **V13** | Sudah disetujui 3 Agu 15:37; `data_deliveries` 13 = `terkirim` |
+| 2103 | "ditangani oleh *Irma*" | Pemohon 081515258028 sudah dilayani tuntas |
+| 2105 | "ditangani oleh *Nita*" | Pemohon 081233355317 sudah dilayani, bahkan lanjut hari ini |
+| 2055 | notifikasi antrian K002 (30 Jun) | Tujuan `000000000-000000000@g.us` — id grup tidak sah |
+
+Dua verif_request itu yang paling berbahaya: keduanya meminta verifikator membalas
+"1 = Setuju" untuk keputusan yang sudah dibuat sehari sebelumnya → berisiko
+**persetujuan ganda dan pengiriman berkas ganda** ke pemohon.
+
+Bukti pemohon sudah terlayani: percakapan 081515258028 pulih **15:56:32 tanggal
+3 Agustus — persis semenit setelah wedge berakhir** — dan tuntas pukul 16:35.
+081233355317 dilayani 3 Agu 16:30 lalu 4 Agu 09:46 & 09:55 (V14, V15).
+**Kerugian nyata outage 8 jam = kebingungan petugas, bukan data hilang.**
+
+Tidak ada perubahan database. `wa_outbox.status` hanya
+`enum('pending','sent','failed')` — tak ada status "dibatalkan" dan tak ada kolom
+catatan, sedangkan `failed` sudah terminal dan diabaikan `poll()`, jadi kelima
+baris itu memang sudah tidak aktif. Menambah kolom/enum hanya untuk anotasi butuh
+`ALTER TABLE` dan tidak sepadan.
+
+**Pelajaran desain** bila kelak celah "tidak pernah dicoba ulang" ditutup:
+antre-ulang otomatis semua baris `failed` akan **salah** dan persis memicu insiden
+persetujuan ganda di atas. Hampir semua baris `wa_outbox` adalah *notifikasi status
+alur kerja* (`ditangani`, `verif_request`, `confirmation`, `eval_link`), bukan
+kirimannya itu sendiri — dan alur kerjanya tetap berjalan lewat panel admin selagi
+WhatsApp mati. Retry apa pun wajib punya gerbang kesegaran: lewati bila baris
+`data_deliveries` terkait sudah melewati `menunggu_verifikasi`, lewati bila
+kunjungan sudah ditutup, dan lewati apa pun yang lebih tua dari beberapa jam.
