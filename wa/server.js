@@ -15,6 +15,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const crypto = require('crypto');
 const qrcode = require('qrcode-terminal');
 const QRCode = require('qrcode');
+const { wedgePolicy } = require('./lib/wedge-policy');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 const POLL = cfg.pollIntervalMs || 30000;
@@ -35,6 +36,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SEND_GAP_MS = cfg.sendGapMs || 1200; // jeda antar kirim — lindungi nomor dari flooding/ban
 const FETCH_TIMEOUT_MS = cfg.fetchTimeoutMs || 15000; // loopback ke backend tak boleh menggantung tick
 const WA_OP_TIMEOUT_MS = cfg.waOpTimeoutMs || 45000;  // panggilan wwebjs (send/fetch/download) berbatas waktu
+// Liveness pasca-`ready`: probe renderer chromium. Sengaja jauh lebih pendek dari
+// WA_OP_TIMEOUT_MS — pada renderer sehat, evaluate(() => 1) kembali dalam milidetik.
+const PROBE_TIMEOUT_MS    = cfg.probeTimeoutMs || 5000;
+const PROBE_SKIP_MS       = cfg.probeSkipMs || 30000;      // lewati probe bila ada operasi WA nyata sebaru ini
+const WEDGE_RESTART_TICKS = cfg.wedgeRestartTicks || 60;   // ~10 menit pada tick 10 detik
+let lastWaOkAt  = Date.now();  // operasi WhatsApp NYATA terakhir yang sukses
+let wedgeStreak = 0;           // kegagalan probe berturut-turut
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 if (typeof fetch !== 'function') { log('FATAL: need Node >= 18 (global fetch)'); process.exit(1); }
@@ -43,7 +51,29 @@ if (typeof fetch !== 'function') { log('FATAL: need Node >= 18 (global fetch)');
 function bfetch(url, opts = {}) { return fetch(url, { ...opts, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }); }
 // Bungkus panggilan wwebjs yang mengabaikan AbortSignal (Promise.race vs timer penolak) → tick tak bisa wedge.
 function withTimeout(p, ms, label) {
-  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout:' + label)), ms))]);
+  return Promise.race([
+    // Sukses operasi WhatsApp NYATA = bukti hidup; menekan probe saat connector sibuk.
+    Promise.resolve(p).then((v) => { lastWaOkAt = Date.now(); return v; }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout:' + label)), ms)),
+  ]);
+}
+
+// Probe liveness: uji apakah renderer masih mengeksekusi JavaScript. SENGAJA tidak
+// menyentuh internal WhatsApp Web (mis. client.getState() → window.require('WAWebSocketModel')),
+// karena internal itu terbukti drift dan probe yang salah memicu restart-loop tanpa akhir.
+// Sengaja TIDAK lewat withTimeout: sukses probe bukan bukti lalu lintas nyata.
+async function probeRenderer() {
+  if (!client.pupPage) return false; // belum ada halaman = tidak hidup
+  try {
+    await Promise.race([
+      client.pupPage.evaluate(() => 1),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout:probe')), PROBE_TIMEOUT_MS)),
+    ]);
+    return true;
+  } catch (e) {
+    log('probe renderer gagal', e.message);
+    return false;
+  }
 }
 
 // Process-level safety net: error async fatal yang "tertelan" TIDAK boleh meninggalkan proses
