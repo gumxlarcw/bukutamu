@@ -2,9 +2,38 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## STATUS — 2026-08-04
+## STATUS — 2026-08-04 (SUDAH DITERAPKAN & DIVERIFIKASI LANGSUNG)
 
-**Kode SELESAI dan ter-commit. Belum DITERAPKAN ke proses yang berjalan.**
+**Task 1–4 selesai, di-push, dan connector sudah di-restart.** Verifikasi Tahap 1
+(jalur sehat) dan Tahap 2 (wedge sungguhan) keduanya dijalankan.
+
+Hasil Tahap 2 (renderer dibunuh sengaja, `wedgeRestartTicks` sementara 12):
+
+| Yang diamati | Hasil |
+| --- | --- |
+| deteksi `renderer tak responsif (deret 1/12)` | **11 detik** setelah kill — LULUS |
+| heartbeat jadi basi → kartu OFFLINE merah | 85 detik — LULUS (target 60–70s) |
+| `exit(1)` otomatis pada ambang | **TIDAK tercapai** — lihat cacat di bawah |
+
+### CACAT DITEMUKAN: `wedgeRestartTicks` bukan satuan waktu
+
+Rencana ini mengasumsikan tick tetap 10 detik sehingga 60 tick ≈ 10 menit.
+Itu keliru saat wedge: tick yang lumpuh terhenti pada pagar `WA_OP_TIMEOUT_MS`
+(45 detik) milik connector sendiri. Terukur langsung: deret 1 pada 01:48:37 →
+deret 2 pada 01:50:17 = **100 detik per tick** (`timeout:getChatById` 45s +
+`timeout:getNumberId-bf` 45s + jeda poll 10s), karena ada baris `wa_backfill`
+mengantre. Jadi `wedgeRestartTicks: 60` ≈ **100 menit**, bukan 10 menit — dan
+makin buruk justru saat ada pekerjaan mengantre, yang memang diciptakan oleh
+wedge itu sendiri. Connector yang benar-benar sepi tetap ~10 detik per tick.
+
+Tujuan **alert** (tujuan utama) TERCAPAI dan tidak terpengaruh cacat ini, karena
+heartbeat ditahan sejak kegagalan pertama dan TTL 60 detik di backend memakai
+jam dinding, bukan hitungan tick. Yang belum tercapai hanya **restart otomatis**.
+
+Perbaikan yang disarankan: jadikan keputusan restart berbasis waktu
+(`now - wedgeSince > wedgeRestartMs`) atau pindahkan pemeriksaan liveness ke
+`setInterval` sendiri yang lepas dari `tick()`. `wedgePolicy` tetap murni —
+cukup terima elapsed ms alih-alih hitungan.
 
 | Task | Status | Commit |
 | --- | --- | --- |
@@ -12,19 +41,23 @@
 | 2 — `probeRenderer` + `lastWaOkAt` | selesai | `7164134` |
 | 3 — gerbang heartbeat di `tick()` | selesai | `87639eb` |
 | 4 — konfigurasi | kunci sudah ditulis ke `wa/config.json` (tak ter-commit, gitignore) | — |
-| 4 — penerapan (Step 2–5) | **BELUM** — menunggu izin `pm2 restart bukutamu-wa` | — |
+| 4 — penerapan (Step 2–5) | selesai — restart + verifikasi Tahap 1 & 2 | — |
 
-`wa/server.js` di disk sudah berisi perbaikan, tetapi proses PM2 masih menjalankan kode
-lama sampai di-restart. Sampai saat itu **connector masih buta terhadap wedge pasca-`ready`**.
+Connector sudah menjalankan kode baru (ready 5–9 detik, sesi lama dipakai ulang, tanpa QR).
+`wedgeRestartTicks` sudah dikembalikan ke 60 dan `wa/config.json` identik dengan cadangannya.
 
 Penyimpangan dari rencana (disengaja, satu tempat): pada Task 3 Step 2 rencana meminta
 komentar lama dipertahankan apa adanya. Kalimat pembukanya berbunyi "poll sukses = bukti
 hidup" — justru klaim keliru yang sedang diperbaiki commit ini. Kalimat itu ditulis ulang;
 sisa komentar (semantik TTL, catatan fire-and-forget) dipertahankan.
 
-Langkah berikutnya: Task 4 Step 2 (minta izin) → Step 3 (restart) → Step 4 (verifikasi
-jalur sehat) → Step 5 (reproduksi wedge, opsional dan mengganggu) → perbarui memori
-`wa_connector_resilience.md` bagian "Fixing this needs a liveness probe … NOT shipped".
+Langkah berikutnya: perbaiki cacat ambang restart di atas (berbasis waktu). Memori proyek
+`wa_connector_resilience.md` sudah diperbarui dengan hasil verifikasi dan cacat ini.
+
+Catatan keselamatan untuk reproduksi wedge berikutnya: bunuh renderer **berdasarkan PID
+yang sudah diverifikasi**, jangan `pkill -f "type=renderer.*wwebjs_auth"` — pola itu ikut
+cocok dengan shell Anda sendiri. `wa-service` aman karena `--user-data-dir`-nya
+(`/opt/wa-service/session/...`) tidak memuat `wwebjs_auth`.
 
 **Goal:** Heartbeat connector WhatsApp hanya mengalir bila renderer chromium terbukti responsif, sehingga kelumpuhan pasca-`ready` memicu alert OFFLINE dalam ~60 detik dan restart otomatis dalam ~10 menit — bukan senyap 8 jam seperti 2026-08-03.
 
