@@ -347,14 +347,22 @@ tamdes_buku ── 1:N ──▶ tamdes_kunjungan ── 1:N ──▶ konsultas
   Tiga role di tier 1 punya level sama tapi **scope berbeda** — bukan hierarki ortogonal.
 - **`Api_base::require_role($min)`** — cek tier numerik (mis. `require_role('admin')` blokir tier 1).
 - **`Api_base::require_layanan_role($jenis_layanan)`** — cek scope per jenis layanan:
-  - `petugas_pst` boleh: Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan
-  - `resepsionis` boleh: Lainnya, Keperluan Pimpinan
+  - `petugas_pst` boleh: Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan,
+    Konsultasi DTSEN, **Lainnya Online**
+  - `resepsionis` boleh: **Lainnya**, Keperluan Pimpinan, Daftar Antrian Offline
+  - ⚠️ `Lainnya` (front-office) ≠ `Lainnya Online` (WA). Kunjungan WA yang salah
+    berlabel `Lainnya` membuat petugas PST yang menanganinya kena 403 dan sesinya
+    mustahil ditutup — lihat kunjungan 990699 (2026-08-04)
   - `admin`, `superadmin`, `operator` (legacy) → bypass full access
   - Mismatch role-layanan → 403 dengan pesan jelas
-- **`Api_base::next_status_after_completion($jenis_layanan)`** — tentukan status finalisasi:
-  - PST → `menunggu_evaluasi` (perlu evaluasi tablet)
+- **`Api_base::next_status_after_completion($jenis_layanan, $created_by = null)`** — tentukan status finalisasi:
+  - SKD (4 inti) → `menunggu_evaluasi` (perlu evaluasi tablet)
+  - `created_by='whatsapp'` → `menunggu_evaluasi` apa pun labelnya (tautan evaluasi
+    dikirim ke chat); **kecuali** Konsultasi DTSEN yang tetap `selesai`
   - Resepsionis (Lainnya/Keperluan Pimpinan) → `selesai` langsung (skip evaluasi)
-  - Multi-layanan: jika ada satu PST → `menunggu_evaluasi`
+  - Multi-layanan: jika ada satu SKD → `menunggu_evaluasi`
+  - Syarat kanal sengaja BUKAN entri di `$skd_services`: daftar itu juga menentukan
+    cakupan kuesioner/rekap SKD. "Wajib evaluasi" ≠ "termasuk SKD" (2026-08-04)
 
 ## 7. Alur Bisnis Utama
 

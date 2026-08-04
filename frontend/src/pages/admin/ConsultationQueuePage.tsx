@@ -218,14 +218,16 @@ export default function ConsultationQueuePage() {
                       onClick={() =>
                         statusMutation.mutate({
                           id: visit.id_kunjungan,
-                          status: nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)),
+                          status: nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan), visit.created_by),
                         })
                       }
                       disabled={statusMutation.isPending}
                       title={
-                        nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)) === 'selesai'
+                        nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan), visit.created_by) === 'selesai'
                           ? 'Selesai langsung tanpa evaluasi'
-                          : 'Lanjut ke tablet evaluasi'
+                          : visit.created_by === 'whatsapp'
+                            ? 'Tautan evaluasi dikirim ke WhatsApp tamu'
+                            : 'Lanjut ke tablet evaluasi'
                       }
                     >
                       <CheckCircle className="w-3.5 h-3.5 mr-1" />

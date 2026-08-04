@@ -157,7 +157,7 @@ class Consultations extends Api_base {
 
         // #21 — tolak parkir 'menunggu_evaluasi' pada visit non-SKD (dead-end state).
         if ($status === 'menunggu_evaluasi'
-            && $this->next_status_after_completion($visit->jenis_layanan) !== 'menunggu_evaluasi') {
+            && $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by) !== 'menunggu_evaluasi') {
             $this->json_response(['success' => false, 'message' => 'Status menunggu_evaluasi hanya untuk layanan SKD.'], 400);
         }
 
@@ -172,7 +172,7 @@ class Consultations extends Api_base {
         if ($status === 'selesai') {
             $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
-            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by) === 'menunggu_evaluasi') {
                 // Soft-correct hanya masuk akal saat kunjungan BELUM di 'menunggu_evaluasi'
                 // (mis. proses -> selesai): itu memang gerbang yang dirancang. Kalau sudah
                 // DI SANA, koreksi ini menghasilkan update tanpa perubahan yang tetap
@@ -424,7 +424,7 @@ class Consultations extends Api_base {
             // Tujuan tergantung jenis layanan: PST → menunggu_evaluasi, resepsionis → langsung selesai.
             // Skip kalau visit sudah dilanjut ke menunggu_evaluasi/selesai (idempoten).
             // Update status ikut DI DALAM transaksi supaya konsisten dengan datanya.
-            $visit = $this->db->select('status, jenis_layanan, date_visit')
+            $visit = $this->db->select('status, jenis_layanan, date_visit, created_by')
                               ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
             $status_from = null;
             $status_to   = null;
@@ -434,7 +434,7 @@ class Consultations extends Api_base {
             // dan kedua sweep auto-close melewatinya. AUDIT_2026-08-01 #23.
             if ($visit && $visit->status !== 'selesai' && $visit->status !== 'menunggu_evaluasi'
                 && $visit->status !== 'evaluasi_selesai') {
-                $next_status = $this->next_status_after_completion($visit->jenis_layanan);
+                $next_status = $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by);
                 $update = ['status' => $next_status];
                 if ($next_status === 'selesai') {
                     $selesai_ts = date('Y-m-d H:i:s');

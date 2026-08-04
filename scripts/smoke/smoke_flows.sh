@@ -85,6 +85,21 @@ ok  "A8 converted visit -> offline Perpustakaan/antri" '["Perpustakaan"]|antri' 
 okp "A8 conversion got a real 'P' queue number (not null/WA-id)" "P" "$(Q "SELECT IFNULL(nomor_antrian,'') FROM tamdes_kunjungan WHERE id_kunjungan=$IDK_A8")"
 okc "A8 offline confirmation shows Nomor Antrian" "Nomor Antrian:" "$(LASTOUT $PA8)"
 
+echo; echo "########## GROUP A9: #3 lainnya -> menu(0) -> #3 again must NOT create a 2nd visit ##########"
+# Regresi 2026-08-04: gerbang lama hanya memeriksa state='submitted', tapi reset "0"
+# mempertahankan id_kunjungan → "3" kedua menyisipkan kunjungan baru dan menimpa
+# wa_sessions.id_kunjungan; kunjungan pertama jadi yatim & tersangkut 'antri' di inbox.
+PA9=62888399028; NA9=$(NORM $PA9)
+ING $PA9 halo; ING $PA9 3       # #3 lainnya -> visit 1 dibuat
+IDK_A9=$(Q "SELECT id_kunjungan FROM wa_sessions WHERE phone_norm='$NA9'")
+ING $PA9 0                      # back to menu (sesi tetap memegang id_kunjungan)
+ING $PA9 3                      # #3 lagi -> WAJIB pakai tiket yang sama
+ok  "A9 still exactly ONE visit for this phone" "1" "$(Q "SELECT COUNT(*) FROM tamdes_kunjungan k JOIN tamdes_buku b ON b.id_user=k.id_user WHERE b.notel='$NA9'")"
+ok  "A9 session still points at the SAME visit (no orphan)" "$IDK_A9" "$(Q "SELECT id_kunjungan FROM wa_sessions WHERE phone_norm='$NA9'")"
+ok  "A9 session back to submitted|lainnya" "submitted|lainnya" "$(Q "SELECT CONCAT(state,'|',category) FROM wa_sessions WHERE phone_norm='$NA9'")"
+ok  "A9 no visit without a wa_sessions row (orphan check)" "0" "$(Q "SELECT COUNT(*) FROM tamdes_kunjungan k JOIN tamdes_buku b ON b.id_user=k.id_user WHERE b.notel='$NA9' AND NOT EXISTS (SELECT 1 FROM wa_sessions s WHERE s.id_kunjungan=k.id_kunjungan)")"
+okc "A9 requester told the existing ticket is still in progress" "WA-$IDK_A9* masih kami proses" "$(LASTOUT $PA9)"
+
 echo; echo "########## GROUP B: queue number daily reset ##########"
 PB=62888399014; NB=$(NORM $PB)
 RC=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE DATE(date_visit)='$TODAY' AND JSON_CONTAINS(jenis_layanan,'\"Rekomendasi Kegiatan Statistik\"')")

@@ -381,7 +381,7 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
 
   const nextStatus: VisitStatus | undefined =
     visit.status === 'antri'             ? 'proses' :
-    visit.status === 'proses'            ? nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)) :
+    visit.status === 'proses'            ? nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan), visit.created_by) :
     // 'menunggu_evaluasi' → 'selesai' HANYA untuk peran bypass. Untuk peran lain
     // backend melakukan soft-correct 'selesai' kembali ke 'menunggu_evaluasi' lalu
     // TETAP menjawab 200 "Status berhasil diupdate" — tombolnya tidak melakukan

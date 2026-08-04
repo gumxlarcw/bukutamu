@@ -1003,6 +1003,18 @@ class Wa extends Api_base {
             } else { // 'data' — online: pilih layanan (4 inti) + sarana KHUSUS ONLINE (tanpa "datang langsung").
                 $jl_in = (isset($input['jenis_layanan']) && is_array($input['jenis_layanan'])) ? array_values($input['jenis_layanan']) : [];
                 $jenis_layanan = $jl_in ?: ['Konsultasi Statistik'];   // default utk pemanggil lama/tanpa pilihan
+                // Layanan front-office tidak berlaku jarak jauh. Kunjungan WA berlabel
+                // 'Lainnya' ditolak require_layanan_role saat petugas_pst menyimpannya:
+                // pemohon terlayani di chat tapi sesinya mustahil ditutup (kunjungan 990699).
+                // Formulir sudah menyembunyikannya; ini gerbang untuk POST langsung.
+                $resep = array_values(array_intersect($jenis_layanan, ['Lainnya', 'Keperluan Pimpinan', 'Daftar Antrian Offline']));
+                if ($resep) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Layanan "' . implode('", "', $resep) . '" hanya untuk kunjungan langsung ke kantor. '
+                                   . 'Untuk permintaan data online silakan pilih layanan lain.',
+                    ], 422);
+                }
                 // Sarana online saja: buang kode 1 ("PST datang langsung"); default Aplikasi Chat (16) krn via WA.
                 $sarana = (isset($input['sarana']) && is_array($input['sarana']))
                     ? array_values(array_filter(array_map('intval', $input['sarana']), function ($c) { return $c !== 1; }))
@@ -1289,10 +1301,25 @@ class Wa extends Api_base {
     private function wa_dispatch_scan() {
         $now = date('Y-m-d H:i:s');
 
-        // 1. Expire stale sessions (>48h awaiting_form or awaiting_category).
-        $this->db->where_in('state', ['awaiting_form', 'awaiting_category'])
-                 ->where('created_at <', date('Y-m-d H:i:s', time() - 48 * 3600))
-                 ->update('wa_sessions', ['state' => 'expired']);
+        // 1. Expire stale sessions (>48h awaiting_form or awaiting_category),
+        //    KECUALI sesi yang masih memegang kunjungan WA terbuka. Tanpa pengecualian
+        //    ini reaper memicu ulang bug sesi ganda lewat pintu berbeda: sesi kedaluwarsa
+        //    → pesan masuk tidak cocok query reuse → sesi baru + kunjungan ganda.
+        //    Definisi "terbuka" selaras wa_lainnya_decision() (insiden terjadwal 6 Ag 2026).
+        $stale_cutoff = date('Y-m-d H:i:s', time() - 48 * 3600);
+        $this->db->query(
+            "UPDATE wa_sessions s
+             LEFT JOIN tamdes_kunjungan k ON k.id_kunjungan = s.id_kunjungan
+             SET s.state = 'expired'
+             WHERE s.state IN ('awaiting_form', 'awaiting_category')
+               AND s.created_at < ?
+               AND NOT (
+                   s.id_kunjungan IS NOT NULL
+                   AND k.created_by = 'whatsapp'
+                   AND k.status NOT IN ('selesai', 'evaluasi_selesai')
+               )",
+            [$stale_cutoff]
+        );
 
         // 1b. Expire stale group_notify (petugas ping). Sebuah "✅ Permintaan Data Online Masuk" yang
         //     telat berhari-hari = bising (sumber kebenaran ada di /admin/layanan-online), dan baris
@@ -1548,11 +1575,61 @@ class Wa extends Api_base {
         $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'menu', "Mohon balas dengan angka *1*, *2*, atau *3*.\n\n" . $this->wa_menu_text());
     }
 
+    // Keputusan saat pemohon memilih "3" (Lainnya): 'skip' (balasan ganda TOCTOU),
+    // 'reuse' (sesi masih memegang kunjungan WA terbuka → pakai tiket itu), atau 'create'.
+    //
+    // Dulu gerbangnya HANYA `state === 'submitted'`. Itu bocor karena reset "0"/menu di
+    // ingest() mengosongkan state & category tapi SENGAJA mempertahankan id_kunjungan
+    // (dipakai konversi di session() POST). Urutan 3 → 0 → 3 karena itu menyisipkan
+    // kunjungan KEDUA lalu menimpa wa_sessions.id_kunjungan — kunjungan pertama jadi
+    // YATIM: tak ada baris wa_sessions yang menunjuknya, jadi wa_session_for_visit()
+    // mengembalikan NULL, wa_require_session_owner() menolak 404, dan petugas mustahil
+    // mengambil alih atau menutupnya. Ia tersangkut 'antri' selamanya di inbox Layanan
+    // Online, satu nomor terlihat dua baris. Insiden 2026-08-04: kunjungan 990704/990705
+    // (081240150610, jeda 87 detik). Murni logika → diuji
+    // scripts/smoke/wa_lainnya_no_duplicate_visit.php.
+    // Reaper 48h: jangan kedaluwarsakan sesi yang masih memegang kunjungan WA terbuka.
+    // Definisi "terbuka" selaras query reuse di ingest() dan wa_lainnya_decision().
+    private function wa_reaper_should_preserve($id_kunjungan, $visit_created_by, $visit_status) {
+        if (!$id_kunjungan) return false;
+        if ($visit_created_by !== 'whatsapp') return false;
+        if (in_array($visit_status, ['selesai', 'evaluasi_selesai'], true)) return false;
+        return true;
+    }
+
+    private function wa_lainnya_decision($state, $id_kunjungan, $visit_created_by, $visit_status) {
+        if (!$id_kunjungan) return 'create';
+        if ($state === 'submitted') return 'skip';
+        // Sudah check-in kiosk ('wa_kiosk') atau kunjungannya hilang → bukan sesi berjalan lagi.
+        if ($visit_created_by !== 'whatsapp') return 'create';
+        // Sudah tuntas → permintaan "3" ini memang baru. Gerbang sama dgn wa_switch_to_data().
+        if (in_array($visit_status, ['selesai', 'evaluasi_selesai'], true)) return 'create';
+        return 'reuse';
+    }
+
     private function wa_create_lainnya_visit($sess, $reply_to) {
         $sid = (int) $sess->id;
-        // Guard TOCTOU: kalau sudah submitted (balasan ganda), jangan buat visit kedua.
         $fresh = $this->db->select('state, id_kunjungan')->get_where('wa_sessions', ['id' => $sid])->row();
-        if ($fresh && $fresh->state === 'submitted' && $fresh->id_kunjungan) return;
+        $prev  = ($fresh && $fresh->id_kunjungan) ? (int) $fresh->id_kunjungan : 0;
+        // Kunjungan sesi ini yang masih berjalan — penentu 'skip'/'reuse' di bawah.
+        $pv = $prev ? $this->db->select('created_by, status')->get_where('tamdes_kunjungan', ['id_kunjungan' => $prev])->row() : null;
+        $decision = $this->wa_lainnya_decision(
+            ($fresh ? $fresh->state : null), $prev,
+            ($pv ? $pv->created_by : null), ($pv ? $pv->status : null)
+        );
+        if ($decision === 'skip') return; // balasan "3" ganda (TOCTOU) — konfirmasi sudah terkirim
+        if ($decision === 'reuse') {
+            // Sesi masih memegang kunjungan WA terbuka → PAKAI tiket itu, jangan buat kedua.
+            // Idempoten seperti session() POST "Sudah dikirim": kunjungan TIDAK diubah (label
+            // & status milik petugas yang menanganinya), hanya sesi dikembalikan ke submitted.
+            $this->db->where('id', $sid)->update('wa_sessions', ['state' => 'submitted', 'category' => 'lainnya']);
+            $this->wa_enqueue_user($sess->phone_raw, $reply_to, 'confirmation',
+                "Permintaan Anda dengan *Nomor Tiket WA-{$prev}* masih kami proses 🙏\n\n"
+              . "Petugas akan menindaklanjuti dan membalas Anda langsung di chat ini pada jam operasional layanan.\n\n"
+              . "🕒 *Jam Layanan*\n" . $this->jam_layanan_text() . "\n\n"
+              . "Terima kasih. 🙏");
+            return;
+        }
 
         $existing = $this->db->where('notel', $sess->phone_norm)->order_by('id_user', 'DESC')->limit(1)->get('tamdes_buku')->row();
         if ($existing) {

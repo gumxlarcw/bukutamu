@@ -25,7 +25,9 @@ const BLOK3_SERVICES = [
 // tapi tidak memicu evaluasi SKD (langsung selesai setelah finalisasi).
 const DTSEN_SERVICES = ['Konsultasi DTSEN'] as const
 
-// 'Lainnya Online' = WA category #3: PST handles via online chat, finishes to 'selesai' (no eval).
+// 'Lainnya Online' = WA category #3: PST handles via online chat. Bukan layanan SKD,
+// tapi tetap wajib evaluasi karena datang lewat kanal WhatsApp — evaluasi ditentukan
+// oleh kanal, bukan oleh keanggotaan di SKD_SERVICES (lihat nextStatusAfterCompletion).
 // NEVER part of the physical kiosk queue — no TV call, no dtsen_konsultasi form.
 const ONLINE_SERVICES = ['Lainnya Online'] as const
 
@@ -74,16 +76,27 @@ export function canFinalizeLayanan(role: UserRole | undefined, layanan_list: str
 /**
  * Cermin Api_base::next_status_after_completion. Tentukan status finalisasi:
  * - SKD (4 layanan inti) → 'menunggu_evaluasi' (perlu evaluasi di tablet)
+ * - Kunjungan WhatsApp → 'menunggu_evaluasi'; tautan evaluasi dikirim ke chat
+ *   sebelum sesi ditutup, apa pun label layanannya.
  * - DTSEN → 'selesai' langsung (PST role tapi di luar kuesioner SKD)
  * - Resepsionis (Lainnya, Keperluan Pimpinan) → 'selesai' langsung
  * - Multi-layanan: jika ada layanan SKD, evaluasi tetap dibutuhkan.
- * Catatan: backend perlu disinkronkan agar DTSEN tidak memicu evaluasi.
+ *
+ * `created_by` wajib diteruskan pemanggil. Tanpa itu tombol "Selesai" akan
+ * menjanjikan status yang berbeda dari yang ditulis backend.
  */
-export function nextStatusAfterCompletion(layanan_list: string[]): 'menunggu_evaluasi' | 'selesai' {
+export function nextStatusAfterCompletion(
+  layanan_list: string[],
+  created_by?: string | null,
+): 'menunggu_evaluasi' | 'selesai' {
   for (const layanan of layanan_list) {
     if ((SKD_SERVICES as readonly string[]).includes(layanan)) {
       return 'menunggu_evaluasi'
     }
+  }
+  // DTSEN tetap tanpa evaluasi meski lewat WhatsApp — taksonomi di CLAUDE.md.
+  if (created_by === 'whatsapp' && !layanan_list.includes('Konsultasi DTSEN')) {
+    return 'menunggu_evaluasi'
   }
   return 'selesai'
 }

@@ -224,7 +224,7 @@ class Visits extends Api_base {
 
         // #21 — tolak parkir 'menunggu_evaluasi' pada visit non-SKD (dead-end state).
         if ($status === 'menunggu_evaluasi'
-            && $this->next_status_after_completion($visit->jenis_layanan) !== 'menunggu_evaluasi') {
+            && $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by) !== 'menunggu_evaluasi') {
             $this->json_response(['success' => false, 'message' => 'Status menunggu_evaluasi hanya untuk layanan SKD.'], 400);
         }
 
@@ -238,7 +238,7 @@ class Visits extends Api_base {
         if ($status === 'selesai') {
             $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
-            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by) === 'menunggu_evaluasi') {
                 // Soft-correct hanya masuk akal saat kunjungan BELUM di 'menunggu_evaluasi'
                 // (mis. proses -> selesai): itu memang gerbang yang dirancang. Kalau sudah
                 // DI SANA, koreksi ini menghasilkan update tanpa perubahan yang tetap

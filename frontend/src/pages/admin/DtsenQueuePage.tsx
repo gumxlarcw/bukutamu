@@ -174,7 +174,7 @@ export default function DtsenQueuePage() {
                     onClick={() =>
                       statusMutation.mutate({
                         id: visit.id_kunjungan,
-                        status: nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)),
+                        status: nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan), visit.created_by),
                       })
                     }
                     disabled={statusMutation.isPending}

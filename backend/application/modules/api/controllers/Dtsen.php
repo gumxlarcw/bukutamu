@@ -144,7 +144,7 @@ class Dtsen extends Api_base {
 
         // #21 — tolak parkir 'menunggu_evaluasi' pada visit non-SKD (dead-end state).
         if ($status === 'menunggu_evaluasi'
-            && $this->next_status_after_completion($visit->jenis_layanan) !== 'menunggu_evaluasi') {
+            && $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by) !== 'menunggu_evaluasi') {
             $this->json_response(['success' => false, 'message' => 'Status menunggu_evaluasi hanya untuk layanan SKD.'], 400);
         }
 
@@ -159,7 +159,7 @@ class Dtsen extends Api_base {
         if ($status === 'selesai') {
             $role = isset($this->current_user->role) ? $this->current_user->role : ''; // #23 fail-closed: role-less token is NOT a bypass
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
-            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan, $visit->created_by) === 'menunggu_evaluasi') {
                 // Soft-correct hanya masuk akal saat kunjungan BELUM di 'menunggu_evaluasi'
                 // (mis. proses -> selesai): itu memang gerbang yang dirancang. Kalau sudah
                 // DI SANA, koreksi ini menghasilkan update tanpa perubahan yang tetap
@@ -259,7 +259,7 @@ class Dtsen extends Api_base {
             $this->json_response(['success' => true, 'data' => $row, 'message' => 'OK']);
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $visit_check = $this->db->select('jenis_layanan, status, date_visit')
+            $visit_check = $this->db->select('jenis_layanan, status, date_visit, created_by')
                                     ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
             if (!$visit_check) {
                 $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
@@ -302,7 +302,7 @@ class Dtsen extends Api_base {
             // 'evaluasi_selesai' ikut dilewati — paritas dengan Consultations::data (#23).
             if ($visit_check->status !== 'selesai' && $visit_check->status !== 'menunggu_evaluasi'
                 && $visit_check->status !== 'evaluasi_selesai') {
-                $next_status                 = $this->next_status_after_completion($visit_check->jenis_layanan);
+                $next_status                 = $this->next_status_after_completion($visit_check->jenis_layanan, $visit_check->created_by);
                 $update                      = ['status' => $next_status];
                 if ($next_status === 'selesai') {
                     $selesai_ts                  = date('Y-m-d H:i:s');

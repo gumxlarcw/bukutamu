@@ -4,7 +4,7 @@ import { servicesApi } from '@/api/services'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { SARANA_OPTIONS } from '@/types/guest'
 import { CheckCircle, Lock } from 'lucide-react'
-import { wouldBeCross, getAllowedSaranaCodes } from '@/lib/role-access'
+import { wouldBeCross, getAllowedSaranaCodes, isResepsionisLayanan } from '@/lib/role-access'
 import type { Service } from '@/api/services'
 
 export interface ServiceSaranaSelectorValue {
@@ -17,7 +17,10 @@ export interface ServiceSaranaSelectorValue {
 interface Props {
   value: ServiceSaranaSelectorValue
   onChange: (v: ServiceSaranaSelectorValue) => void
-  /** WA online (#1): batasi sarana ke media online — buang "PST (datang langsung)" (kode 1). */
+  /**
+   * WA online (#1): batasi sarana ke media online — buang "PST (datang langsung)" (kode 1) —
+   * DAN sembunyikan layanan front-office, yang hanya berlaku untuk tamu yang datang.
+   */
   onlineOnly?: boolean
   /** Centang sarana ini otomatis saat layanan dipilih & belum ada sarana (mis. 16=Aplikasi Chat). User tetap bisa tambah/ubah. */
   defaultSarana?: number
@@ -32,6 +35,11 @@ export function ServiceSaranaSelector({ value, onChange, onlineOnly = false, def
   const allowedSaranaCodes = onlineOnly
     ? getAllowedSaranaCodes(value.jenis_layanan).filter(c => c !== 1)
     : getAllowedSaranaCodes(value.jenis_layanan)
+
+  // Layanan front-office tidak boleh muncul di formulir WA. Kunjungan WA berlabel
+  // 'Lainnya' ditolak require_layanan_role begitu petugas_pst mencoba menyimpannya —
+  // pemohon terlayani di chat tapi sesinya mustahil ditutup (kunjungan 990699).
+  const visibleServices = onlineOnly ? (data ?? []).filter(s => !isResepsionisLayanan(s.name)) : (data ?? [])
 
   // Saat grup layanan berubah, buang sarana yang sudah dipilih tapi tidak valid lagi.
   useEffect(() => {
@@ -83,7 +91,7 @@ export function ServiceSaranaSelector({ value, onChange, onlineOnly = false, def
         {data && (
           <>
             <div className="grid grid-cols-4 gap-2">
-              {data.map(service => {
+              {visibleServices.map(service => {
                 const active = value.jenis_layanan.includes(service.name)
                 const blocked = wouldBeCross(value.jenis_layanan, service.name)
                 return (
@@ -109,7 +117,8 @@ export function ServiceSaranaSelector({ value, onChange, onlineOnly = false, def
             </div>
             {value.jenis_layanan.length > 0 && (
               <p className="text-[10px] text-orange-600 mt-1.5 px-1">
-                ℹ️ Pilih <em>satu</em> kategori: layanan inti SKD (Perpustakaan/Konsultasi/Rekomendasi/Penjualan), <em>atau</em> Konsultasi DTSEN, <em>atau</em> Layanan front-office (Lainnya/Keperluan Pimpinan).
+                ℹ️ Pilih <em>satu</em> kategori: layanan inti SKD (Perpustakaan/Konsultasi/Rekomendasi/Penjualan), <em>atau</em> Konsultasi DTSEN
+                {onlineOnly ? '.' : <>, <em>atau</em> Layanan front-office (Lainnya/Keperluan Pimpinan).</>}
               </p>
             )}
           </>

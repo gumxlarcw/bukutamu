@@ -494,13 +494,20 @@ class Api_base extends CI_Controller {
     }
 
     /**
-     * Tentukan status finalisasi berdasarkan jenis layanan.
+     * Tentukan status finalisasi berdasarkan jenis layanan DAN kanal asal.
      * - SKD (4 layanan inti: Perpustakaan, Konsultasi, Rekomendasi, Penjualan) → 'menunggu_evaluasi'
+     * - Kunjungan WhatsApp → 'menunggu_evaluasi'; setiap sesi permintaan data online
+     *   dapat tautan evaluasi sebelum ditutup, apa pun label layanannya.
      * - Konsultasi DTSEN → 'selesai' langsung (PST role tapi di luar kuesioner SKD)
      * - Resepsionis (Lainnya, Keperluan Pimpinan) → 'selesai' langsung
      * - Multi-layanan: jika ada minimal satu SKD → tetap 'menunggu_evaluasi'
+     *
+     * Syarat kanal sengaja BUKAN entri baru di $skd_services. Daftar itu juga
+     * mendefinisikan cakupan kuesioner SKD (layanan_requires_evaluasi, rekap);
+     * menaruh 'Lainnya Online' di sana akan mengubah angka laporan SKD.
+     * "Wajib evaluasi" dan "termasuk SKD" adalah dua hal berbeda — jangan disatukan.
      */
-    protected function next_status_after_completion($jenis_layanan_raw) {
+    protected function next_status_after_completion($jenis_layanan_raw, $created_by = null) {
         $list = [];
         if (is_array($jenis_layanan_raw)) {
             $list = $jenis_layanan_raw;
@@ -519,6 +526,10 @@ class Api_base extends CI_Controller {
             if (in_array($layanan, $skd_services, true)) {
                 return 'menunggu_evaluasi';
             }
+        }
+        // DTSEN tetap tanpa evaluasi meski lewat WhatsApp — taksonomi di CLAUDE.md.
+        if ($created_by === 'whatsapp' && !in_array('Konsultasi DTSEN', $list, true)) {
+            return 'menunggu_evaluasi';
         }
         return 'selesai';
     }
