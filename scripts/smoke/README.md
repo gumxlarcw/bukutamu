@@ -54,6 +54,7 @@ Because they mutate live data, **do not run during a busy service window.**
 | `next_status_after_completion.php` | **Pure-logic** — loads real `Api_base::next_status_after_completion()` via Reflection (no DB). WhatsApp-channel visits must reach `menunggu_evaluasi` except DTSEN; kiosk paths unchanged. | 20 |
 | `wa_lainnya_no_duplicate_visit.php` | **Pure-logic** — `Wa::wa_lainnya_decision()`. Regression for 3→0→3 duplicate visit bug. Set `WA_PREFIX_LOGIC=1` to run pre-fix replica (must fail). | 18 |
 | `wa_reaper_preserve.php` | **Pure-logic** — `Wa::wa_reaper_should_preserve()`. Reaper must not expire sessions holding open WhatsApp visits. Set `WA_PREFIX_LOGIC=1` for pre-fix replica (must fail). | 11 |
+| `wa_inbox_dedup.php` | **Pure-logic** — `Wa::wa_inbox_*()`. Inbox must not show false duplicate rows (pending+visit, selesai+active same phone); completed-only history must remain visible. Set `WA_PREFIX_LOGIC=1` for pre-fix replica (must fail). | 14 |
 
 ## Running
 

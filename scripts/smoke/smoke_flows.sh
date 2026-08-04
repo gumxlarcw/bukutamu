@@ -100,6 +100,37 @@ ok  "A9 session back to submitted|lainnya" "submitted|lainnya" "$(Q "SELECT CONC
 ok  "A9 no visit without a wa_sessions row (orphan check)" "0" "$(Q "SELECT COUNT(*) FROM tamdes_kunjungan k JOIN tamdes_buku b ON b.id_user=k.id_user WHERE b.notel='$NA9' AND NOT EXISTS (SELECT 1 FROM wa_sessions s WHERE s.id_kunjungan=k.id_kunjungan)")"
 okc "A9 requester told the existing ticket is still in progress" "WA-$IDK_A9* masih kami proses" "$(LASTOUT $PA9)"
 
+echo; echo "########## GROUP A10: inbox anti-duplikat (live read, no DB write) ##########"
+# Regresi 2026-08-04: (a) pending+visit same phone, (b) selesai+aktif same phone.
+# Baca /api/wa/inbox — tidak mutasi produksi.
+SC_DIR="$(cd "$(dirname "$0")" && pwd)"
+SUP=$(php "$SC_DIR/mintjwt.php" 1 admin superadmin)
+INBOX_JSON=$(curl -s --cookie "jwt_token=$SUP" "$BASE/api/wa/inbox")
+DUP_PV=$(echo "$INBOX_JSON" | python3 -c "
+import sys,json
+from collections import defaultdict
+d=json.load(sys.stdin).get('data',[])
+by=defaultdict(set)
+for r in d:
+    t=r.get('notel')
+    if t: by[t].add(r.get('kind'))
+print(sum(1 for k in by.values() if 'pending' in k and 'visit' in k))
+")
+ok "A10 no phone has both pending AND visit row" "0" "$DUP_PV"
+# Siti Nur: bila 990699 aktif + 990005 selesai same phone, inbox hanya 990699.
+HAS699=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE id_kunjungan=990699 AND status<>'selesai'")
+HAS005=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE id_kunjungan=990005 AND status='selesai'")
+if [ "$HAS699" = "1" ] && [ "$HAS005" = "1" ]; then
+  C699=$(echo "$INBOX_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(sum(1 for r in d if r.get('id_kunjungan')==990699))")
+  C005=$(echo "$INBOX_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(sum(1 for r in d if r.get('id_kunjungan')==990005))")
+  ok "A10 active 990699 shown when 990005 selesai exists" "1" "$C699"
+  ok "A10 stale selesai 990005 hidden while 990699 open" "0" "$C005"
+fi
+# Riwayat murni selesai tetap tampil (Francisca / nomor tanpa sesi aktif).
+SELESAI_ROWS=$(echo "$INBOX_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(sum(1 for r in d if r.get('status')=='selesai')")
+okc "A10 inbox still lists completed visits (not globally hidden)" '"success":true' "$INBOX_JSON"
+test "$SELESAI_ROWS" -ge 1 && ok "A10 at least one selesai row visible" "1" "1" || ok "A10 at least one selesai row visible" "1" "0"
+
 echo; echo "########## GROUP B: queue number daily reset ##########"
 PB=62888399014; NB=$(NORM $PB)
 RC=$(Q "SELECT COUNT(*) FROM tamdes_kunjungan WHERE DATE(date_visit)='$TODAY' AND JSON_CONTAINS(jenis_layanan,'\"Rekomendasi Kegiatan Statistik\"')")

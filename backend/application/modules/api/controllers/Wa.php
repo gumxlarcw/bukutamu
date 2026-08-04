@@ -857,7 +857,10 @@ class Wa extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Akses ditolak.'], 403);
         }
 
-        // 1) Visit yang sudah submit form (punya kunjungan).
+        // 1) Semua kunjungan WA (termasuk selesai — riwayat operasional tetap terlihat).
+        // Duplikat PALSU (nomor sama, kunjungan lama selesai + sesi baru masih berjalan)
+        // disaring di PHP di bawah: selesai disembunyikan HANYA bila nomor itu punya
+        // kunjungan non-selesai. Nomor yang hanya punya riwayat selesai tetap tampil semua.
         $visits = $this->db
             ->select('k.id_kunjungan, k.status, k.date_visit AS dt, b.nama, b.nama_instansi, b.notel')
             ->select("(SELECT GROUP_CONCAT(kp.rincian_data SEPARATOR ' · ') FROM konsultasi_pengunjung kp WHERE kp.id_kunjungan = k.id_kunjungan) AS permintaan", FALSE)
@@ -872,8 +875,13 @@ class Wa extends Api_base {
             ->limit(200)
             ->get()->result();
 
+        $phones_with_open = $this->wa_inbox_phones_with_open_visit($visits);
+
         $items = [];
         foreach ($visits as $v) {
+            if (!$this->wa_inbox_show_visit_row($v->status, $v->notel, $phones_with_open)) {
+                continue;
+            }
             $items[] = [
                 'kind'          => 'visit',
                 'id_kunjungan'  => (int) $v->id_kunjungan,
@@ -890,11 +898,16 @@ class Wa extends Api_base {
             ];
         }
 
-        // 2) Sesi yang sudah dikirimi link tapi BELUM mengisi form (awaiting_form).
+        // 2) Sesi awaiting_form yang BELUM punya kunjungan (link terkirim, form belum diisi).
+        // Jangan masukkan sesi yang sudah id_kunjungan-nya terisi — wa_switch_to_data() mengubah
+        // state ke awaiting_form saat operator kirim ulang tautan form, tapi kunjungan sudah ada
+        // dan sudah tampil di blok (1). Tanpa filter ini nomor yang sama muncul dua baris
+        // (visit diproses + menunggu_form), padahal chat-nya satu utas di wa_messages.
         $pend = $this->db->select('s.id, s.phone_norm, s.last_inbound_at, s.link_sent_at, s.created_at, s.category, s.assigned_to, au.nama AS operator_nama')
                          ->from('wa_sessions s')
                          ->join('admin_users au', 'au.id = s.assigned_to', 'left')
                          ->where('s.state', 'awaiting_form')
+                         ->where('s.id_kunjungan IS NULL', NULL, FALSE)
                          ->order_by('s.id', 'DESC')->limit(100)->get()->result();
         foreach ($pend as $s) {
             $items[] = [
@@ -1297,6 +1310,40 @@ class Wa extends Api_base {
     }
 
     /* ───────────────────────── private helpers ───────────────────────── */
+
+    /**
+     * Inbox Layanan Online — aturan anti-duplikat (murni logika, diuji
+     * scripts/smoke/wa_inbox_dedup.php). REGRESI 2026-08-04:
+     *  (a) selesai + sesi aktif same phone → sembunyikan selesai (Siti Nur 990005+990699)
+     *  (b) awaiting_form + id_kunjungan terisi → jangan baris pending (081240150610)
+     *  (c) hanya selesai → tetap tampil (riwayat operasional)
+     */
+
+    /** @param array $rows baris {status, notel} dari tamdes_kunjungan */
+    private function wa_inbox_phones_with_open_visit($rows) {
+        $map = [];
+        foreach ($rows as $v) {
+            $st  = is_array($v) ? ($v['status'] ?? '') : ($v->status ?? '');
+            $tel = is_array($v) ? ($v['notel'] ?? '') : ($v->notel ?? '');
+            if ($st !== 'selesai' && $tel !== '') {
+                $map[$tel] = true;
+            }
+        }
+        return $map;
+    }
+
+    /** false = jangan tampilkan baris kunjungan ini (duplikat palsu riwayat selesai). */
+    private function wa_inbox_show_visit_row($status, $notel, $phones_with_open) {
+        if ($status === 'selesai' && $notel !== '' && !empty($phones_with_open[$notel])) {
+            return false;
+        }
+        return true;
+    }
+
+    /** false = sesi awaiting_form sudah punya kunjungan → jangan baris pending terpisah. */
+    private function wa_inbox_include_pending_session($id_kunjungan) {
+        return empty($id_kunjungan);
+    }
 
     private function wa_dispatch_scan() {
         $now = date('Y-m-d H:i:s');
