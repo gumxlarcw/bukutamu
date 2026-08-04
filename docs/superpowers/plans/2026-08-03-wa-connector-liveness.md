@@ -30,10 +30,38 @@ Tujuan **alert** (tujuan utama) TERCAPAI dan tidak terpengaruh cacat ini, karena
 heartbeat ditahan sejak kegagalan pertama dan TTL 60 detik di backend memakai
 jam dinding, bukan hitungan tick. Yang belum tercapai hanya **restart otomatis**.
 
-Perbaikan yang disarankan: jadikan keputusan restart berbasis waktu
-(`now - wedgeSince > wedgeRestartMs`) atau pindahkan pemeriksaan liveness ke
-`setInterval` sendiri yang lepas dari `tick()`. `wedgePolicy` tetap murni —
-cukup terima elapsed ms alih-alih hitungan.
+### CACAT SUDAH DIPERBAIKI (`0405b34`) — ambang kini jam dinding
+
+`wedgePolicy(alive, wedgeSince, now, maxMs)` tetap murni (`now` disuntikkan) dan
+restart saat `now - wedgeSince >= wedgeRestartMs` (kunci config `wedgeRestartMs`,
+default 600000; kunci lama `wedgeRestartTicks` DIHAPUS). Skrip smoke mengunci
+regresinya dari dua arah: tick lambat 100 detik tetap restart tepat 10 menit, dan
+tick cepat 10 detik tetap TIDAK restart lebih awal.
+
+Bukti ujung-ke-ujung (ambang sementara 90 detik):
+
+| Waktu | Kejadian |
+| --- | --- |
+| 02:07:16 | renderer dibunuh |
+| 02:09:03 | `heartbeat ditahan (0s/90s)` |
+| 02:10:43 | `FATAL: renderer tak responsif 100 detik — exit(1)` |
+| 02:10:44 | PM2 menjalankan ulang (hitungan 6 → 7) |
+| 02:10:49 | `WA client ready` — tanpa QR |
+
+**Pulih sendiri tanpa manusia dalam 3 menit 33 detik** (dulu 8 jam 14 menit).
+
+### Yang masih terbuka: latensi deteksi terikat tick yang sedang berjalan
+
+Pemeriksaan liveness ada di dalam `tick()`. Kalau renderer mati di tengah tick
+saat ada operasi WA mengantre, gerbang baru bisa dievaluasi setelah operasi itu
+habis di pagar `WA_OP_TIMEOUT_MS` (45 detik). Terukur dua kali: **11 detik** bila
+kill jatuh di batas tick yang sepi, **107 detik** bila jatuh di tengah tick dengan
+2 backfill menggantung. Jadi kartu OFFLINE muncul di kisaran ~1–3 menit, bukan
+60–70 detik yang kaku.
+
+Perbaikan bersihnya: pindahkan probe + panggilan `wedgePolicy` ke `setInterval`
+sendiri yang lepas dari `tick()`. Tidak mendesak — kasus terburuknya menit,
+sedangkan cacat aslinya jam.
 
 | Task | Status | Commit |
 | --- | --- | --- |
